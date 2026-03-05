@@ -1,0 +1,50 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lablink-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lablink-backend
+  template:
+    metadata:
+      labels:
+        app: lablink-backend
+    spec:
+      containers:
+      - name: backend
+        image: lablink-backend:latest # Replace with registry image
+        ports:
+        - containerPort: 8000
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: lablink-secrets
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: lablink-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: lablink-secrets
+              key: POSTGRES_PASSWORD
+        - name: CELERY_BROKER_URL
+          value: "redis://lablink-redis:6379/0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lablink-backend
+spec:
+  selector:
+    app: lablink-backend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
