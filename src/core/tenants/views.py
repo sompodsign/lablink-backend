@@ -1,5 +1,6 @@
 import logging
 
+from drf_spectacular.utils import OpenApiExample, extend_schema, extend_schema_view
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,19 +13,26 @@ from .serializers import (
     DiagnosticCenterSerializer,
     DoctorActivitySerializer,
     DoctorManagementSerializer,
-    DoctorSerializer,
     StaffSerializer,
 )
 
 logger = logging.getLogger(__name__)
 
 
+@extend_schema(
+    tags=['Tenant'],
+    summary='Get current center info',
+    description=(
+        'Returns branding and configuration for the diagnostic center '
+        'identified by the request subdomain. **No authentication required.** '
+        'Used by the frontend to load logos, colors, and service listings dynamically.'
+    ),
+    responses={
+        200: DiagnosticCenterSerializer,
+        404: {'description': 'No diagnostic center found for this domain'},
+    },
+)
 class CurrentTenantView(APIView):
-    """
-    Returns the current tenant (diagnostic center) based on the request domain.
-    This is used by the frontend to load branding dynamically.
-    """
-
     permission_classes = []  # Public endpoint
 
     def get(self, request):
@@ -38,11 +46,20 @@ class CurrentTenantView(APIView):
         )
 
 
+@extend_schema_view(
+    list=extend_schema(
+        tags=['Doctors'],
+        summary='List doctors',
+        description='Returns all doctors associated with the current center. Requires staff role.',
+    ),
+    retrieve=extend_schema(
+        tags=['Doctors'],
+        summary='Get doctor detail',
+        description='Returns a single doctor profile with specialization and bio.',
+    ),
+)
 class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    Staff manage doctors associated with their center.
-    Admins can add/remove doctors from the center.
-    """
+    """Staff manage doctors associated with their center."""
 
     serializer_class = DoctorManagementSerializer
 
@@ -57,9 +74,18 @@ class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
             return [permissions.IsAuthenticated(), IsCenterStaff()]
         return [permissions.IsAuthenticated(), IsCenterStaff()]
 
+    @extend_schema(
+        tags=['Doctors'],
+        summary='Add doctor to center',
+        description=(
+            'Admin adds an existing doctor (by ID) to the current center. '
+            'This creates the M2M relationship — it does NOT create a new doctor record.'
+        ),
+        request=None,
+        responses={200: DoctorManagementSerializer},
+    )
     @action(detail=True, methods=['post'], url_path='add-to-center')
     def add_to_center(self, request, pk=None):
-        """Admin adds an existing doctor to this center."""
         if not IsCenterAdmin().has_permission(request, self):
             return Response(
                 {'detail': 'Only admins can add doctors to the center.'},
@@ -78,9 +104,18 @@ class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
         )
         return Response(DoctorManagementSerializer(doctor).data)
 
+    @extend_schema(
+        tags=['Doctors'],
+        summary='Remove doctor from center',
+        description=(
+            'Admin removes a doctor from the current center. '
+            'This only removes the M2M relationship — the doctor record is NOT deleted.'
+        ),
+        request=None,
+        responses={204: None},
+    )
     @action(detail=True, methods=['post'], url_path='remove-from-center')
     def remove_from_center(self, request, pk=None):
-        """Admin removes a doctor from this center (M2M removal only, not deletion)."""
         if not IsCenterAdmin().has_permission(request, self):
             return Response(
                 {'detail': 'Only admins can remove doctors from the center.'},
@@ -95,9 +130,42 @@ class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        tags=['Doctors'],
+        summary='Get doctor activity at this center',
+        description=(
+            'Returns a summary of the doctor\'s recent activity at the current center, '
+            'including total appointments, total test orders prescribed, and last 10 consultations.'
+        ),
+        responses={200: DoctorActivitySerializer},
+        examples=[
+            OpenApiExample(
+                'Doctor activity response',
+                value={
+                    'doctor': {
+                        'id': 1,
+                        'name': 'Dr. Rina Akter',
+                        'email': 'rina@example.com',
+                        'specialization': 'Cardiology',
+                        'designation': 'Senior Consultant',
+                    },
+                    'total_appointments': 42,
+                    'total_test_orders': 87,
+                    'recent_appointments': [
+                        {
+                            'id': 101,
+                            'patient': 'Karim Ahmed',
+                            'date': '2026-03-05',
+                            'status': 'COMPLETED',
+                        }
+                    ],
+                },
+                response_only=True,
+            ),
+        ],
+    )
     @action(detail=True, methods=['get'], url_path='activity')
     def activity(self, request, pk=None):
-        """Staff views a doctor's consultation history and prescribed tests at this center."""
         doctor = self.get_object()
         tenant = request.tenant
 
@@ -125,6 +193,17 @@ class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(data)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        tags=['Staff'],
+        summary='List staff members',
+        description='Returns all staff members at the current center. Admin only.',
+    ),
+    retrieve=extend_schema(
+        tags=['Staff'],
+        summary='Get staff detail',
+    ),
+)
 class StaffViewSet(viewsets.ReadOnlyModelViewSet):
     """Staff listing for the current center (admin use)."""
 

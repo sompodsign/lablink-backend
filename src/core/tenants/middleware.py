@@ -1,5 +1,4 @@
 
-from django.http import Http404
 from core.tenants.models import DiagnosticCenter
 
 

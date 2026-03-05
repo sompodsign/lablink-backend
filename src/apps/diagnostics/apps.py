@@ -5,4 +5,4 @@ class DiagnosticsConfig(AppConfig):
     name = 'apps.diagnostics'
 
     def ready(self):
-        import apps.diagnostics.signals
+        pass

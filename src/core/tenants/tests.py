@@ -7,7 +7,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.appointments.models import Appointment
-from apps.diagnostics.models import CenterTestPricing, Report, TestOrder, TestType
+from apps.diagnostics.models import CenterTestPricing, TestOrder, TestType
 from core.tenants.models import DiagnosticCenter, Doctor, Staff
 from core.tenants.permissions import (
     IsCenterAdmin,
