@@ -1,38 +1,67 @@
 
+import logging
+
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.authentication import JWTAuthentication
+
 from core.tenants.models import DiagnosticCenter
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
 
 
 class TenantMiddleware:
     """
-    Middleware to identify the current tenant from the request's Host header.
-    Attaches the tenant (DiagnosticCenter) to request.tenant.
+    Middleware to identify the current tenant from the authenticated user.
+    Uses JWT token from the Authorization header to identify the user,
+    then resolves their diagnostic center.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
+        self.jwt_auth = JWTAuthentication()
 
     def __call__(self, request):
-        host = request.get_host().split(':')[0]  # Remove port
-        
-        # Extract subdomain: e.g., "popularhospital.lablink.com.bd" -> "popularhospital"
-        # For localhost development: "popularhospital.localhost" -> "popularhospital"
-        parts = host.split('.')
-        
-        # Handle localhost development (e.g., demo.localhost)
-        if 'localhost' in host or '127.0.0.1' in host:
-            if len(parts) >= 2 and parts[0] not in ('localhost', '127'):
-                subdomain = parts[0]
-            else:
-                subdomain = 'demo'  # Default for development
-        else:
-            # Production: first part is the subdomain
-            subdomain = parts[0] if len(parts) > 2 else 'demo'
+        request.tenant = None
 
-        try:
-            request.tenant = DiagnosticCenter.objects.get(domain=subdomain)
-        except DiagnosticCenter.DoesNotExist:
-            # Fallback to first center or None for development
-            request.tenant = DiagnosticCenter.objects.first()
+        # Try to get user from JWT token
+        user = self._get_user_from_jwt(request)
+        if user:
+            request.tenant = self._get_tenant_for_user(user)
 
         response = self.get_response(request)
         return response
+
+    def _get_user_from_jwt(self, request):
+        try:
+            auth_result = self.jwt_auth.authenticate(request)
+            if auth_result:
+                return auth_result[0]  # (user, token)
+        except Exception:
+            pass
+        return None
+
+    def _get_tenant_for_user(self, user):
+        # Staff → center
+        try:
+            return user.staff_profile.center
+        except Exception:
+            pass
+
+        # Doctor → first center
+        try:
+            return user.doctor_profile.centers.first()
+        except Exception:
+            pass
+
+        # Patient → registered center
+        try:
+            return user.patient_profile.registered_at_center
+        except Exception:
+            pass
+
+        # Superadmin fallback
+        if user.is_superuser:
+            return DiagnosticCenter.objects.first()
+
+        return None

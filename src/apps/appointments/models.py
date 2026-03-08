@@ -5,7 +5,6 @@ from django.conf import settings
 
 class Appointment(models.Model):
     STATUS_CHOICES = [
-        ('PENDING', 'Pending'),
         ('CONFIRMED', 'Confirmed'),
         ('COMPLETED', 'Completed'),
         ('CANCELLED', 'Cancelled'),
@@ -16,7 +15,7 @@ class Appointment(models.Model):
     doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, blank=True, related_name='appointments')
     date = models.DateField()
     time = models.TimeField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='CONFIRMED')
     symptoms = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

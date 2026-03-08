@@ -159,8 +159,8 @@ class TestOrderViewSet(viewsets.ModelViewSet):
         tenant = self.request.tenant
         qs = TestOrder.objects.filter(center=tenant).select_related(
             'test_type',
-            'appointment__patient',
-            'ordered_by',
+            'patient',
+            'created_by',
         )
         status_filter = self.request.query_params.get('status')
         if status_filter:
@@ -252,15 +252,14 @@ class ReportViewSet(viewsets.ModelViewSet):
         tenant = self.request.tenant
         user = self.request.user
         qs = Report.objects.filter(
-            appointment__center=tenant,
+            test_order__center=tenant,
         ).select_related(
             'test_type',
-            'test_order',
-            'appointment__patient',
+            'test_order__patient',
             'verified_by',
         )
         if not hasattr(user, 'staff_profile') and not hasattr(user, 'doctor_profile'):
-            qs = qs.filter(appointment__patient=user)
+            qs = qs.filter(test_order__patient=user)
         return qs
 
     def get_serializer_class(self):

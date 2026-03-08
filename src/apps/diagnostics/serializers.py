@@ -24,59 +24,47 @@ class CenterTestPricingSerializer(serializers.ModelSerializer):
 class TestOrderSerializer(serializers.ModelSerializer):
     test_type_name = serializers.CharField(source='test_type.name', read_only=True)
     patient_name = serializers.SerializerMethodField()
-    ordered_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = TestOrder
         fields = [
             'id',
-            'appointment',
+            'patient',
+            'patient_name',
             'center',
             'test_type',
             'test_type_name',
-            'ordered_by',
-            'ordered_by_name',
-            'patient_name',
+            'appointment',
+            'referring_doctor_name',
+            'created_by',
             'status',
             'priority',
             'clinical_notes',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'center', 'ordered_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'center', 'created_by', 'created_at', 'updated_at']
 
     def get_patient_name(self, obj) -> str:
-        return obj.appointment.patient.get_full_name()
-
-    def get_ordered_by_name(self, obj) -> str:
-        if obj.ordered_by:
-            return obj.ordered_by.get_full_name()
-        return ''
+        return obj.patient.get_full_name()
 
 
 class TestOrderCreateSerializer(serializers.ModelSerializer):
-    """Used by doctors to prescribe a test."""
+    """Used by staff to create a test order for a walk-in patient."""
 
     class Meta:
         model = TestOrder
         fields = [
-            'appointment',
+            'patient',
             'test_type',
+            'appointment',
+            'referring_doctor_name',
             'priority',
             'clinical_notes',
         ]
 
-    def validate_appointment(self, appointment):
-        tenant = self.context['request'].tenant
-        if appointment.center_id != tenant.id:
-            raise serializers.ValidationError(
-                'Appointment does not belong to this center.'
-            )
-        return appointment
-
     def validate_test_type(self, test_type):
         tenant = self.context['request'].tenant
-        # Ensure the test type is available at this center
         pricing = CenterTestPricing.objects.filter(
             center=tenant, test_type=test_type, is_available=True
         ).first()
@@ -86,10 +74,19 @@ class TestOrderCreateSerializer(serializers.ModelSerializer):
             )
         return test_type
 
+    def validate_appointment(self, appointment):
+        if appointment:
+            tenant = self.context['request'].tenant
+            if appointment.center_id != tenant.id:
+                raise serializers.ValidationError(
+                    'Appointment does not belong to this center.'
+                )
+        return appointment
+
     def create(self, validated_data):
         request = self.context['request']
         validated_data['center'] = request.tenant
-        validated_data['ordered_by'] = request.user
+        validated_data['created_by'] = request.user
         return super().create(validated_data)
 
 
@@ -110,8 +107,8 @@ class ReportSerializer(serializers.ModelSerializer):
         model = Report
         fields = [
             'id',
-            'appointment',
             'test_order',
+            'appointment',
             'test_type',
             'test_type_name',
             'patient_name',
@@ -128,11 +125,11 @@ class ReportSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'verified_by', 'created_at', 'updated_at']
 
     def get_patient_name(self, obj) -> str:
-        return obj.appointment.patient.get_full_name()
+        return obj.test_order.patient.get_full_name()
 
 
 class ReportCreateSerializer(serializers.ModelSerializer):
-    """Used by lab technicians to create a report from a test order."""
+    """Used by lab technicians to create a report from a completed test order."""
 
     class Meta:
         model = Report

@@ -121,11 +121,47 @@ class PatientRegistrationSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=False)
+    groups = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field='name',
+    )
+    staff_role = serializers.SerializerMethodField()
+    center = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'first_name', 'last_name', 'phone_number')
+        fields = (
+            'id', 'username', 'email', 'password', 'first_name',
+            'last_name', 'phone_number', 'groups', 'staff_role',
+            'is_superuser', 'center',
+        )
+        read_only_fields = ('groups', 'staff_role', 'is_superuser', 'center')
+
+    def get_staff_role(self, obj) -> str:
+        if hasattr(obj, 'staff_profile'):
+            return obj.staff_profile.role
+        return ''
+
+    def get_center(self, obj) -> dict | None:
+        center = None
+        if hasattr(obj, 'staff_profile'):
+            center = obj.staff_profile.center
+        elif hasattr(obj, 'doctor_profile'):
+            center = obj.doctor_profile.centers.first()
+        elif hasattr(obj, 'patient_profile'):
+            center = obj.patient_profile.registered_at_center
+        if not center and obj.is_superuser:
+            from core.tenants.models import DiagnosticCenter
+            center = DiagnosticCenter.objects.first()
+        if center:
+            return {
+                'id': center.id,
+                'name': center.name,
+                'primary_color': center.primary_color,
+                'logo_url': center.logo.url if center.logo else None,
+                'tagline': center.tagline,
+            }
+        return None
 
     def create(self, validated_data):
         return User.objects.create_user(

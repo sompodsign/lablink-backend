@@ -52,10 +52,12 @@ class TestOrder(models.Model):
         NORMAL = 'NORMAL', _('Normal')
         URGENT = 'URGENT', _('Urgent')
 
-    appointment = models.ForeignKey(
-        'appointments.Appointment',
+    # Patient is required — this is who the test is for
+    patient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='test_orders',
+        help_text=_('The patient this test is for'),
     )
     center = models.ForeignKey(
         'tenants.DiagnosticCenter',
@@ -66,13 +68,28 @@ class TestOrder(models.Model):
         TestType,
         on_delete=models.PROTECT,
     )
-    ordered_by = models.ForeignKey(
+    # Appointment is optional — walk-in patients may not have one
+    appointment = models.ForeignKey(
+        'appointments.Appointment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='test_orders',
+    )
+    # External referring doctor (from paper prescription)
+    referring_doctor_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_('Name of the external doctor who prescribed the test'),
+    )
+    # Which staff member created this order in the system
+    created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='ordered_tests',
-        help_text=_('The doctor who ordered this test'),
+        related_name='created_test_orders',
+        help_text=_('Staff member who entered this order'),
     )
     status = models.CharField(
         max_length=20,
@@ -86,7 +103,7 @@ class TestOrder(models.Model):
     )
     clinical_notes = models.TextField(
         blank=True,
-        help_text=_('Doctor notes for the lab technician'),
+        help_text=_('Notes from prescription or doctor'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -98,8 +115,7 @@ class TestOrder(models.Model):
         verbose_name_plural = _('test orders')
 
     def __str__(self) -> str:
-        patient = self.appointment.patient
-        return f'{self.test_type.name} for {patient.get_full_name()}'
+        return f'{self.test_type.name} for {self.patient.get_full_name()}'
 
 
 class Report(models.Model):
@@ -108,18 +124,19 @@ class Report(models.Model):
         VERIFIED = 'VERIFIED', _('Verified')
         DELIVERED = 'DELIVERED', _('Delivered')
 
-    appointment = models.ForeignKey(
-        'appointments.Appointment',
-        on_delete=models.CASCADE,
-        related_name='reports',
-    )
+    # Link to test order (primary link)
     test_order = models.OneToOneField(
         TestOrder,
         on_delete=models.CASCADE,
         related_name='report',
+    )
+    # Appointment is optional
+    appointment = models.ForeignKey(
+        'appointments.Appointment',
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        help_text=_('The test order this report fulfills'),
+        related_name='reports',
     )
     test_type = models.ForeignKey(
         TestType,
@@ -153,4 +170,4 @@ class Report(models.Model):
         verbose_name_plural = _('reports')
 
     def __str__(self) -> str:
-        return f'Report {self.id} - {self.appointment}'
+        return f'Report {self.id} - {self.test_order}'
