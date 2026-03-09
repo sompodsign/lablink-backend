@@ -1,9 +1,15 @@
 ---
-trigger: glob
-glob: "{**/tests/**,**/tests.py,**/test_*.py}"
+trigger: always_on
 ---
 
 # Testing Conventions
+
+## Mandatory Unit Tests
+
+- **Always write unit tests** for any new or modified code — no exceptions.
+- Tests must accompany every feature, bug fix, refactor, or API change.
+- Place tests in the app's `tests/` directory or `tests.py` file.
+- If a test file doesn't exist yet, create one.
 
 ## Test Classes
 

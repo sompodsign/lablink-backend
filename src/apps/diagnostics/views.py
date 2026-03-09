@@ -3,6 +3,7 @@ import logging
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 
 from core.tenants.permissions import (
@@ -316,6 +317,16 @@ class ReportViewSet(viewsets.ModelViewSet):
 
     http_method_names = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = [
+        'test_order__patient__first_name',
+        'test_order__patient__last_name',
+        'test_type__name',
+        'test_order__referring_doctor_name',
+    ]
+    ordering_fields = ['created_at', 'updated_at', 'test_type__name', 'status']
+    ordering = ['-updated_at', '-created_at']
+
     def get_queryset(self):
         tenant = self.request.tenant
         user = self.request.user
@@ -331,7 +342,19 @@ class ReportViewSet(viewsets.ModelViewSet):
         )
         if not hasattr(user, 'staff_profile') and not hasattr(user, 'doctor_profile'):
             qs = qs.filter(test_order__patient=user)
-        return qs.order_by('-updated_at', '-created_at')
+
+        # Manual query param filters
+        params = self.request.query_params
+        if patient_id := params.get('patient'):
+            qs = qs.filter(test_order__patient_id=patient_id)
+        if test_type_id := params.get('test_type'):
+            qs = qs.filter(test_type_id=test_type_id)
+        if doctor := params.get('referring_doctor'):
+            qs = qs.filter(test_order__referring_doctor_name__icontains=doctor)
+        if status_val := params.get('status'):
+            qs = qs.filter(status=status_val)
+
+        return qs
 
     def get_serializer_class(self):
         if self.action == 'create':
