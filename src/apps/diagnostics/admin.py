@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CenterTestPricing, Report, TestOrder, TestType
+from .models import CenterTestPricing, ReferringDoctor, Report, ReportTemplate, TestOrder, TestType
 
 
 @admin.register(TestType)
@@ -60,3 +60,16 @@ class ReportAdmin(admin.ModelAdmin):
     @admin.display(description='Patient')
     def get_patient(self, obj) -> str:
         return obj.test_order.patient.get_full_name()
+
+
+@admin.register(ReportTemplate)
+class ReportTemplateAdmin(admin.ModelAdmin):
+    list_display = ('test_type', 'created_at', 'updated_at')
+    search_fields = ('test_type__name',)
+
+
+@admin.register(ReferringDoctor)
+class ReferringDoctorAdmin(admin.ModelAdmin):
+    list_display = ('name', 'designation', 'institution', 'center', 'is_active')
+    list_filter = ('center', 'is_active')
+    search_fields = ('name', 'designation', 'institution')

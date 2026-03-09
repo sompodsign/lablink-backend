@@ -19,6 +19,11 @@ class PatientProfile(models.Model):
         O_POS = 'O+', _('O+')
         O_NEG = 'O-', _('O-')
 
+    class Gender(models.TextChoices):
+        MALE = 'M', _('Male')
+        FEMALE = 'F', _('Female')
+        OTHER = 'O', _('Other')
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -26,6 +31,11 @@ class PatientProfile(models.Model):
     )
     phone_number = models.CharField(max_length=20, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
+    gender = models.CharField(
+        max_length=1,
+        choices=Gender.choices,
+        blank=True,
+    )
     blood_group = models.CharField(
         max_length=3,
         choices=BloodGroup.choices,

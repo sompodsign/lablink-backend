@@ -17,6 +17,7 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             'id',
             'phone_number',
             'date_of_birth',
+            'gender',
             'blood_group',
             'address',
             'medical_history',
@@ -67,6 +68,12 @@ class PatientRegistrationSerializer(serializers.Serializer):
         allow_blank=True,
         default='',
     )
+    gender = serializers.ChoiceField(
+        choices=PatientProfile.Gender.choices,
+        required=False,
+        allow_blank=True,
+        default='',
+    )
     address = serializers.CharField(required=False, allow_blank=True, default='')
     medical_history = serializers.CharField(required=False, allow_blank=True, default='')
     emergency_contact_name = serializers.CharField(
@@ -105,6 +112,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
             user=user,
             phone_number=validated_data.get('phone_number', ''),
             date_of_birth=validated_data.get('date_of_birth'),
+            gender=validated_data.get('gender', ''),
             blood_group=validated_data.get('blood_group', ''),
             address=validated_data.get('address', ''),
             medical_history=validated_data.get('medical_history', ''),

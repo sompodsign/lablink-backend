@@ -161,6 +161,8 @@ class Report(models.Model):
         related_name='verified_reports',
     )
     is_delivered_online = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -171,3 +173,71 @@ class Report(models.Model):
 
     def __str__(self) -> str:
         return f'Report {self.id} - {self.test_order}'
+
+
+class ReportTemplate(models.Model):
+    """Defines the expected result fields for a test type.
+
+    The `fields` JSON stores a list of field definitions, e.g.:
+    [
+        {"name": "Hemoglobin", "unit": "g/dL", "ref_range": "13.5-17.5"},
+        {"name": "Total WBC Count", "unit": "/cumm", "ref_range": "4000-11000"},
+    ]
+    """
+
+    test_type = models.OneToOneField(
+        TestType,
+        on_delete=models.CASCADE,
+        related_name='report_template',
+    )
+    fields = models.JSONField(
+        help_text=_(
+            'List of field definitions: '
+            '[{"name": "...", "unit": "...", "ref_range": "..."}]'
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'apps_report_template'
+        verbose_name = _('report template')
+        verbose_name_plural = _('report templates')
+
+    def __str__(self) -> str:
+        return f'Template for {self.test_type.name}'
+
+
+class ReferringDoctor(models.Model):
+    """Saved referring doctors for quick selection in test orders."""
+
+    center = models.ForeignKey(
+        'tenants.DiagnosticCenter',
+        on_delete=models.CASCADE,
+        related_name='referring_doctors',
+    )
+    name = models.CharField(
+        max_length=255,
+        help_text=_('Full name, e.g. "Dr. Aminul Islam"'),
+    )
+    designation = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_('e.g. "MBBS, FCPS (Medicine)"'),
+    )
+    institution = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_('e.g. "Dhaka Medical College Hospital"'),
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'apps_referring_doctor'
+        ordering = ['name']
+        verbose_name = _('referring doctor')
+        verbose_name_plural = _('referring doctors')
+
+    def __str__(self) -> str:
+        return self.name

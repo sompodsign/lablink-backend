@@ -12,11 +12,14 @@ from core.tenants.permissions import (
     IsCenterStaffOrDoctor,
 )
 
-from .models import CenterTestPricing, Report, TestOrder, TestType
+from .models import CenterTestPricing, ReferringDoctor, Report, ReportTemplate, TestOrder, TestType
 from .serializers import (
     CenterTestPricingSerializer,
+    ReferringDoctorSerializer,
     ReportCreateSerializer,
+    ReportPrintSerializer,
     ReportSerializer,
+    ReportTemplateSerializer,
     TestOrderCreateSerializer,
     TestOrderSerializer,
     TestOrderStatusUpdateSerializer,
@@ -25,6 +28,8 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 
+
+# ─── Test Types & Pricing ──────────────────────────────────────────
 
 @extend_schema_view(
     list=extend_schema(
@@ -69,6 +74,68 @@ class CenterTestPricingViewSet(viewsets.ModelViewSet):
         tenant = self.request.tenant
         return CenterTestPricing.objects.filter(center=tenant).select_related('test_type')
 
+
+# ─── Report Templates ─────────────────────────────────────────────
+
+@extend_schema_view(
+    list=extend_schema(
+        tags=['Report Templates'],
+        summary='List report templates',
+        description='Returns all report templates. Optionally filter by ?test_type=ID.',
+    ),
+    retrieve=extend_schema(tags=['Report Templates'], summary='Get report template detail'),
+    create=extend_schema(
+        tags=['Report Templates'],
+        summary='Create report template',
+        description='Create a report template defining expected result fields for a test type.',
+    ),
+    update=extend_schema(tags=['Report Templates'], summary='Update report template'),
+    partial_update=extend_schema(tags=['Report Templates'], summary='Partial update template'),
+    destroy=extend_schema(tags=['Report Templates'], summary='Delete report template'),
+)
+class ReportTemplateViewSet(viewsets.ModelViewSet):
+    serializer_class = ReportTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsCenterStaffOrDoctor]
+
+    def get_queryset(self):
+        qs = ReportTemplate.objects.select_related('test_type').all()
+        test_type = self.request.query_params.get('test_type')
+        if test_type:
+            qs = qs.filter(test_type_id=test_type)
+        return qs
+
+
+# ─── Referring Doctors ─────────────────────────────────────────────
+
+@extend_schema_view(
+    list=extend_schema(
+        tags=['Referring Doctors'],
+        summary='List saved referring doctors',
+        description='Returns referring doctors for the current center.',
+    ),
+    create=extend_schema(
+        tags=['Referring Doctors'],
+        summary='Add a referring doctor',
+    ),
+    partial_update=extend_schema(
+        tags=['Referring Doctors'],
+        summary='Update referring doctor',
+    ),
+    destroy=extend_schema(
+        tags=['Referring Doctors'],
+        summary='Delete referring doctor',
+    ),
+)
+class ReferringDoctorViewSet(viewsets.ModelViewSet):
+    serializer_class = ReferringDoctorSerializer
+    permission_classes = [permissions.IsAuthenticated, IsCenterStaffOrDoctor]
+
+    def get_queryset(self):
+        tenant = self.request.tenant
+        return ReferringDoctor.objects.filter(center=tenant, is_active=True)
+
+
+# ─── Test Orders ───────────────────────────────────────────────────
 
 @extend_schema_view(
     list=extend_schema(
@@ -188,6 +255,8 @@ class TestOrderViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
 
+# ─── Reports ──────────────────────────────────────────────────────
+
 @extend_schema_view(
     list=extend_schema(
         tags=['Reports'],
@@ -206,28 +275,27 @@ class TestOrderViewSet(viewsets.ModelViewSet):
         tags=['Reports'],
         summary='Create a report (lab technician only)',
         description=(
-            'Lab technician creates a report from a completed test order. '
-            'The `test_order` must belong to the current center and not already have a report. '
-            'The appointment and test type are auto-populated from the test order. '
-            'The test order status is automatically set to `COMPLETED`.'
+            'Lab technician creates a report by selecting a test type and patient. '
+            'A test order is auto-created in the background with COMPLETED status. '
+            'If a report template exists for the test type, result fields are auto-populated.'
         ),
         request=ReportCreateSerializer,
         responses={201: ReportSerializer},
         examples=[
             OpenApiExample(
-                'Create CBC report with text result',
+                'Create CBC report with structured results',
                 value={
-                    'test_order': 1,
-                    'result_text': (
-                        'Hemoglobin: 14.2 g/dL (Normal)\n'
-                        'WBC: 7,500/μL (Normal)\n'
-                        'Platelets: 250,000/μL (Normal)\n'
-                        'RBC: 4.8 million/μL (Normal)'
-                    ),
+                    'test_type': 3,
+                    'patient': 1,
+                    'referring_doctor_name': 'Dr. Aminul Islam',
+                    'result_text': '',
                     'result_data': {
-                        'hemoglobin': {'value': 14.2, 'unit': 'g/dL', 'ref_range': '12.0-17.5'},
-                        'wbc': {'value': 7500, 'unit': '/μL', 'ref_range': '4500-11000'},
-                        'platelets': {'value': 250000, 'unit': '/μL', 'ref_range': '150000-400000'},
+                        'Hemoglobin': {
+                            'value': '14.5',
+                            'unit': 'g/dL',
+                            'ref_range': '13.5-17.5',
+                            'finding': 'Normal',
+                        },
                     },
                 },
                 request_only=True,
@@ -246,16 +314,19 @@ class ReportViewSet(viewsets.ModelViewSet):
     Strictly scoped to the current tenant center.
     """
 
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_queryset(self):
         tenant = self.request.tenant
         user = self.request.user
         qs = Report.objects.filter(
             test_order__center=tenant,
+            is_deleted=False,
         ).select_related(
             'test_type',
             'test_order__patient',
+            'test_order__center',
+            'test_order__created_by',
             'verified_by',
         )
         if not hasattr(user, 'staff_profile') and not hasattr(user, 'doctor_profile'):
@@ -265,6 +336,8 @@ class ReportViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return ReportCreateSerializer
+        if self.action == 'print_data':
+            return ReportPrintSerializer
         return ReportSerializer
 
     def get_permissions(self):
@@ -272,9 +345,28 @@ class ReportViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
         if self.action == 'partial_update':
             return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
+        if self.action == 'destroy':
+            return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
         if self.action == 'verify':
             return [permissions.IsAuthenticated(), IsCenterStaff()]
+        if self.action == 'print_data':
+            return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
         return [permissions.IsAuthenticated()]
+
+    def perform_destroy(self, instance):
+        from django.utils import timezone
+        instance.is_deleted = True
+        instance.deleted_at = timezone.now()
+        instance.save(update_fields=['is_deleted', 'deleted_at', 'updated_at'])
+
+    def create(self, request, *args, **kwargs):
+        serializer = ReportCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        report = serializer.save()
+        return Response(
+            ReportSerializer(report).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @extend_schema(
         tags=['Reports'],
@@ -302,3 +394,19 @@ class ReportViewSet(viewsets.ModelViewSet):
             extra={'report_id': report.id, 'verified_by': request.user.id},
         )
         return Response(ReportSerializer(report).data)
+
+    @extend_schema(
+        tags=['Reports'],
+        summary='Get report print data',
+        description=(
+            'Returns comprehensive report data for printing, including '
+            'center details, patient info, referring doctor, lab technician, '
+            'and structured test results.'
+        ),
+        responses={200: ReportPrintSerializer},
+    )
+    @action(detail=True, methods=['get'], url_path='print-data')
+    def print_data(self, request, pk=None):
+        report = self.get_object()
+        serializer = ReportPrintSerializer(report, context={'request': request})
+        return Response(serializer.data)
