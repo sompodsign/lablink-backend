@@ -168,6 +168,7 @@ class Report(models.Model):
 
     class Meta:
         db_table = 'apps_report'
+        ordering = ['-updated_at', '-created_at']
         verbose_name = _('report')
         verbose_name_plural = _('reports')
 

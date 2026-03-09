@@ -314,7 +314,7 @@ class ReportViewSet(viewsets.ModelViewSet):
     Strictly scoped to the current tenant center.
     """
 
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 
     def get_queryset(self):
         tenant = self.request.tenant
@@ -331,7 +331,7 @@ class ReportViewSet(viewsets.ModelViewSet):
         )
         if not hasattr(user, 'staff_profile') and not hasattr(user, 'doctor_profile'):
             qs = qs.filter(test_order__patient=user)
-        return qs
+        return qs.order_by('-updated_at', '-created_at')
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -343,7 +343,7 @@ class ReportViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'create':
             return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
-        if self.action == 'partial_update':
+        if self.action in ('partial_update', 'update'):
             return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
         if self.action == 'destroy':
             return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
