@@ -11,6 +11,8 @@ from apps.diagnostics.models import (
     TestOrder,
     TestType,
 )
+from apps.diagnostics.services.calculations import auto_calculate
+from apps.diagnostics.services.flagging import flag_report_results
 
 logger = logging.getLogger(__name__)
 
@@ -175,10 +177,26 @@ class ReportSerializer(serializers.ModelSerializer):
             'status_display',
             'verified_by',
             'is_delivered_online',
+            'access_token',
             'created_at',
             'updated_at',
         ]
         read_only_fields = ['id', 'verified_by', 'created_at', 'updated_at']
+
+    def update(self, instance, validated_data):
+        # Auto-calculate and re-flag result values when result_data is updated
+        result_data = validated_data.get('result_data')
+        if result_data:
+            result_data = auto_calculate(result_data)
+            template = ReportTemplate.objects.filter(
+                center=instance.test_order.center,
+                test_type=instance.test_type,
+            ).first()
+            template_fields = template.fields if template else None
+            validated_data['result_data'] = flag_report_results(
+                result_data, template_fields
+            )
+        return super().update(instance, validated_data)
 
     def get_patient_name(self, obj) -> str:
         return obj.test_order.patient.get_full_name()
@@ -225,12 +243,23 @@ class ReportCreateSerializer(serializers.Serializer):
             status=TestOrder.Status.COMPLETED,
         )
 
+        # Auto-calculate derived fields, then flag all values
+        result_data = validated_data.get('result_data', {})
+        if result_data:
+            result_data = auto_calculate(result_data)
+            template = ReportTemplate.objects.filter(
+                center=tenant,
+                test_type=validated_data['test_type'],
+            ).first()
+            template_fields = template.fields if template else None
+            result_data = flag_report_results(result_data, template_fields)
+
         # Create the report
         report = Report.objects.create(
             test_order=test_order,
             test_type=validated_data['test_type'],
             result_text=validated_data.get('result_text', ''),
-            result_data=validated_data.get('result_data', {}),
+            result_data=result_data,
             file=validated_data.get('file'),
             created_by=request.user,
         )
@@ -246,6 +275,7 @@ class ReportPrintSerializer(serializers.ModelSerializer):
     patient = serializers.SerializerMethodField()
     referring_doctor = serializers.SerializerMethodField()
     lab_technician = serializers.SerializerMethodField()
+    previous_results = serializers.SerializerMethodField()
     test_type_name = serializers.CharField(source='test_type.name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
@@ -264,6 +294,8 @@ class ReportPrintSerializer(serializers.ModelSerializer):
             'patient',
             'referring_doctor',
             'lab_technician',
+            'access_token',
+            'previous_results',
         ]
 
     def _calculate_age(self, dob):
@@ -316,4 +348,24 @@ class ReportPrintSerializer(serializers.ModelSerializer):
         return {
             'name': tech_user.get_full_name(),
             'role': staff.get_role_display() if staff else '',
+        }
+
+    def get_previous_results(self, obj):
+        """Return the most recent previous report for the same patient+test type."""
+        previous = (
+            Report.objects.filter(
+                test_order__patient=obj.test_order.patient,
+                test_type=obj.test_type,
+                is_deleted=False,
+            )
+            .exclude(id=obj.id)
+            .order_by('-created_at')
+            .values('result_data', 'created_at')
+            .first()
+        )
+        if not previous or not previous.get('result_data'):
+            return None
+        return {
+            'result_data': previous['result_data'],
+            'date': previous['created_at'].strftime('%d %b %Y'),
         }

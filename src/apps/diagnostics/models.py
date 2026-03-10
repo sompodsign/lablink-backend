@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -169,6 +171,15 @@ class Report(models.Model):
         help_text=_('Lab technician who created this report'),
     )
     is_delivered_online = models.BooleanField(default=False)
+    access_token = models.UUIDField(
+        default=uuid4, unique=True, editable=False,
+        help_text=_('Token for public report access'),
+    )
+    access_count = models.IntegerField(default=0)
+    verified_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text=_('When the report was verified'),
+    )
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -187,11 +198,17 @@ class Report(models.Model):
 class ReportTemplate(models.Model):
     """Defines the expected result fields for a test type, per center.
 
-    The `fields` JSON stores a list of field definitions, e.g.:
-    [
-        {"name": "Hemoglobin", "unit": "g/dL", "ref_range": "13.5-17.5"},
-        {"name": "Total WBC Count", "unit": "/cumm", "ref_range": "4000-11000"},
-    ]
+    The `fields` JSON stores a list of field definitions. Each field
+    uses either a universal range or gender/age-specific ranges:
+
+    Universal range:
+        {"name": "Total WBC Count", "unit": "/cumm", "ref_range": "4000-11000"}
+
+    Gender/age-specific ranges:
+        {"name": "Hemoglobin", "unit": "g/dL",
+         "ref_range_male": "13.5-17.5",
+         "ref_range_female": "12.0-16.0",
+         "ref_range_child": "11.0-14.0"}
     """
 
     center = models.ForeignKey(
@@ -207,7 +224,9 @@ class ReportTemplate(models.Model):
     fields = models.JSONField(
         help_text=_(
             'List of field definitions: '
-            '[{"name": "...", "unit": "...", "ref_range": "..."}]'
+            '[{"name": "...", "unit": "...", "ref_range": "..." '
+            'or "ref_range_male": "...", "ref_range_female": "...", '
+            '"ref_range_child": "..."}]'
         ),
     )
     created_at = models.DateTimeField(auto_now_add=True)

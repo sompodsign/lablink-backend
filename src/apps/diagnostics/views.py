@@ -1,10 +1,12 @@
 import logging
 
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, extend_schema_view
+from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from core.tenants.permissions import (
     IsCenterAdmin,
@@ -430,11 +432,25 @@ class ReportViewSet(viewsets.ModelViewSet):
             )
         report.status = Report.Status.VERIFIED
         report.verified_by = request.user
-        report.save(update_fields=['status', 'verified_by', 'updated_at'])
+        report.verified_at = timezone.now()
+        report.save(update_fields=['status', 'verified_by', 'verified_at', 'updated_at'])
         logger.info(
             'Report verified',
             extra={'report_id': report.id, 'verified_by': request.user.id},
         )
+
+        # Send email notification to patient (skip if no email)
+        try:
+            patient = report.test_order.patient
+            email = getattr(patient, 'email', None)
+            if email:
+                from apps.diagnostics.services.notifications import (
+                    send_report_ready_email,
+                )
+                send_report_ready_email(report, email)
+        except Exception:
+            logger.exception('Failed to send report notification email')
+
         return Response(ReportSerializer(report).data)
 
     @extend_schema(
@@ -483,3 +499,194 @@ class ReportViewSet(viewsets.ModelViewSet):
             extra={'report_id': report.id, 'delivered_by': request.user.id},
         )
         return Response(ReportSerializer(report).data)
+
+    @extend_schema(
+        tags=['Reports'],
+        summary='Get result history for delta check',
+        description=(
+            'Returns the last 5 reports for a given patient + test type '
+            'combination. Used for delta check during report entry.'
+        ),
+        parameters=[
+            OpenApiParameter(
+                name='patient_id',
+                description='Patient user ID',
+                required=True,
+                type=int,
+            ),
+            OpenApiParameter(
+                name='test_type_id',
+                description='Test type ID',
+                required=True,
+                type=int,
+            ),
+        ],
+    )
+    @action(detail=False, methods=['get'], url_path='result-history')
+    def result_history(self, request):
+        patient_id = request.query_params.get('patient_id')
+        test_type_id = request.query_params.get('test_type_id')
+        if not patient_id or not test_type_id:
+            return Response(
+                {'detail': 'patient_id and test_type_id are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant = request.tenant
+        previous_reports = (
+            Report.objects.filter(
+                test_order__center=tenant,
+                test_order__patient_id=patient_id,
+                test_type_id=test_type_id,
+                is_deleted=False,
+            )
+            .exclude(result_data={})
+            .order_by('-created_at')[:5]
+        )
+
+        history = []
+        for report in previous_reports:
+            history.append({
+                'id': report.id,
+                'date': report.created_at.isoformat(),
+                'result_data': report.result_data,
+            })
+
+        return Response(history)
+
+
+# ─── Public Report Access (no auth) ──────────────────────────
+class PublicReportView(APIView):
+    """Token-based public access to a report. No authentication required."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    @extend_schema(
+        tags=['Public'],
+        summary='View report via access token',
+        description=(
+            'Returns report data for public viewing via a unique access token. '
+            'No authentication required. Used for digital report delivery.'
+        ),
+    )
+    def get(self, request, access_token):
+        from django.db.models import F
+
+        try:
+            report = Report.objects.select_related(
+                'test_type',
+                'test_order__patient',
+                'test_order__center',
+                'created_by',
+            ).get(access_token=access_token, is_deleted=False)
+        except Report.DoesNotExist:
+            return Response(
+                {'detail': 'Report not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Increment access count
+        Report.objects.filter(id=report.id).update(access_count=F('access_count') + 1)
+
+        serializer = ReportPrintSerializer(report, context={'request': request})
+        return Response(serializer.data)
+
+
+# ─── Analytics ────────────────────────────────────────────────
+class AnalyticsViewSet(viewsets.ViewSet):
+    """Business analytics endpoints for center dashboards."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    @extend_schema(
+        tags=['Analytics'],
+        summary='Revenue breakdown by test type',
+        parameters=[
+            OpenApiParameter(name='start_date', type=str, required=False),
+            OpenApiParameter(name='end_date', type=str, required=False),
+        ],
+    )
+    @action(detail=False, methods=['get'], url_path='revenue-by-test')
+    def revenue_by_test(self, request):
+        from apps.diagnostics.services.analytics import revenue_by_test_type
+
+        tenant = request.tenant
+        start = request.query_params.get('start_date')
+        end = request.query_params.get('end_date')
+        data = revenue_by_test_type(tenant, start, end)
+        return Response(data)
+
+    @extend_schema(
+        tags=['Analytics'],
+        summary='Revenue trends over time',
+        parameters=[
+            OpenApiParameter(name='period', type=str, required=False, enum=['daily', 'weekly', 'monthly']),
+            OpenApiParameter(name='days', type=int, required=False),
+        ],
+    )
+    @action(detail=False, methods=['get'], url_path='revenue-trends')
+    def revenue_trends(self, request):
+        from apps.diagnostics.services.analytics import revenue_trends as rt
+
+        tenant = request.tenant
+        period = request.query_params.get('period', 'daily')
+        days = int(request.query_params.get('days', 30))
+        data = rt(tenant, period, days)
+        return Response(data)
+
+    @extend_schema(
+        tags=['Analytics'],
+        summary='Revenue by referring doctor',
+        parameters=[
+            OpenApiParameter(name='start_date', type=str, required=False),
+            OpenApiParameter(name='end_date', type=str, required=False),
+        ],
+    )
+    @action(detail=False, methods=['get'], url_path='revenue-by-doctor')
+    def revenue_by_doctor(self, request):
+        from apps.diagnostics.services.analytics import (
+            revenue_by_doctor as rbd,
+        )
+
+        tenant = request.tenant
+        start = request.query_params.get('start_date')
+        end = request.query_params.get('end_date')
+        data = rbd(tenant, start, end)
+        return Response(data)
+
+    @extend_schema(
+        tags=['Analytics'],
+        summary='Patient metrics (new vs returning)',
+        parameters=[
+            OpenApiParameter(name='days', type=int, required=False),
+        ],
+    )
+    @action(detail=False, methods=['get'], url_path='patient-metrics')
+    def patient_metrics(self, request):
+        from apps.diagnostics.services.analytics import (
+            patient_metrics as pm,
+        )
+
+        tenant = request.tenant
+        days = int(request.query_params.get('days', 30))
+        data = pm(tenant, days)
+        return Response(data)
+
+    @extend_schema(
+        tags=['Analytics'],
+        summary='Turnaround time statistics',
+        parameters=[
+            OpenApiParameter(name='days', type=int, required=False),
+        ],
+    )
+    @action(detail=False, methods=['get'], url_path='tat-stats')
+    def tat_stats(self, request):
+        from apps.diagnostics.services.analytics import (
+            turnaround_time_stats,
+        )
+
+        tenant = request.tenant
+        days = int(request.query_params.get('days', 30))
+        data = turnaround_time_stats(tenant, days)
+        return Response(data)
