@@ -7,6 +7,7 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 
 from core.tenants.permissions import (
+    IsCenterAdmin,
     IsCenterDoctor,
     IsCenterLabTechnician,
     IsCenterStaff,
@@ -96,14 +97,20 @@ class CenterTestPricingViewSet(viewsets.ModelViewSet):
 )
 class ReportTemplateViewSet(viewsets.ModelViewSet):
     serializer_class = ReportTemplateSerializer
-    permission_classes = [permissions.IsAuthenticated, IsCenterStaffOrDoctor]
+    permission_classes = [permissions.IsAuthenticated, IsCenterLabTechnician]
 
     def get_queryset(self):
-        qs = ReportTemplate.objects.select_related('test_type').all()
+        tenant = getattr(self.request, 'tenant', None)
+        qs = ReportTemplate.objects.select_related('test_type', 'center')
+        if tenant:
+            qs = qs.filter(center=tenant)
         test_type = self.request.query_params.get('test_type')
         if test_type:
             qs = qs.filter(test_type_id=test_type)
         return qs
+
+    def perform_create(self, serializer):
+        serializer.save(center=self.request.tenant)
 
 
 # ─── Referring Doctors ─────────────────────────────────────────────
@@ -225,11 +232,17 @@ class TestOrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         tenant = self.request.tenant
+        user = self.request.user
         qs = TestOrder.objects.filter(center=tenant).select_related(
             'test_type',
             'patient',
             'created_by',
         )
+        if hasattr(user, 'doctor_profile'):
+            # Doctors see only orders they referred
+            qs = qs.filter(referring_doctor_name__iexact=user.get_full_name())
+        elif not hasattr(user, 'staff_profile'):
+            qs = qs.filter(patient=user)
         status_filter = self.request.query_params.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
@@ -340,7 +353,12 @@ class ReportViewSet(viewsets.ModelViewSet):
             'test_order__created_by',
             'verified_by',
         )
-        if not hasattr(user, 'staff_profile') and not hasattr(user, 'doctor_profile'):
+        if hasattr(user, 'doctor_profile'):
+            # Doctors see only reports they referred
+            qs = qs.filter(
+                test_order__referring_doctor_name__iexact=user.get_full_name(),
+            )
+        elif not hasattr(user, 'staff_profile'):
             qs = qs.filter(test_order__patient=user)
 
         # Manual query param filters
@@ -371,9 +389,10 @@ class ReportViewSet(viewsets.ModelViewSet):
         if self.action == 'destroy':
             return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
         if self.action == 'verify':
+            return [permissions.IsAuthenticated(), IsCenterAdmin()]
+        if self.action == 'mark_delivered':
             return [permissions.IsAuthenticated(), IsCenterStaff()]
-        if self.action == 'print_data':
-            return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
+        # print_data: any authenticated user (patients filtered by get_queryset)
         return [permissions.IsAuthenticated()]
 
     def perform_destroy(self, instance):
@@ -433,3 +452,34 @@ class ReportViewSet(viewsets.ModelViewSet):
         report = self.get_object()
         serializer = ReportPrintSerializer(report, context={'request': request})
         return Response(serializer.data)
+
+    @extend_schema(
+        tags=['Reports'],
+        summary='Mark report as delivered',
+        description=(
+            'Transitions a VERIFIED report to DELIVERED status. '
+            'Called automatically after the report is printed.'
+        ),
+        request=None,
+        responses={200: ReportSerializer},
+    )
+    @action(detail=True, methods=['post'], url_path='mark-delivered')
+    def mark_delivered(self, request, pk=None):
+        report = self.get_object()
+        if report.status == Report.Status.DELIVERED:
+            return Response(
+                {'detail': 'Report is already delivered.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if report.status != Report.Status.VERIFIED:
+            return Response(
+                {'detail': 'Only verified reports can be marked as delivered.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        report.status = Report.Status.DELIVERED
+        report.save(update_fields=['status', 'updated_at'])
+        logger.info(
+            'Report marked as delivered',
+            extra={'report_id': report.id, 'delivered_by': request.user.id},
+        )
+        return Response(ReportSerializer(report).data)

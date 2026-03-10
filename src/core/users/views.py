@@ -139,7 +139,7 @@ class PatientViewSet(viewsets.ModelViewSet):
         return PatientSerializer
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'create'):
             return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
         return [permissions.IsAuthenticated(), IsCenterStaff()]
 

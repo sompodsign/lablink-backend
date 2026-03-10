@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.tenants.permissions import IsCenterAdmin, IsCenterStaff
+from core.tenants.permissions import IsCenterAdmin, IsCenterStaff, IsCenterStaffOrDoctor
 
 from .models import Doctor, Staff
 from .serializers import (
@@ -74,8 +74,8 @@ class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
     def get_permissions(self):
-        if self.action == "activity":
-            return [permissions.IsAuthenticated(), IsCenterStaff()]
+        if self.action in ('list', 'retrieve'):
+            return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
         return [permissions.IsAuthenticated(), IsCenterStaff()]
 
     @extend_schema(

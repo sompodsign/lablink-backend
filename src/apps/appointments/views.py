@@ -6,7 +6,7 @@ from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from core.tenants.permissions import IsCenterDoctor, IsCenterStaff, IsCenterStaffOrDoctor
+from core.tenants.permissions import IsCenterDoctor, IsCenterStaffOrDoctor
 
 from .models import Appointment
 from .serializers import AppointmentSerializer, ConsultationUpdateSerializer
@@ -85,7 +85,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
         if self.action in ('update', 'partial_update', 'destroy'):
-            return [permissions.IsAuthenticated(), IsCenterStaff()]
+            return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
         if self.action == 'consult':
             return [permissions.IsAuthenticated(), IsCenterDoctor()]
         if self.action == 'today':

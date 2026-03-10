@@ -121,12 +121,14 @@ def make_report(test_order, test_type, **kwargs):
     )
 
 
-def make_report_template(test_type, fields=None):
+def make_report_template(test_type, center, fields=None):
     if fields is None:
         fields = [
             {"name": "Hemoglobin", "unit": "g/dL", "ref_range": "13.5-17.5"},
         ]
-    return ReportTemplate.objects.create(test_type=test_type, fields=fields)
+    return ReportTemplate.objects.create(
+        test_type=test_type, center=center, fields=fields,
+    )
 
 
 # ── Auth Helpers ──────────────────────────────────────────────────

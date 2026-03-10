@@ -78,8 +78,10 @@ class DiagnosticModelTests(TestCase):
         self.assertIn("Report", result)
 
     def test_report_template_str(self):
-        template = make_report_template(self.test_type)
-        self.assertIn("CBC", str(template))
+        template = make_report_template(self.test_type, self.center)
+        result = str(template)
+        self.assertIn("CBC", result)
+        self.assertIn("Center A", result)
 
     def test_referring_doctor_str(self):
         doc = ReferringDoctor.objects.create(
@@ -146,7 +148,7 @@ class DiagnosticSerializerTests(TestCase):
         self.assertEqual(serializer.data["test_type_details"]["name"], "CBC")
 
     def test_report_template_serializer_fields(self):
-        template = make_report_template(self.test_type)
+        template = make_report_template(self.test_type, self.center)
         serializer = ReportTemplateSerializer(template)
         data = serializer.data
         self.assertIn("test_type_name", data)
@@ -619,6 +621,52 @@ class ReportViewTests(APITestCase):
         for r in response.data["results"]:
             self.assertEqual(r["patient_name"], "Pat Ient")
 
+    def test_mark_delivered_verified_report(self):
+        order = make_test_order(
+            self.patient,
+            self.center,
+            self.test_type,
+            self.lab_tech_user,
+        )
+        report = make_report(order, self.test_type, status=Report.Status.VERIFIED)
+        self._auth(self.staff_user)
+        response = self.client.post(
+            f"/api/diagnostics/reports/{report.id}/mark-delivered/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        report.refresh_from_db()
+        self.assertEqual(report.status, Report.Status.DELIVERED)
+
+    def test_mark_delivered_draft_report_rejected(self):
+        order = make_test_order(
+            self.patient,
+            self.center,
+            self.test_type,
+            self.lab_tech_user,
+        )
+        report = make_report(order, self.test_type)
+        self._auth(self.staff_user)
+        response = self.client.post(
+            f"/api/diagnostics/reports/{report.id}/mark-delivered/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        report.refresh_from_db()
+        self.assertEqual(report.status, Report.Status.DRAFT)
+
+    def test_mark_delivered_already_delivered_rejected(self):
+        order = make_test_order(
+            self.patient,
+            self.center,
+            self.test_type,
+            self.lab_tech_user,
+        )
+        report = make_report(order, self.test_type, status=Report.Status.DELIVERED)
+        self._auth(self.staff_user)
+        response = self.client.post(
+            f"/api/diagnostics/reports/{report.id}/mark-delivered/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class ReferringDoctorViewTests(APITestCase):
     def setUp(self):
@@ -665,16 +713,34 @@ class ReportTemplateViewTests(APITestCase):
         self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
 
     def test_list_report_templates(self):
-        make_report_template(self.test_type)
+        make_report_template(self.test_type, self.center)
         self._auth()
         response = self.client.get("/api/diagnostics/report-templates/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(response.data["results"]), 1)
 
     def test_filter_by_test_type(self):
-        make_report_template(self.test_type)
+        make_report_template(self.test_type, self.center)
         self._auth()
         response = self.client.get(
             f"/api/diagnostics/report-templates/?test_type={self.test_type.id}",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["results"]), 1)
+
+    def test_templates_scoped_to_tenant(self):
+        """Templates from center B must not be visible to center A staff."""
+        _center_b = make_center("Center B", "center-b")
+        # Both centers get auto-created templates via signal.
+        # Manually create one more for center A to be thorough.
+        make_report_template(
+            make_test_type("Custom Test", "100.00"),
+            self.center,
+        )
+
+        self._auth()
+        response = self.client.get("/api/diagnostics/report-templates/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Every template returned must belong to center A, not center B
+        for template in response.data["results"]:
+            self.assertEqual(template["center"], self.center.id)

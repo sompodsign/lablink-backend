@@ -38,13 +38,14 @@ class ReportTemplateSerializer(serializers.ModelSerializer):
         model = ReportTemplate
         fields = [
             'id',
+            'center',
             'test_type',
             'test_type_name',
             'fields',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'center', 'created_at', 'updated_at']
 
 
 # ─── Referring Doctor ──────────────────────────────────────────────
@@ -135,6 +136,9 @@ class TestOrderCreateSerializer(serializers.ModelSerializer):
         request = self.context['request']
         validated_data['center'] = request.tenant
         validated_data['created_by'] = request.user
+        # Auto-set referring doctor name if the creator is a doctor
+        if hasattr(request.user, 'doctor_profile') and not validated_data.get('referring_doctor_name'):
+            validated_data['referring_doctor_name'] = request.user.get_full_name()
         return super().create(validated_data)
 
 
@@ -228,6 +232,7 @@ class ReportCreateSerializer(serializers.Serializer):
             result_text=validated_data.get('result_text', ''),
             result_data=validated_data.get('result_data', {}),
             file=validated_data.get('file'),
+            created_by=request.user,
         )
         return report
 
@@ -303,8 +308,8 @@ class ReportPrintSerializer(serializers.ModelSerializer):
         return obj.test_order.referring_doctor_name or ''
 
     def get_lab_technician(self, obj):
-        # Use verified_by first, then fall back to test_order.created_by
-        tech_user = obj.verified_by or obj.test_order.created_by
+        # Use report.created_by (the lab tech who authored the report)
+        tech_user = obj.created_by
         if not tech_user:
             return None
         staff = getattr(tech_user, 'staff_profile', None)

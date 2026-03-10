@@ -64,8 +64,9 @@ class ReportAdmin(admin.ModelAdmin):
 
 @admin.register(ReportTemplate)
 class ReportTemplateAdmin(admin.ModelAdmin):
-    list_display = ('test_type', 'created_at', 'updated_at')
-    search_fields = ('test_type__name',)
+    list_display = ('test_type', 'center', 'created_at', 'updated_at')
+    list_filter = ('center',)
+    search_fields = ('test_type__name', 'center__name')
 
 
 @admin.register(ReferringDoctor)

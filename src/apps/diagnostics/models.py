@@ -160,6 +160,14 @@ class Report(models.Model):
         blank=True,
         related_name='verified_reports',
     )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_reports',
+        help_text=_('Lab technician who created this report'),
+    )
     is_delivered_online = models.BooleanField(default=False)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -177,7 +185,7 @@ class Report(models.Model):
 
 
 class ReportTemplate(models.Model):
-    """Defines the expected result fields for a test type.
+    """Defines the expected result fields for a test type, per center.
 
     The `fields` JSON stores a list of field definitions, e.g.:
     [
@@ -186,10 +194,15 @@ class ReportTemplate(models.Model):
     ]
     """
 
-    test_type = models.OneToOneField(
+    center = models.ForeignKey(
+        'tenants.DiagnosticCenter',
+        on_delete=models.CASCADE,
+        related_name='report_templates',
+    )
+    test_type = models.ForeignKey(
         TestType,
         on_delete=models.CASCADE,
-        related_name='report_template',
+        related_name='report_templates',
     )
     fields = models.JSONField(
         help_text=_(
@@ -202,11 +215,12 @@ class ReportTemplate(models.Model):
 
     class Meta:
         db_table = 'apps_report_template'
+        unique_together = ('center', 'test_type')
         verbose_name = _('report template')
         verbose_name_plural = _('report templates')
 
     def __str__(self) -> str:
-        return f'Template for {self.test_type.name}'
+        return f'Template for {self.test_type.name} ({self.center.name})'
 
 
 class ReferringDoctor(models.Model):

@@ -1,10 +1,9 @@
-"""
-Data migration to seed ReportTemplate for every existing TestType.
-Each template defines the expected result fields (name, unit, ref_range)
-that auto-populate the report creation form.
-"""
-from django.db import migrations
+"""Default report template field definitions for Bangladeshi diagnostic tests.
 
+This module is used by:
+- The seed migration (0008_seed_report_templates) to populate initial data
+- The post_save signal on DiagnosticCenter to auto-create templates for new tenants
+"""
 
 # ────────────────────────────────────────────────────────────────────
 # Template field definitions keyed by TestType name
@@ -562,37 +561,3 @@ TEMPLATE_FIELDS = {
         {"name": "Impression", "unit": "", "ref_range": ""},
     ],
 }
-
-
-def seed_templates(apps, schema_editor):
-    TestType = apps.get_model('diagnostics', 'TestType')
-    ReportTemplate = apps.get_model('diagnostics', 'ReportTemplate')
-    DiagnosticCenter = apps.get_model('tenants', 'DiagnosticCenter')
-
-    centers = list(DiagnosticCenter.objects.all())
-
-    for test_type in TestType.objects.all():
-        fields = TEMPLATE_FIELDS.get(test_type.name)
-        if fields:
-            for center in centers:
-                ReportTemplate.objects.update_or_create(
-                    center=center,
-                    test_type=test_type,
-                    defaults={'fields': fields},
-                )
-
-
-def remove_templates(apps, schema_editor):
-    ReportTemplate = apps.get_model('diagnostics', 'ReportTemplate')
-    ReportTemplate.objects.all().delete()
-
-
-class Migration(migrations.Migration):
-
-    dependencies = [
-        ('diagnostics', '0007_referringdoctor_reporttemplate'),
-    ]
-
-    operations = [
-        migrations.RunPython(seed_templates, remove_templates),
-    ]
