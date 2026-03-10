@@ -1,4 +1,0 @@
-interface:
-  display_name: "DB Assistant"
-  short_description: "Inspect schema and run read-only SQL checks"
-  default_prompt: "Use $db to inspect schema and run a safe query for this request."

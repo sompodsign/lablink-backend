@@ -1,4 +1,0 @@
-interface:
-  display_name: "Push"
-  short_description: "Auto-commit all changes and push"
-  default_prompt: "Use this skill to stage all current changes, generate a commit message from the diff, commit, and push the current branch."
