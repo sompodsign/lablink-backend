@@ -75,6 +75,8 @@ class ReferringDoctorSerializer(serializers.ModelSerializer):
 class TestOrderSerializer(serializers.ModelSerializer):
     test_type_name = serializers.CharField(source='test_type.name', read_only=True)
     patient_name = serializers.SerializerMethodField()
+    has_report = serializers.SerializerMethodField()
+    report_id = serializers.SerializerMethodField()
 
     class Meta:
         model = TestOrder
@@ -91,6 +93,8 @@ class TestOrderSerializer(serializers.ModelSerializer):
             'status',
             'priority',
             'clinical_notes',
+            'has_report',
+            'report_id',
             'created_at',
             'updated_at',
         ]
@@ -98,6 +102,12 @@ class TestOrderSerializer(serializers.ModelSerializer):
 
     def get_patient_name(self, obj) -> str:
         return obj.patient.get_full_name()
+
+    def get_has_report(self, obj) -> bool:
+        return hasattr(obj, 'report')
+
+    def get_report_id(self, obj) -> int | None:
+        return obj.report.id if hasattr(obj, 'report') else None
 
 
 class TestOrderCreateSerializer(serializers.ModelSerializer):
@@ -207,21 +217,49 @@ class ReportSerializer(serializers.ModelSerializer):
 
 class ReportCreateSerializer(serializers.Serializer):
     """Lab technician creates a report by selecting a test type and patient directly.
-    A test order is auto-created behind the scenes."""
+    A test order is auto-created behind the scenes — unless an existing one is given."""
 
-    test_type = serializers.PrimaryKeyRelatedField(queryset=TestType.objects.all())
-    patient = serializers.PrimaryKeyRelatedField(
-        queryset=__import__('django.contrib.auth', fromlist=['get_user_model']).get_user_model().objects.all()
+    test_order = serializers.PrimaryKeyRelatedField(
+        queryset=TestOrder.objects.all(), required=False, allow_null=True,
     )
-    referring_doctor_name = serializers.CharField(required=False, allow_blank=True, default='')
-    result_text = serializers.CharField(required=False, allow_blank=True, default='')
+    test_type = serializers.PrimaryKeyRelatedField(
+        queryset=TestType.objects.all(), required=False,
+    )
+    patient = serializers.PrimaryKeyRelatedField(
+        queryset=__import__(
+            'django.contrib.auth', fromlist=['get_user_model'],
+        ).get_user_model().objects.all(),
+        required=False,
+    )
+    referring_doctor_name = serializers.CharField(
+        required=False, allow_blank=True, default='',
+    )
+    result_text = serializers.CharField(
+        required=False, allow_blank=True, default='',
+    )
     result_data = serializers.JSONField(required=False, default=dict)
-    file = serializers.FileField(required=False, allow_null=True, default=None)
+    file = serializers.FileField(
+        required=False, allow_null=True, default=None,
+    )
+
+    def validate_test_order(self, test_order):
+        if test_order is None:
+            return None
+        tenant = self.context['request'].tenant
+        if test_order.center_id != tenant.id:
+            raise serializers.ValidationError(
+                'Test order does not belong to this center.'
+            )
+        if hasattr(test_order, 'report'):
+            raise serializers.ValidationError(
+                'This test order already has a report.'
+            )
+        return test_order
 
     def validate_test_type(self, test_type):
         tenant = self.context['request'].tenant
         pricing = CenterTestPricing.objects.filter(
-            center=tenant, test_type=test_type, is_available=True
+            center=tenant, test_type=test_type, is_available=True,
         ).first()
         if not pricing:
             raise serializers.ValidationError(
@@ -229,19 +267,49 @@ class ReportCreateSerializer(serializers.Serializer):
             )
         return test_type
 
+    def validate(self, attrs):
+        test_order = attrs.get('test_order')
+        if test_order:
+            # Inherit from order; ignore manual patient/test_type/doctor
+            attrs['patient'] = test_order.patient
+            attrs['test_type'] = test_order.test_type
+            attrs['referring_doctor_name'] = (
+                test_order.referring_doctor_name or ''
+            )
+        else:
+            if not attrs.get('test_type'):
+                raise serializers.ValidationError(
+                    {'test_type': 'This field is required.'}
+                )
+            if not attrs.get('patient'):
+                raise serializers.ValidationError(
+                    {'patient': 'This field is required.'}
+                )
+        return attrs
+
     def create(self, validated_data):
         request = self.context['request']
         tenant = request.tenant
+        existing_order = validated_data.pop('test_order', None)
 
-        # Auto-create a test order
-        test_order = TestOrder.objects.create(
-            patient=validated_data['patient'],
-            center=tenant,
-            test_type=validated_data['test_type'],
-            referring_doctor_name=validated_data.get('referring_doctor_name', ''),
-            created_by=request.user,
-            status=TestOrder.Status.COMPLETED,
-        )
+        if existing_order:
+            test_order = existing_order
+            # Mark the order as completed if it isn't already
+            if test_order.status != TestOrder.Status.COMPLETED:
+                test_order.status = TestOrder.Status.COMPLETED
+                test_order.save(update_fields=['status'])
+        else:
+            # Auto-create a test order (original behaviour)
+            test_order = TestOrder.objects.create(
+                patient=validated_data['patient'],
+                center=tenant,
+                test_type=validated_data['test_type'],
+                referring_doctor_name=validated_data.get(
+                    'referring_doctor_name', '',
+                ),
+                created_by=request.user,
+                status=TestOrder.Status.COMPLETED,
+            )
 
         # Auto-calculate derived fields, then flag all values
         result_data = validated_data.get('result_data', {})

@@ -9,6 +9,7 @@ from apps.diagnostics.models import Report, TestOrder
 from helpers.test_factories import (
     jwt_auth_header,
     make_center,
+    make_doctor,
     make_patient,
     make_pricing,
     make_report,
@@ -207,3 +208,191 @@ class AnalyticsViewSetTest(TestCase):
     def test_unauthenticated_denied(self):
         resp = self.client.get('/api/diagnostics/analytics/revenue-by-test/')
         self.assertEqual(resp.status_code, 401)
+
+
+class DoctorReportAccessTest(TestCase):
+    """Tests that doctors can view and print reports for their referred patients."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.center = make_center()
+        self.tt = make_test_type('CBC', '500.00')
+        make_pricing(self.center, self.tt, '500.00')
+        self.patient = make_patient('p1', self.center)
+
+        # Doctor user
+        self.doc_user = make_user(
+            'doc1', first_name='Dr. Test', last_name='Doctor',
+        )
+        make_doctor(self.doc_user, self.center)
+        self.auth = jwt_auth_header(self.doc_user)
+
+        # Create a report referred by this doctor
+        self.order = make_test_order(
+            self.patient, self.center, self.tt,
+            status=TestOrder.Status.COMPLETED,
+            referring_doctor_name='Dr. Test Doctor',
+        )
+        self.report = make_report(
+            self.order, self.tt,
+            result_data={
+                'Hemoglobin': {
+                    'value': '14.5',
+                    'unit': 'g/dL',
+                    'ref_range': '13.5-17.5',
+                },
+            },
+        )
+
+    def test_doctor_can_list_referred_reports(self):
+        resp = self.client.get('/api/diagnostics/reports/', **self.auth)
+        self.assertEqual(resp.status_code, 200)
+        results = resp.data.get('results', resp.data)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['id'], self.report.id)
+
+    def test_doctor_cannot_see_unrelated_reports(self):
+        # Create a report referred by a different doctor
+        other_order = make_test_order(
+            self.patient, self.center, self.tt,
+            status=TestOrder.Status.COMPLETED,
+            referring_doctor_name='Dr. Other Person',
+        )
+        make_report(other_order, self.tt)
+
+        resp = self.client.get('/api/diagnostics/reports/', **self.auth)
+        self.assertEqual(resp.status_code, 200)
+        results = resp.data.get('results', resp.data)
+        # Should only see their own referred report
+        self.assertEqual(len(results), 1)
+
+    def test_doctor_can_retrieve_referred_report(self):
+        resp = self.client.get(
+            f'/api/diagnostics/reports/{self.report.id}/', **self.auth,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['id'], self.report.id)
+
+    def test_doctor_can_access_print_data(self):
+        resp = self.client.get(
+            f'/api/diagnostics/reports/{self.report.id}/print-data/',
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('result_data', resp.data)
+        self.assertIn('center', resp.data)
+
+    def test_doctor_cannot_create_report(self):
+        resp = self.client.post(
+            '/api/diagnostics/reports/',
+            {
+                'test_type': self.tt.id,
+                'patient': self.patient.id,
+                'result_text': 'test',
+            },
+            format='json',
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_doctor_cannot_update_report(self):
+        resp = self.client.patch(
+            f'/api/diagnostics/reports/{self.report.id}/',
+            {'result_text': 'modified'},
+            format='json',
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_doctor_cannot_delete_report(self):
+        resp = self.client.delete(
+            f'/api/diagnostics/reports/{self.report.id}/', **self.auth,
+        )
+        self.assertEqual(resp.status_code, 403)
+
+
+class LinkedReportCreationTest(TestCase):
+    """Tests for creating reports linked to existing test orders."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.center = make_center()
+        self.tt = make_test_type('CBC', '500.00')
+        make_pricing(self.center, self.tt, '500.00')
+        self.patient = make_patient('p1', self.center)
+
+        # Lab tech
+        self.tech_user = make_user('tech1')
+        make_staff(self.tech_user, self.center, role=Staff.Role.LAB_TECHNICIAN)
+        self.auth = jwt_auth_header(self.tech_user)
+
+        # Doctor + order
+        self.doc_user = make_user(
+            'doc1', first_name='Dr. Test', last_name='Doctor',
+        )
+        make_doctor(self.doc_user, self.center)
+        self.order = make_test_order(
+            self.patient, self.center, self.tt,
+            status=TestOrder.Status.PENDING,
+            referring_doctor_name='Dr. Test Doctor',
+        )
+
+    def test_linked_report_inherits_from_order(self):
+        resp = self.client.post(
+            '/api/diagnostics/reports/',
+            {'test_order': self.order.id, 'result_text': 'Normal'},
+            format='json',
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 201)
+        report = Report.objects.get(id=resp.data['id'])
+        self.assertEqual(report.test_order_id, self.order.id)
+        self.assertEqual(report.test_type_id, self.tt.id)
+        self.assertEqual(
+            report.test_order.referring_doctor_name, 'Dr. Test Doctor',
+        )
+
+    def test_linked_report_marks_order_completed(self):
+        self.client.post(
+            '/api/diagnostics/reports/',
+            {'test_order': self.order.id, 'result_text': 'Normal'},
+            format='json',
+            **self.auth,
+        )
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, TestOrder.Status.COMPLETED)
+
+    def test_cannot_create_duplicate_report_for_order(self):
+        # First report succeeds
+        self.client.post(
+            '/api/diagnostics/reports/',
+            {'test_order': self.order.id, 'result_text': 'Normal'},
+            format='json',
+            **self.auth,
+        )
+        # Second report fails
+        resp = self.client.post(
+            '/api/diagnostics/reports/',
+            {'test_order': self.order.id, 'result_text': 'Duplicate'},
+            format='json',
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_doctor_sees_linked_report(self):
+        # Lab tech creates report from doctor's order
+        self.client.post(
+            '/api/diagnostics/reports/',
+            {'test_order': self.order.id, 'result_text': 'Normal'},
+            format='json',
+            **self.auth,
+        )
+        # Doctor checks their reports
+        doc_auth = jwt_auth_header(self.doc_user)
+        resp = self.client.get('/api/diagnostics/reports/', **doc_auth)
+        self.assertEqual(resp.status_code, 200)
+        results = resp.data.get('results', resp.data)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(
+            results[0]['referring_doctor_name'], 'Dr. Test Doctor',
+        )

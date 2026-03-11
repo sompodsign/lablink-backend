@@ -245,9 +245,23 @@ class TestOrderViewSet(viewsets.ModelViewSet):
             qs = qs.filter(referring_doctor_name__iexact=user.get_full_name())
         elif not hasattr(user, 'staff_profile'):
             qs = qs.filter(patient=user)
-        status_filter = self.request.query_params.get('status')
-        if status_filter:
+
+        params = self.request.query_params
+        if status_filter := params.get('status'):
             qs = qs.filter(status=status_filter)
+        if patient_id := params.get('patient'):
+            qs = qs.filter(patient_id=patient_id)
+        if test_type_id := params.get('test_type'):
+            qs = qs.filter(test_type_id=test_type_id)
+
+        ordering = params.get('ordering', '-created_at')
+        allowed = {
+            'created_at', '-created_at', 'priority', '-priority',
+            'status', '-status',
+        }
+        if ordering in allowed:
+            qs = qs.order_by(ordering)
+
         return qs
 
     def get_serializer_class(self):

@@ -76,10 +76,29 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
         if hasattr(user, 'doctor_profile'):
-            return qs.filter(doctor=user.doctor_profile)
-        if hasattr(user, 'staff_profile'):
-            return qs
-        return qs.filter(patient=user)
+            qs = qs.filter(doctor=user.doctor_profile)
+        elif hasattr(user, 'staff_profile'):
+            pass  # staff see all
+        else:
+            qs = qs.filter(patient=user)
+
+        params = self.request.query_params
+        if patient_id := params.get('patient'):
+            qs = qs.filter(patient_id=patient_id)
+        if status_val := params.get('status'):
+            qs = qs.filter(status=status_val)
+        if date_val := params.get('date'):
+            qs = qs.filter(date=date_val)
+
+        ordering = params.get('ordering', '-date')
+        allowed = {
+            'date', '-date', 'time', '-time',
+            'status', '-status',
+        }
+        if ordering in allowed:
+            qs = qs.order_by(ordering)
+
+        return qs
 
     def get_permissions(self):
         if self.action == 'create':
