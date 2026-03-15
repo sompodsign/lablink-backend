@@ -1,10 +1,12 @@
 import logging
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from django.db.models import Q
 from drf_spectacular.utils import OpenApiExample, extend_schema, extend_schema_view
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from core.tenants.permissions import IsCenterStaff, IsCenterStaffOrDoctor
 from core.users.serializers import (
@@ -15,6 +17,95 @@ from core.users.serializers import (
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+APPROVAL_MESSAGES = {
+    User.ApprovalStatus.PENDING: 'Your account is pending admin approval. Please wait for activation.',
+    User.ApprovalStatus.DECLINED: 'Your account request has been declined. Please contact the administrator.',
+}
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary='Obtain JWT token pair',
+    description='Authenticate with username or email and password.',
+)
+class CustomTokenObtainView(APIView):
+    """Custom login that checks approval_status before issuing tokens."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        username = request.data.get('username', '')
+        password = request.data.get('password', '')
+
+        if not username or not password:
+            return Response(
+                {'detail': 'Username and password are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = authenticate(request, username=username, password=password)
+
+        if user is None:
+            # Check if user exists but has approval issue
+            try:
+                lookup = User.objects.get(
+                    Q(username=username) | Q(email=username),
+                )
+            except User.DoesNotExist:
+                return Response(
+                    {'detail': 'Invalid credentials.'},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+
+            # User exists — check approval status
+            if lookup.approval_status != User.ApprovalStatus.APPROVED:
+                msg = APPROVAL_MESSAGES.get(
+                    lookup.approval_status,
+                    'Account access denied.',
+                )
+                return Response(
+                    {
+                        'detail': msg,
+                        'approval_status': lookup.approval_status,
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            if not lookup.is_active:
+                return Response(
+                    {
+                        'detail': 'Your account has been deactivated by an administrator.',
+                        'approval_status': 'DEACTIVATED',
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            # Wrong password
+            return Response(
+                {'detail': 'Invalid credentials.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # User authenticated — check approval status
+        if user.approval_status != User.ApprovalStatus.APPROVED:
+            msg = APPROVAL_MESSAGES.get(
+                user.approval_status, 'Account access denied.',
+            )
+            return Response(
+                {
+                    'detail': msg,
+                    'approval_status': user.approval_status,
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Issue tokens
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+        })
 
 
 @extend_schema(

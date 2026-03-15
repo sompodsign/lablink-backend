@@ -12,8 +12,11 @@ from .models import Doctor, Staff
 from .serializers import (
     DiagnosticCenterSerializer,
     DoctorActivitySerializer,
+    DoctorCreateSerializer,
     DoctorManagementSerializer,
+    StaffCreateSerializer,
     StaffSerializer,
+    StaffUpdateSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,11 +62,34 @@ class CurrentTenantView(APIView):
         summary="Get doctor detail",
         description="Returns a single doctor profile with specialization and bio.",
     ),
+    create=extend_schema(
+        tags=["Doctors"],
+        summary="Register a new doctor",
+        description=(
+            "Admin creates a new doctor account and links it to the current center. "
+            "A User record is auto-created with a generated username (dr_first_last)."
+        ),
+        request=DoctorCreateSerializer,
+        responses={201: DoctorManagementSerializer},
+    ),
+    partial_update=extend_schema(
+        tags=["Doctors"],
+        summary="Update doctor profile",
+        description="Admin updates a doctor's specialization, designation, or bio.",
+    ),
+    destroy=extend_schema(
+        tags=["Doctors"],
+        summary="Remove doctor from center",
+        description=(
+            "Admin removes a doctor from the current center. "
+            "This only removes the M2M relationship — the doctor and user records are preserved."
+        ),
+    ),
 )
-class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
-    """Staff manage doctors associated with their center."""
+class DoctorManagementViewSet(viewsets.ModelViewSet):
+    """Admin manages doctors associated with their center (full CRUD)."""
 
-    serializer_class = DoctorManagementSerializer
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_queryset(self):
         tenant = self.request.tenant
@@ -73,10 +99,40 @@ class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
             .order_by("user__first_name")
         )
 
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return DoctorCreateSerializer
+        return DoctorManagementSerializer
+
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'activity'):
             return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
-        return [permissions.IsAuthenticated(), IsCenterStaff()]
+        return [permissions.IsAuthenticated(), IsCenterAdmin()]
+
+    def create(self, request, *args, **kwargs):
+        serializer = DoctorCreateSerializer(
+            data=request.data,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        doctor = serializer.save()
+        logger.info(
+            'Doctor created and linked to center',
+            extra={'doctor_id': doctor.id, 'center_id': request.tenant.id},
+        )
+        return Response(
+            DoctorManagementSerializer(doctor).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def perform_destroy(self, instance):
+        """Remove doctor from center only — preserve User and Doctor records."""
+        tenant = self.request.tenant
+        instance.centers.remove(tenant)
+        logger.info(
+            'Doctor removed from center',
+            extra={'doctor_id': instance.id, 'center_id': tenant.id},
+        )
 
     @extend_schema(
         tags=["Doctors"],
@@ -211,13 +267,111 @@ class DoctorManagementViewSet(viewsets.ReadOnlyModelViewSet):
         tags=["Staff"],
         summary="Get staff detail",
     ),
+    create=extend_schema(
+        tags=["Staff"],
+        summary="Add new staff member",
+        description=(
+            "Create a new user and assign them as staff at the current center "
+            "with the specified role (ADMIN, RECEPTIONIST, LAB_TECHNICIAN). "
+            "Also assigns the matching auth group."
+        ),
+        request=StaffCreateSerializer,
+        responses={201: StaffSerializer},
+    ),
+    partial_update=extend_schema(
+        tags=["Staff"],
+        summary="Update staff role",
+        description="Change a staff member's role. Also updates their auth group.",
+        request=StaffUpdateSerializer,
+        responses={200: StaffSerializer},
+    ),
+    destroy=extend_schema(
+        tags=["Staff"],
+        summary="Remove staff member",
+        description=(
+            "Remove a staff member from the center. "
+            "Deletes the Staff record but preserves the User account."
+        ),
+    ),
 )
-class StaffViewSet(viewsets.ReadOnlyModelViewSet):
-    """Staff listing for the current center (admin use)."""
+class StaffViewSet(viewsets.ModelViewSet):
+    """Staff CRUD for the current center (admin use)."""
 
     serializer_class = StaffSerializer
     permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StaffCreateSerializer
+        if self.action == 'partial_update':
+            return StaffUpdateSerializer
+        return StaffSerializer
 
     def get_queryset(self):
         tenant = self.request.tenant
         return Staff.objects.filter(center=tenant).select_related("user")
+
+    def create(self, request, *args, **kwargs):
+        serializer = StaffCreateSerializer(
+            data=request.data,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        staff = serializer.save()
+        logger.info(
+            'Staff member created',
+            extra={'staff_id': staff.id, 'center_id': request.tenant.id},
+        )
+        data = StaffSerializer(staff).data
+        # Include generated credentials so admin can share them
+        data['generated_username'] = staff.user.username
+        data['generated_password'] = serializer._generated_password
+        return Response(data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        """Remove staff record but preserve the User account."""
+        if instance.user == self.request.user:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('You cannot remove yourself.')
+        logger.info(
+            'Staff member removed',
+            extra={
+                'staff_id': instance.id,
+                'user_id': instance.user.id,
+                'center_id': self.request.tenant.id,
+            },
+        )
+        instance.delete()
+
+    @extend_schema(
+        tags=['Staff'],
+        summary='Toggle staff active status',
+        description=(
+            'Activate or deactivate a staff member. '
+            'Inactive users cannot log in.'
+        ),
+        request=None,
+        responses={200: StaffSerializer},
+    )
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        staff = self.get_object()
+        if staff.user == request.user:
+            return Response(
+                {'detail': 'You cannot deactivate yourself.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = staff.user
+        user.is_active = not user.is_active
+        user.save(update_fields=['is_active'])
+        action_label = 'activated' if user.is_active else 'deactivated'
+        logger.info(
+            'Staff member %s', action_label,
+            extra={
+                'staff_id': staff.id,
+                'user_id': user.id,
+                'center_id': request.tenant.id,
+            },
+        )
+        return Response(StaffSerializer(staff).data)

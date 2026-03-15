@@ -125,9 +125,65 @@ class UserSerializerTests(TestCase):
         self.assertIsNotNone(center_data)
 
     def test_user_serializer_get_center_none(self):
-        user = make_user("gc_none")
+        user = make_user('gc_none')
         serializer = UserSerializer(user)
-        self.assertIsNone(serializer.data["center"])
+        self.assertIsNone(serializer.data['center'])
+
+    def test_role_display_admin(self):
+        user = make_user('rd_admin')
+        make_staff(user, self.center, Staff.Role.ADMIN)
+        serializer = UserSerializer(user)
+        self.assertEqual(serializer.data['role_display'], 'Admin')
+
+    def test_role_display_lab_technician(self):
+        user = make_user('rd_labtech')
+        make_staff(user, self.center, Staff.Role.LAB_TECHNICIAN)
+        serializer = UserSerializer(user)
+        self.assertEqual(serializer.data['role_display'], 'Lab Technician')
+
+    def test_role_display_receptionist(self):
+        user = make_user('rd_recep')
+        make_staff(user, self.center, Staff.Role.RECEPTIONIST)
+        serializer = UserSerializer(user)
+        self.assertEqual(serializer.data['role_display'], 'Receptionist')
+
+    def test_role_display_doctor(self):
+        user = make_user('rd_doc')
+        make_doctor(user, self.center)
+        serializer = UserSerializer(user)
+        self.assertEqual(serializer.data['role_display'], 'Doctor')
+
+    def test_role_display_superuser(self):
+        user = make_user('rd_super', is_superuser=True)
+        serializer = UserSerializer(user)
+        self.assertEqual(serializer.data['role_display'], 'Super Admin')
+
+    def test_role_display_plain_user(self):
+        user = make_user('rd_plain')
+        serializer = UserSerializer(user)
+        self.assertEqual(serializer.data['role_display'], '')
+
+    def test_role_display_patient(self):
+        patient = make_patient('rd_patient', self.center)
+        serializer = UserSerializer(patient)
+        self.assertEqual(serializer.data['role_display'], '')
+
+    def test_registered_user_is_approved(self):
+        """Users created via UserSerializer (registration) are approved (patient-only)."""
+        data = {
+            'password': 'SecurePass123!',
+            'confirm_password': 'SecurePass123!',
+            'email': 'newreg@example.com',
+            'first_name': 'New',
+            'last_name': 'Reg',
+        }
+        serializer = UserSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        self.assertTrue(user.is_active)
+        self.assertEqual(user.approval_status, User.ApprovalStatus.APPROVED)
+        self.assertEqual(user.username, 'new_reg')
+        self.assertTrue(hasattr(user, 'patient_profile'))
 
     def test_patient_registration_auto_generates_username(self):
         from unittest.mock import MagicMock
@@ -169,22 +225,25 @@ class UserSerializerTests(TestCase):
 class RegisterViewTests(APITestCase):
     def test_register_new_user(self):
         payload = {
-            "username": "newuser",
             "password": "securepass123",
+            "confirm_password": "securepass123",
             "email": "new@example.com",
             "first_name": "New",
             "last_name": "User",
         }
         response = self.client.post("/api/auth/register/", payload)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["username"], "newuser")
+        self.assertEqual(response.data["username"], "new_user")
 
-    def test_register_missing_username_fails(self):
+    def test_register_missing_required_fields_fails(self):
         payload = {
             "password": "securepass123",
+            "confirm_password": "securepass123",
         }
         response = self.client.post("/api/auth/register/", payload)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", response.data)
+        self.assertIn("first_name", response.data)
 
 
 class UserProfileViewTests(APITestCase):

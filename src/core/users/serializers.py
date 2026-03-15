@@ -130,24 +130,59 @@ class PatientRegistrationSerializer(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
+    confirm_password = serializers.CharField(write_only=True, required=False)
     groups = serializers.SlugRelatedField(
         many=True, read_only=True, slug_field='name',
     )
     staff_role = serializers.SerializerMethodField()
+    role_display = serializers.SerializerMethodField()
     center = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
-            'id', 'username', 'email', 'password', 'first_name',
-            'last_name', 'phone_number', 'groups', 'staff_role',
-            'is_superuser', 'center',
+            'id', 'username', 'email', 'password', 'confirm_password',
+            'first_name', 'last_name', 'phone_number', 'groups',
+            'staff_role', 'role_display', 'is_superuser', 'is_active',
+            'approval_status', 'center',
         )
-        read_only_fields = ('groups', 'staff_role', 'is_superuser', 'center')
+        read_only_fields = (
+            'username', 'groups', 'staff_role', 'role_display',
+            'is_superuser', 'is_active', 'approval_status', 'center',
+        )
+        extra_kwargs = {
+            'email': {'required': True},
+            'first_name': {'required': True},
+            'last_name': {'required': True},
+        }
+
+    def validate(self, attrs):
+        if self.instance is None:  # create only
+            pw = attrs.get('password')
+            cpw = attrs.get('confirm_password')
+            if not pw:
+                raise serializers.ValidationError(
+                    {'password': 'This field is required.'},
+                )
+            if pw != cpw:
+                raise serializers.ValidationError(
+                    {'confirm_password': 'Passwords do not match.'},
+                )
+        attrs.pop('confirm_password', None)
+        return attrs
 
     def get_staff_role(self, obj) -> str:
         if hasattr(obj, 'staff_profile'):
             return obj.staff_profile.role
+        return ''
+
+    def get_role_display(self, obj) -> str:
+        if obj.is_superuser:
+            return 'Super Admin'
+        if hasattr(obj, 'staff_profile'):
+            return obj.staff_profile.get_role_display()
+        if hasattr(obj, 'doctor_profile'):
+            return 'Doctor'
         return ''
 
     def get_center(self, obj) -> dict | None:
@@ -172,11 +207,26 @@ class UserSerializer(serializers.ModelSerializer):
         return None
 
     def create(self, validated_data):
-        return User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data.get('email', ''),
+        # Auto-generate username from first + last name
+        first = validated_data['first_name'].lower().replace(' ', '_')
+        last = validated_data['last_name'].lower().replace(' ', '_')
+        base_username = f'{first}_{last}'
+        username = base_username
+        counter = 1
+        while User.objects.filter(username=username).exists():
+            username = f'{base_username}_{counter}'
+            counter += 1
+
+        user = User.objects.create_user(
+            username=username,
+            email=validated_data['email'],
             password=validated_data['password'],
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name'],
             phone_number=validated_data.get('phone_number', ''),
         )
+
+        # Auto-create patient profile
+        PatientProfile.objects.create(user=user)
+
+        return user

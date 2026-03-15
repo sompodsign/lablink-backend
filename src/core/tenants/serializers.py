@@ -73,6 +73,54 @@ class DoctorManagementSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'name', 'email', 'username']
 
 
+class DoctorCreateSerializer(serializers.Serializer):
+    """Creates a User + Doctor record and links to the tenant center."""
+
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+    specialization = serializers.CharField(max_length=255)
+    designation = serializers.CharField(max_length=255)
+    bio = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate_email(self, value):
+        if value and User.objects.filter(email=value).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return value
+
+    def create(self, validated_data):
+        from django.db import transaction
+
+        tenant = self.context['request'].tenant
+        with transaction.atomic():
+            username = f'dr_{validated_data["first_name"].lower()}_{validated_data["last_name"].lower()}'
+            # Ensure unique username
+            base_username = username
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f'{base_username}_{counter}'
+                counter += 1
+
+            user = User.objects.create_user(
+                username=username,
+                email=validated_data.get('email', ''),
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                phone_number=validated_data.get('phone_number', ''),
+            )
+
+            doctor = Doctor.objects.create(
+                user=user,
+                specialization=validated_data['specialization'],
+                designation=validated_data['designation'],
+                bio=validated_data.get('bio', ''),
+            )
+            doctor.centers.add(tenant)
+
+        return doctor
+
+
 class DoctorActivitySerializer(serializers.Serializer):
     """
     Summary of a doctor's recent activity at the current center.
@@ -86,10 +134,149 @@ class DoctorActivitySerializer(serializers.Serializer):
 
 
 class StaffSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
     name = serializers.CharField(source='user.get_full_name', read_only=True)
     email = serializers.EmailField(source='user.email', read_only=True)
+    phone_number = serializers.CharField(
+        source='user.phone_number', read_only=True,
+    )
+    is_active = serializers.BooleanField(
+        source='user.is_active', read_only=True,
+    )
     role_display = serializers.CharField(source='get_role_display', read_only=True)
 
     class Meta:
         model = Staff
-        fields = ['id', 'name', 'email', 'role', 'role_display']
+        fields = [
+            'id', 'user_id', 'name', 'email', 'phone_number',
+            'role', 'role_display', 'is_active',
+        ]
+
+
+class StaffCreateSerializer(serializers.Serializer):
+    """Create a new user and assign them as staff at the current center."""
+
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=True)
+    phone_number = serializers.CharField(
+        max_length=20, required=False, allow_blank=True, default='',
+    )
+    role = serializers.ChoiceField(choices=Staff.Role.choices)
+
+    def validate_email(self, value):
+        if value and User.objects.filter(email=value).exists():
+            raise serializers.ValidationError(
+                'A user with this email already exists.',
+            )
+        return value
+
+    def create(self, validated_data):
+        from django.contrib.auth.models import Group
+        from django.db import transaction
+
+        tenant = self.context['request'].tenant
+        with transaction.atomic():
+            base_username = (
+                f'{validated_data["first_name"].lower()}'
+                f'_{validated_data["last_name"].lower()}'
+            )
+            username = base_username
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f'{base_username}_{counter}'
+                counter += 1
+
+            import secrets
+
+            password = secrets.token_urlsafe(10)
+            self._generated_password = password
+            user = User.objects.create_user(
+                username=username,
+                email=validated_data['email'],
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                phone_number=validated_data.get('phone_number', ''),
+                password=password,
+                is_active=True,
+            )
+
+            role = validated_data['role']
+            staff = Staff.objects.create(
+                user=user, center=tenant, role=role,
+            )
+
+            # Assign the matching auth group
+            group_map = {
+                Staff.Role.ADMIN: 'LABLINK | ADMIN',
+                Staff.Role.LAB_TECHNICIAN: 'LABLINK | LAB_TECHNICIAN',
+                Staff.Role.RECEPTIONIST: 'LABLINK | RECEPTIONIST',
+            }
+            group_name = group_map.get(role)
+            if group_name:
+                group, _created = Group.objects.get_or_create(name=group_name)
+                user.groups.add(group)
+
+        # Send credentials email (outside transaction)
+        from django.core.mail import send_mail
+
+        role_label = Staff.Role(role).label
+        send_mail(
+            subject=f'Welcome to {tenant.name} — Your Account Credentials',
+            message=(
+                f'Hi {user.first_name},\n\n'
+                f'You have been added as a {role_label} '
+                f'at {tenant.name}.\n\n'
+                f'Your login credentials:\n'
+                f'  Username: {username}\n'
+                f'  Password: {password}\n\n'
+                f'Please change your password after first login.\n\n'
+                f'— {tenant.name} Team'
+            ),
+            from_email=None,  # uses DEFAULT_FROM_EMAIL
+            recipient_list=[user.email],
+            fail_silently=True,
+        )
+
+        return staff
+
+
+class StaffUpdateSerializer(serializers.ModelSerializer):
+    """Update a staff member's role."""
+
+    class Meta:
+        model = Staff
+        fields = ['role']
+
+    def update(self, instance, validated_data):
+        from django.contrib.auth.models import Group
+
+        old_role = instance.role
+        new_role = validated_data.get('role', old_role)
+
+        if old_role != new_role:
+            # Remove old auth group
+            group_map = {
+                Staff.Role.ADMIN: 'LABLINK | ADMIN',
+                Staff.Role.LAB_TECHNICIAN: 'LABLINK | LAB_TECHNICIAN',
+                Staff.Role.RECEPTIONIST: 'LABLINK | RECEPTIONIST',
+            }
+            old_group_name = group_map.get(old_role)
+            if old_group_name:
+                instance.user.groups.filter(name=old_group_name).delete()
+                instance.user.groups.remove(
+                    *Group.objects.filter(name=old_group_name),
+                )
+
+            # Add new auth group
+            new_group_name = group_map.get(new_role)
+            if new_group_name:
+                group, _created = Group.objects.get_or_create(
+                    name=new_group_name,
+                )
+                instance.user.groups.add(group)
+
+            instance.role = new_role
+            instance.save(update_fields=['role'])
+
+        return instance

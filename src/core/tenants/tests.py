@@ -525,6 +525,92 @@ class DoctorManagementViewTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    # ── CRUD Tests ──────────────────────────────────────────────────
+
+    def test_admin_can_create_doctor(self):
+        self._auth(self.admin_user)
+        payload = {
+            'first_name': 'Rina',
+            'last_name': 'Akter',
+            'email': 'rina@example.com',
+            'specialization': 'Cardiology',
+            'designation': 'Consultant',
+        }
+        response = self.client.post('/api/tenants/doctors/', payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['specialization'], 'Cardiology')
+        self.assertIn('id', response.data)
+
+    def test_admin_can_update_doctor(self):
+        self._auth(self.admin_user)
+        response = self.client.patch(
+            f'/api/tenants/doctors/{self.doctor.id}/',
+            {'specialization': 'Neurology'},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.doctor.refresh_from_db()
+        self.assertEqual(self.doctor.specialization, 'Neurology')
+
+    def test_admin_can_delete_doctor(self):
+        self._auth(self.admin_user)
+        response = self.client.delete(
+            f'/api/tenants/doctors/{self.doctor.id}/',
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        # Doctor still exists but is no longer linked to center
+        self.doctor.refresh_from_db()
+        self.assertFalse(self.doctor.centers.filter(id=self.center.id).exists())
+
+    def test_receptionist_cannot_create_doctor(self):
+        self._auth(self.staff_user)
+        payload = {
+            'first_name': 'Blocked',
+            'last_name': 'Doc',
+            'specialization': 'General',
+            'designation': 'Intern',
+        }
+        response = self.client.post('/api/tenants/doctors/', payload)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_receptionist_cannot_update_doctor(self):
+        self._auth(self.staff_user)
+        response = self.client.patch(
+            f'/api/tenants/doctors/{self.doctor.id}/',
+            {'specialization': 'Hacked'},
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_receptionist_cannot_delete_doctor(self):
+        self._auth(self.staff_user)
+        response = self.client.delete(
+            f'/api/tenants/doctors/{self.doctor.id}/',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_doctor_cannot_create_doctor(self):
+        self._auth(self.doctor_user)
+        payload = {
+            'first_name': 'Blocked',
+            'last_name': 'Doc',
+            'specialization': 'General',
+            'designation': 'Intern',
+        }
+        response = self.client.post('/api/tenants/doctors/', payload)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_create_doctor_duplicate_email_rejected(self):
+        self._auth(self.admin_user)
+        payload = {
+            'first_name': 'First',
+            'last_name': 'Doc',
+            'email': 'unique@example.com',
+            'specialization': 'General',
+            'designation': 'Intern',
+        }
+        self.client.post('/api/tenants/doctors/', payload)
+        response = self.client.post('/api/tenants/doctors/', payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class StaffViewTests(APITestCase):
     def setUp(self):
@@ -541,15 +627,112 @@ class StaffViewTests(APITestCase):
 
     def test_admin_can_list_staff(self):
         self._auth(self.admin_user)
-        response = self.client.get("/api/tenants/staff/")
+        response = self.client.get('/api/tenants/staff/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["results"]), 2)
+        self.assertEqual(len(response.data['results']), 2)
 
     def test_non_admin_denied(self):
         self._auth(self.receptionist_user)
-        response = self.client.get("/api/tenants/staff/")
+        response = self.client.get('/api/tenants/staff/')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_admin_can_create_staff(self):
+        self._auth(self.admin_user)
+        payload = {
+            'first_name': 'Kamal',
+            'last_name': 'Hossain',
+            'email': 'kamal@example.com',
+            'role': 'LAB_TECHNICIAN',
+        }
+        response = self.client.post('/api/tenants/staff/', payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['role'], 'LAB_TECHNICIAN')
+        self.assertEqual(response.data['role_display'], 'Lab Technician')
+        self.assertIn('Kamal', response.data['name'])
+
+        # Verify auth group was assigned
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.get(username='kamal_hossain')
+        self.assertTrue(
+            user.groups.filter(name='LABLINK | LAB_TECHNICIAN').exists(),
+        )
+
+    def test_admin_can_update_staff_role(self):
+        self._auth(self.admin_user)
+        staff_id = Staff.objects.get(user=self.receptionist_user).id
+        response = self.client.patch(
+            f'/api/tenants/staff/{staff_id}/',
+            {'role': 'LAB_TECHNICIAN'},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['role'], 'LAB_TECHNICIAN')
+
+    def test_admin_can_delete_staff(self):
+        self._auth(self.admin_user)
+        staff_id = Staff.objects.get(user=self.receptionist_user).id
+        response = self.client.delete(f'/api/tenants/staff/{staff_id}/')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        # Staff record gone, but User still exists
+        self.assertFalse(Staff.objects.filter(id=staff_id).exists())
+        from django.contrib.auth import get_user_model
+        self.assertTrue(
+            get_user_model().objects.filter(
+                username=self.receptionist_user.username,
+            ).exists(),
+        )
+
+    def test_create_staff_duplicate_email_fails(self):
+        self._auth(self.admin_user)
+        make_user('existing', email='taken@example.com')
+        response = self.client.post('/api/tenants/staff/', {
+            'first_name': 'New',
+            'last_name': 'User',
+            'email': 'taken@example.com',
+            'role': 'RECEPTIONIST',
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_can_toggle_staff_active(self):
+        self._auth(self.admin_user)
+        staff_id = Staff.objects.get(user=self.receptionist_user).id
+        # Deactivate
+        response = self.client.post(
+            f'/api/tenants/staff/{staff_id}/toggle-active/',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['is_active'])
+        # Activate
+        response = self.client.post(
+            f'/api/tenants/staff/{staff_id}/toggle-active/',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['is_active'])
+
+    def test_staff_create_sends_email(self):
+        from django.core import mail
+
+        self._auth(self.admin_user)
+        self.client.post('/api/tenants/staff/', {
+            'first_name': 'Email',
+            'last_name': 'Test',
+            'email': 'emailtest@example.com',
+            'role': 'RECEPTIONIST',
+        })
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('emailtest@example.com', mail.outbox[0].to)
+        self.assertIn('Username:', mail.outbox[0].body)
+        self.assertIn('Password:', mail.outbox[0].body)
+
+    def test_staff_create_requires_email(self):
+        self._auth(self.admin_user)
+        response = self.client.post('/api/tenants/staff/', {
+            'first_name': 'No',
+            'last_name': 'Email',
+            'role': 'RECEPTIONIST',
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('email', response.data)
 
 # ---------------------------------------------------------------------------
 # Patient Registration Tests (kept from original)

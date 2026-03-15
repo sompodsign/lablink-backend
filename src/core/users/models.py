@@ -5,7 +5,17 @@ from django.utils.translation import gettext_lazy as _
 
 
 class User(AbstractUser):
+    class ApprovalStatus(models.TextChoices):
+        PENDING = 'PENDING', _('Pending')
+        DECLINED = 'DECLINED', _('Declined')
+        APPROVED = 'APPROVED', _('Approved')
+
     phone_number = models.CharField(max_length=20, blank=True)
+    approval_status = models.CharField(
+        max_length=10,
+        choices=ApprovalStatus.choices,
+        default=ApprovalStatus.APPROVED,
+    )
 
 
 class PatientProfile(models.Model):

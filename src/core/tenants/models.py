@@ -122,6 +122,7 @@ class Staff(models.Model):
 
     class Meta:
         db_table = 'core_staff'
+        ordering = ['id']
         verbose_name = _('staff')
         verbose_name_plural = _('staff')
 

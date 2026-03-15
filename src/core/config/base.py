@@ -127,11 +127,20 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
+# Authentication backends — allow login with email or username
+AUTHENTICATION_BACKENDS = [
+    'core.users.backends.EmailOrUsernameBackend',
+]
+
 # JWT Configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=90),  # 3 months
     'REFRESH_TOKEN_LIFETIME': timedelta(days=180),  # 6 months
 }
+
+# Email Configuration (console backend for development)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'noreply@lablink.com.bd'
 
 # drf-spectacular Configuration
 SPECTACULAR_SETTINGS = {

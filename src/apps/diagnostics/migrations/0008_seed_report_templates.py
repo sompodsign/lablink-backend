@@ -567,19 +567,14 @@ TEMPLATE_FIELDS = {
 def seed_templates(apps, schema_editor):
     TestType = apps.get_model('diagnostics', 'TestType')
     ReportTemplate = apps.get_model('diagnostics', 'ReportTemplate')
-    DiagnosticCenter = apps.get_model('tenants', 'DiagnosticCenter')
-
-    centers = list(DiagnosticCenter.objects.all())
 
     for test_type in TestType.objects.all():
         fields = TEMPLATE_FIELDS.get(test_type.name)
         if fields:
-            for center in centers:
-                ReportTemplate.objects.update_or_create(
-                    center=center,
-                    test_type=test_type,
-                    defaults={'fields': fields},
-                )
+            ReportTemplate.objects.update_or_create(
+                test_type=test_type,
+                defaults={'fields': fields},
+            )
 
 
 def remove_templates(apps, schema_editor):
