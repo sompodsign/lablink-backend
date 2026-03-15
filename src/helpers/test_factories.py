@@ -11,10 +11,27 @@ from apps.diagnostics.models import (
     TestOrder,
     TestType,
 )
-from core.tenants.models import DiagnosticCenter, Doctor, Staff
+from core.tenants.models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from core.users.models import PatientProfile
 
 User = get_user_model()
+
+# ── Default permission sets ───────────────────────────────────────
+
+ALL_PERMISSIONS = None  # sentinel — means "all available permissions"
+
+ADMIN_PERMISSIONS = ALL_PERMISSIONS
+
+LAB_TECH_PERMISSIONS = [
+    'view_patients', 'view_reports', 'create_reports',
+    'manage_reports', 'view_test_orders', 'manage_test_orders',
+]
+
+RECEPTIONIST_PERMISSIONS = [
+    'view_patients', 'manage_patients',
+    'view_appointments', 'manage_appointments',
+    'view_payments',
+]
 
 
 # ── Object Factories ──────────────────────────────────────────────
@@ -40,7 +57,52 @@ def make_user(username, first_name="Test", last_name="User", phone="", **kwargs)
     )
 
 
-def make_staff(user, center, role=Staff.Role.RECEPTIONIST):
+def _get_or_create_role(center, role_name, permissions=None):
+    """Get or create a Role for the given center with specified permissions."""
+    role, created = Role.objects.get_or_create(
+        name=role_name,
+        center=center,
+        defaults={'is_system': role_name in ('Admin', 'Lab Technician', 'Receptionist')},
+    )
+    if created or permissions is not None:
+        if permissions is ALL_PERMISSIONS:
+            role.permissions.set(Permission.objects.all())
+        elif permissions is not None:
+            perm_objs = Permission.objects.filter(codename__in=permissions)
+            role.permissions.set(perm_objs)
+    return role
+
+
+def make_staff(user, center, role_name='Receptionist', permissions=None, role=None):
+    """Create a staff member with a named role.
+
+    Args:
+        user: The User instance.
+        center: The DiagnosticCenter instance.
+        role_name: Human-readable role name (e.g. 'Admin', 'Lab Technician').
+        permissions: List of permission codenames, or None for default.
+            Use ALL_PERMISSIONS sentinel for all permissions.
+    """
+    # Support `role=` kwarg as alias for `role_name=`
+    if role is not None:
+        role_name = role
+    # Map legacy Staff.Role values to new names
+    role_name_map = {
+        'ADMIN': 'Admin',
+        'LAB_TECHNICIAN': 'Lab Technician',
+        'RECEPTIONIST': 'Receptionist',
+    }
+    role_name = role_name_map.get(role_name, role_name)
+
+    if permissions is None:
+        perm_map = {
+            'Admin': ALL_PERMISSIONS,
+            'Lab Technician': LAB_TECH_PERMISSIONS,
+            'Receptionist': RECEPTIONIST_PERMISSIONS,
+        }
+        permissions = perm_map.get(role_name, [])
+
+    role = _get_or_create_role(center, role_name, permissions)
     return Staff.objects.create(user=user, center=center, role=role)
 
 

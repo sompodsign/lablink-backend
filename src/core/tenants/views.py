@@ -8,12 +8,14 @@ from rest_framework.views import APIView
 
 from core.tenants.permissions import IsCenterAdmin, IsCenterStaff, IsCenterStaffOrDoctor
 
-from .models import Doctor, Staff
+from .models import Doctor, Permission, Role, Staff
 from .serializers import (
     DiagnosticCenterSerializer,
     DoctorActivitySerializer,
     DoctorCreateSerializer,
     DoctorManagementSerializer,
+    PermissionSerializer,
+    RoleSerializer,
     StaffCreateSerializer,
     StaffSerializer,
     StaffUpdateSerializer,
@@ -49,6 +51,71 @@ class CurrentTenantView(APIView):
             {"error": "No diagnostic center found for this domain"},
             status=status.HTTP_404_NOT_FOUND,
         )
+
+
+# ── Role & Permission Views ──────────────────────────────────────
+
+
+@extend_schema(tags=["Permissions"])
+class PermissionListView(APIView):
+    """List all available permissions (for role management UI)."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    def get(self, request):
+        perms = Permission.objects.all()
+        return Response(PermissionSerializer(perms, many=True).data)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["Roles"], summary="List center roles"),
+    retrieve=extend_schema(tags=["Roles"], summary="Get role detail"),
+    create=extend_schema(
+        tags=["Roles"],
+        summary="Create a new role",
+        description="Admin creates a custom role with selected permissions.",
+    ),
+    partial_update=extend_schema(
+        tags=["Roles"],
+        summary="Update role",
+        description="Admin updates a role's name or permissions.",
+    ),
+    destroy=extend_schema(
+        tags=["Roles"],
+        summary="Delete role",
+        description="Admin deletes a custom role. System roles cannot be deleted.",
+    ),
+)
+class RoleViewSet(viewsets.ModelViewSet):
+    """CRUD for tenant-scoped roles. Admin only."""
+
+    serializer_class = RoleSerializer
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        tenant = self.request.tenant
+        return Role.objects.filter(center=tenant).prefetch_related('permissions')
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['request'] = self.request
+        return ctx
+
+    def perform_destroy(self, instance):
+        if instance.is_system:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('System roles cannot be deleted.')
+        if instance.staff_members.exists():
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError(
+                'Cannot delete a role that is assigned to staff members. '
+                'Reassign them first.',
+            )
+        instance.delete()
+
+
+# ── Doctor Views ─────────────────────────────────────────────────
 
 
 @extend_schema_view(
@@ -257,6 +324,9 @@ class DoctorManagementViewSet(viewsets.ModelViewSet):
         return Response(data)
 
 
+# ── Staff Views ──────────────────────────────────────────────────
+
+
 @extend_schema_view(
     list=extend_schema(
         tags=["Staff"],
@@ -272,8 +342,7 @@ class DoctorManagementViewSet(viewsets.ModelViewSet):
         summary="Add new staff member",
         description=(
             "Create a new user and assign them as staff at the current center "
-            "with the specified role (ADMIN, RECEPTIONIST, LAB_TECHNICIAN). "
-            "Also assigns the matching auth group."
+            "with the specified role."
         ),
         request=StaffCreateSerializer,
         responses={201: StaffSerializer},
@@ -281,7 +350,7 @@ class DoctorManagementViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(
         tags=["Staff"],
         summary="Update staff role",
-        description="Change a staff member's role. Also updates their auth group.",
+        description="Change a staff member's role.",
         request=StaffUpdateSerializer,
         responses={200: StaffSerializer},
     ),
@@ -310,7 +379,7 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         tenant = self.request.tenant
-        return Staff.objects.filter(center=tenant).select_related("user")
+        return Staff.objects.filter(center=tenant).select_related("user", "role")
 
     def create(self, request, *args, **kwargs):
         serializer = StaffCreateSerializer(
@@ -324,10 +393,18 @@ class StaffViewSet(viewsets.ModelViewSet):
             extra={'staff_id': staff.id, 'center_id': request.tenant.id},
         )
         data = StaffSerializer(staff).data
-        # Include generated credentials so admin can share them
         data['generated_username'] = staff.user.username
         data['generated_password'] = serializer._generated_password
         return Response(data, status=status.HTTP_201_CREATED)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = StaffUpdateSerializer(
+            instance, data=request.data, partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(StaffSerializer(instance).data)
 
     def perform_destroy(self, instance):
         """Remove staff record but preserve the User account."""

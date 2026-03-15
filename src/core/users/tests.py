@@ -88,9 +88,9 @@ class UserSerializerTests(TestCase):
 
     def test_user_serializer_get_staff_role_for_staff(self):
         user = make_user("sr_staff")
-        make_staff(user, self.center, Staff.Role.ADMIN)
+        make_staff(user, self.center, 'Admin')
         serializer = UserSerializer(user)
-        self.assertEqual(serializer.data["staff_role"], "ADMIN")
+        self.assertEqual(serializer.data["staff_role"], "Admin")
 
     def test_user_serializer_get_staff_role_for_non_staff(self):
         user = make_user("sr_plain")
@@ -131,19 +131,19 @@ class UserSerializerTests(TestCase):
 
     def test_role_display_admin(self):
         user = make_user('rd_admin')
-        make_staff(user, self.center, Staff.Role.ADMIN)
+        make_staff(user, self.center, 'Admin')
         serializer = UserSerializer(user)
         self.assertEqual(serializer.data['role_display'], 'Admin')
 
     def test_role_display_lab_technician(self):
         user = make_user('rd_labtech')
-        make_staff(user, self.center, Staff.Role.LAB_TECHNICIAN)
+        make_staff(user, self.center, 'Lab Technician')
         serializer = UserSerializer(user)
         self.assertEqual(serializer.data['role_display'], 'Lab Technician')
 
     def test_role_display_receptionist(self):
         user = make_user('rd_recep')
-        make_staff(user, self.center, Staff.Role.RECEPTIONIST)
+        make_staff(user, self.center, 'Receptionist')
         serializer = UserSerializer(user)
         self.assertEqual(serializer.data['role_display'], 'Receptionist')
 
@@ -265,7 +265,7 @@ class PatientViewTests(APITestCase):
     def setUp(self):
         self.center = make_center()
         self.staff_user = make_user("pv_staff")
-        make_staff(self.staff_user, self.center, Staff.Role.ADMIN)
+        make_staff(self.staff_user, self.center, 'Admin')
 
         self.doctor_user = make_user("pv_doctor")
         make_doctor(self.doctor_user, self.center)

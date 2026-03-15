@@ -150,7 +150,7 @@ class PaymentViewTests(APITestCase):
         self.center = make_center()
 
         self.staff_user = make_user("pv_staff")
-        make_staff(self.staff_user, self.center, Staff.Role.ADMIN)
+        make_staff(self.staff_user, self.center, 'Admin')
 
         self.doc_user = make_user("pv_doc")
         make_doctor(self.doc_user, self.center)

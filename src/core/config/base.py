@@ -194,7 +194,6 @@ SPECTACULAR_SETTINGS = {
     },
     'ENUM_NAME_OVERRIDES': {
         'BloodGroupEnum': 'core.users.models.PatientProfile.BloodGroup',
-        'StaffRoleEnum': 'core.tenants.models.Staff.Role',
         'TestOrderStatusEnum': 'apps.diagnostics.models.TestOrder.Status',
         'TestOrderPriorityEnum': 'apps.diagnostics.models.TestOrder.Priority',
         'ReportStatusEnum': 'apps.diagnostics.models.Report.Status',

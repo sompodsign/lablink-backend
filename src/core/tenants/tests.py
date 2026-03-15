@@ -65,14 +65,13 @@ class ModelStrTests(TestCase):
         self.assertEqual(str(doctor), "Dr. John Doe")
 
     def test_staff_str(self):
-        staff = make_staff(self.user, self.center, Staff.Role.RECEPTIONIST)
-        self.assertEqual(str(staff), "John Doe - RECEPTIONIST")
+        staff = make_staff(self.user, self.center, 'Receptionist')
+        self.assertEqual(str(staff), "John Doe - Receptionist")
 
-    def test_staff_role_choices(self):
-        choices = [c[0] for c in Staff.Role.choices]
-        self.assertIn("RECEPTIONIST", choices)
-        self.assertIn("LAB_TECHNICIAN", choices)
-        self.assertIn("ADMIN", choices)
+    def test_staff_has_perm(self):
+        staff = make_staff(self.user, self.center, 'Receptionist')
+        self.assertTrue(staff.has_perm('view_patients'))
+        self.assertFalse(staff.has_perm('manage_staff'))
 
 
 # ---------------------------------------------------------------------------
@@ -86,13 +85,13 @@ class PermissionClassTests(TestCase):
         self.center_b = make_center("Center B", "center-b")
 
         self.staff_user = make_user("staff_a")
-        make_staff(self.staff_user, self.center_a, Staff.Role.RECEPTIONIST)
+        make_staff(self.staff_user, self.center_a, 'Receptionist')
 
         self.admin_user = make_user("admin_a")
-        make_staff(self.admin_user, self.center_a, Staff.Role.ADMIN)
+        make_staff(self.admin_user, self.center_a, 'Admin')
 
         self.lab_tech_user = make_user("labtech_a")
-        make_staff(self.lab_tech_user, self.center_a, Staff.Role.LAB_TECHNICIAN)
+        make_staff(self.lab_tech_user, self.center_a, 'Lab Technician')
 
         self.doctor_user = make_user("doctor_a")
         make_doctor(self.doctor_user, self.center_a)
@@ -355,11 +354,10 @@ class TenantSerializerTests(TestCase):
 
     def test_staff_serializer_fields(self):
         user = make_user("staff_ser", "Alice", "Green")
-        staff = make_staff(user, self.center, Staff.Role.ADMIN)
+        staff = make_staff(user, self.center, 'Admin')
         serializer = StaffSerializer(staff)
         data = serializer.data
-        self.assertEqual(data["role"], "ADMIN")
-        self.assertEqual(data["role_display"], "Admin")
+        self.assertEqual(data["role_name"], "Admin")
         self.assertEqual(data["name"], "Alice Green")
 
 
@@ -376,10 +374,10 @@ class TenantIsolationTests(APITestCase):
         self.center_b = make_center("Center B", "center-b")
 
         self.staff_a_user = make_user("staff_a")
-        self.staff_a = make_staff(self.staff_a_user, self.center_a, Staff.Role.ADMIN)
+        self.staff_a = make_staff(self.staff_a_user, self.center_a, 'Admin')
 
         self.staff_b_user = make_user("staff_b")
-        self.staff_b = make_staff(self.staff_b_user, self.center_b, Staff.Role.ADMIN)
+        self.staff_b = make_staff(self.staff_b_user, self.center_b, 'Admin')
 
         self.patient_a = make_patient("patient_a", self.center_a)
         self.patient_b = make_patient("patient_b", self.center_b)
@@ -461,10 +459,10 @@ class DoctorManagementViewTests(APITestCase):
         self.center = make_center()
 
         self.admin_user = make_user("admin_doc_mgmt")
-        make_staff(self.admin_user, self.center, Staff.Role.ADMIN)
+        make_staff(self.admin_user, self.center, 'Admin')
 
         self.staff_user = make_user("staff_doc_mgmt")
-        make_staff(self.staff_user, self.center, Staff.Role.RECEPTIONIST)
+        make_staff(self.staff_user, self.center, 'Receptionist')
 
         self.doctor_user = make_user("doc_mgmt", "Dr", "Test")
         self.doctor = make_doctor(self.doctor_user, self.center)
@@ -616,10 +614,10 @@ class StaffViewTests(APITestCase):
     def setUp(self):
         self.center = make_center()
         self.admin_user = make_user("admin_staff_view")
-        make_staff(self.admin_user, self.center, Staff.Role.ADMIN)
+        make_staff(self.admin_user, self.center, 'Admin')
 
         self.receptionist_user = make_user("recep_staff_view")
-        make_staff(self.receptionist_user, self.center, Staff.Role.RECEPTIONIST)
+        make_staff(self.receptionist_user, self.center, 'Receptionist')
 
     def _auth(self, user):
         self.client.credentials(**jwt_auth_header(user))
@@ -638,35 +636,30 @@ class StaffViewTests(APITestCase):
 
     def test_admin_can_create_staff(self):
         self._auth(self.admin_user)
+        from helpers.test_factories import _get_or_create_role
+        lab_tech_role = _get_or_create_role(self.center, 'Lab Technician')
         payload = {
             'first_name': 'Kamal',
             'last_name': 'Hossain',
             'email': 'kamal@example.com',
-            'role': 'LAB_TECHNICIAN',
+            'role_id': lab_tech_role.id,
         }
         response = self.client.post('/api/tenants/staff/', payload)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['role'], 'LAB_TECHNICIAN')
-        self.assertEqual(response.data['role_display'], 'Lab Technician')
+        self.assertEqual(response.data['role_name'], 'Lab Technician')
         self.assertIn('Kamal', response.data['name'])
-
-        # Verify auth group was assigned
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        user = User.objects.get(username='kamal_hossain')
-        self.assertTrue(
-            user.groups.filter(name='LABLINK | LAB_TECHNICIAN').exists(),
-        )
 
     def test_admin_can_update_staff_role(self):
         self._auth(self.admin_user)
+        from helpers.test_factories import _get_or_create_role
+        lab_tech_role = _get_or_create_role(self.center, 'Lab Technician')
         staff_id = Staff.objects.get(user=self.receptionist_user).id
         response = self.client.patch(
             f'/api/tenants/staff/{staff_id}/',
-            {'role': 'LAB_TECHNICIAN'},
+            {'role_id': lab_tech_role.id},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['role'], 'LAB_TECHNICIAN')
+        self.assertEqual(response.data['role_name'], 'Lab Technician')
 
     def test_admin_can_delete_staff(self):
         self._auth(self.admin_user)
@@ -712,12 +705,14 @@ class StaffViewTests(APITestCase):
     def test_staff_create_sends_email(self):
         from django.core import mail
 
+        from core.tenants.models import Role
         self._auth(self.admin_user)
+        recep_role = Role.objects.get(name='Receptionist', center=self.center)
         self.client.post('/api/tenants/staff/', {
             'first_name': 'Email',
             'last_name': 'Test',
             'email': 'emailtest@example.com',
-            'role': 'RECEPTIONIST',
+            'role_id': recep_role.id,
         })
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('emailtest@example.com', mail.outbox[0].to)
@@ -726,10 +721,12 @@ class StaffViewTests(APITestCase):
 
     def test_staff_create_requires_email(self):
         self._auth(self.admin_user)
+        from core.tenants.models import Role
+        recep_role = Role.objects.get(name='Receptionist', center=self.center)
         response = self.client.post('/api/tenants/staff/', {
             'first_name': 'No',
             'last_name': 'Email',
-            'role': 'RECEPTIONIST',
+            'role_id': recep_role.id,
         })
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('email', response.data)
@@ -743,7 +740,7 @@ class PatientRegistrationTests(APITestCase):
     def setUp(self):
         self.center = make_center()
         self.admin_user = make_user("admin_user")
-        make_staff(self.admin_user, self.center, Staff.Role.ADMIN)
+        make_staff(self.admin_user, self.center, 'Admin')
         self.client.credentials(**jwt_auth_header(self.admin_user))
         self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
 

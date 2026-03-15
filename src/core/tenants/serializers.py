@@ -1,9 +1,12 @@
 import logging
+import secrets
 
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+from django.db import transaction
 from rest_framework import serializers
 
-from .models import DiagnosticCenter, Doctor, Service, Staff
+from .models import DiagnosticCenter, Doctor, Permission, Role, Service, Staff
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -90,12 +93,9 @@ class DoctorCreateSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data):
-        from django.db import transaction
-
         tenant = self.context['request'].tenant
         with transaction.atomic():
             username = f'dr_{validated_data["first_name"].lower()}_{validated_data["last_name"].lower()}'
-            # Ensure unique username
             base_username = username
             counter = 1
             while User.objects.filter(username=username).exists():
@@ -133,6 +133,57 @@ class DoctorActivitySerializer(serializers.Serializer):
     recent_appointments = serializers.ListField(child=serializers.DictField())
 
 
+# ── Permission & Role Serializers ─────────────────────────────────
+
+
+class PermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Permission
+        fields = ['id', 'codename', 'name', 'category']
+
+
+class RoleSerializer(serializers.ModelSerializer):
+    permissions = PermissionSerializer(many=True, read_only=True)
+    permission_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Permission.objects.all(),
+        many=True,
+        write_only=True,
+        source='permissions',
+        required=False,
+    )
+    staff_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Role
+        fields = [
+            'id', 'name', 'permissions', 'permission_ids',
+            'is_system', 'staff_count',
+        ]
+        read_only_fields = ['is_system']
+
+    def get_staff_count(self, obj) -> int:
+        return obj.staff_members.count()
+
+    def create(self, validated_data):
+        permissions = validated_data.pop('permissions', [])
+        center = self.context['request'].tenant
+        role = Role.objects.create(center=center, **validated_data)
+        if permissions:
+            role.permissions.set(permissions)
+        return role
+
+    def update(self, instance, validated_data):
+        permissions = validated_data.pop('permissions', None)
+        instance.name = validated_data.get('name', instance.name)
+        instance.save(update_fields=['name'])
+        if permissions is not None:
+            instance.permissions.set(permissions)
+        return instance
+
+
+# ── Staff Serializers ─────────────────────────────────────────────
+
+
 class StaffSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source='user.id', read_only=True)
     name = serializers.CharField(source='user.get_full_name', read_only=True)
@@ -143,14 +194,21 @@ class StaffSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(
         source='user.is_active', read_only=True,
     )
-    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    role_name = serializers.CharField(source='role.name', read_only=True)
+    role_id = serializers.PrimaryKeyRelatedField(
+        queryset=Role.objects.all(),
+        source='role',
+        write_only=True,
+        required=False,
+    )
 
     class Meta:
         model = Staff
         fields = [
             'id', 'user_id', 'name', 'email', 'phone_number',
-            'role', 'role_display', 'is_active',
+            'role', 'role_name', 'role_id', 'is_active',
         ]
+        read_only_fields = ['role']
 
 
 class StaffCreateSerializer(serializers.Serializer):
@@ -162,7 +220,9 @@ class StaffCreateSerializer(serializers.Serializer):
     phone_number = serializers.CharField(
         max_length=20, required=False, allow_blank=True, default='',
     )
-    role = serializers.ChoiceField(choices=Staff.Role.choices)
+    role_id = serializers.PrimaryKeyRelatedField(
+        queryset=Role.objects.all(),
+    )
 
     def validate_email(self, value):
         if value and User.objects.filter(email=value).exists():
@@ -171,11 +231,18 @@ class StaffCreateSerializer(serializers.Serializer):
             )
         return value
 
-    def create(self, validated_data):
-        from django.contrib.auth.models import Group
-        from django.db import transaction
-
+    def validate_role_id(self, value):
         tenant = self.context['request'].tenant
+        if value.center_id != tenant.id:
+            raise serializers.ValidationError(
+                'Role does not belong to this center.',
+            )
+        return value
+
+    def create(self, validated_data):
+        tenant = self.context['request'].tenant
+        role = validated_data['role_id']
+
         with transaction.atomic():
             base_username = (
                 f'{validated_data["first_name"].lower()}'
@@ -186,8 +253,6 @@ class StaffCreateSerializer(serializers.Serializer):
             while User.objects.filter(username=username).exists():
                 username = f'{base_username}_{counter}'
                 counter += 1
-
-            import secrets
 
             password = secrets.token_urlsafe(10)
             self._generated_password = password
@@ -201,31 +266,16 @@ class StaffCreateSerializer(serializers.Serializer):
                 is_active=True,
             )
 
-            role = validated_data['role']
             staff = Staff.objects.create(
                 user=user, center=tenant, role=role,
             )
 
-            # Assign the matching auth group
-            group_map = {
-                Staff.Role.ADMIN: 'LABLINK | ADMIN',
-                Staff.Role.LAB_TECHNICIAN: 'LABLINK | LAB_TECHNICIAN',
-                Staff.Role.RECEPTIONIST: 'LABLINK | RECEPTIONIST',
-            }
-            group_name = group_map.get(role)
-            if group_name:
-                group, _created = Group.objects.get_or_create(name=group_name)
-                user.groups.add(group)
-
         # Send credentials email (outside transaction)
-        from django.core.mail import send_mail
-
-        role_label = Staff.Role(role).label
         send_mail(
             subject=f'Welcome to {tenant.name} — Your Account Credentials',
             message=(
                 f'Hi {user.first_name},\n\n'
-                f'You have been added as a {role_label} '
+                f'You have been added as a {role.name} '
                 f'at {tenant.name}.\n\n'
                 f'Your login credentials:\n'
                 f'  Username: {username}\n'
@@ -233,7 +283,7 @@ class StaffCreateSerializer(serializers.Serializer):
                 f'Please change your password after first login.\n\n'
                 f'— {tenant.name} Team'
             ),
-            from_email=None,  # uses DEFAULT_FROM_EMAIL
+            from_email=None,
             recipient_list=[user.email],
             fail_silently=True,
         )
@@ -244,39 +294,25 @@ class StaffCreateSerializer(serializers.Serializer):
 class StaffUpdateSerializer(serializers.ModelSerializer):
     """Update a staff member's role."""
 
+    role_id = serializers.PrimaryKeyRelatedField(
+        queryset=Role.objects.all(),
+        source='role',
+    )
+
     class Meta:
         model = Staff
-        fields = ['role']
+        fields = ['role_id']
+
+    def validate_role_id(self, value):
+        if value.center_id != self.instance.center_id:
+            raise serializers.ValidationError(
+                'Role does not belong to this center.',
+            )
+        return value
 
     def update(self, instance, validated_data):
-        from django.contrib.auth.models import Group
-
-        old_role = instance.role
-        new_role = validated_data.get('role', old_role)
-
-        if old_role != new_role:
-            # Remove old auth group
-            group_map = {
-                Staff.Role.ADMIN: 'LABLINK | ADMIN',
-                Staff.Role.LAB_TECHNICIAN: 'LABLINK | LAB_TECHNICIAN',
-                Staff.Role.RECEPTIONIST: 'LABLINK | RECEPTIONIST',
-            }
-            old_group_name = group_map.get(old_role)
-            if old_group_name:
-                instance.user.groups.filter(name=old_group_name).delete()
-                instance.user.groups.remove(
-                    *Group.objects.filter(name=old_group_name),
-                )
-
-            # Add new auth group
-            new_group_name = group_map.get(new_role)
-            if new_group_name:
-                group, _created = Group.objects.get_or_create(
-                    name=new_group_name,
-                )
-                instance.user.groups.add(group)
-
+        new_role = validated_data.get('role', instance.role)
+        if instance.role_id != new_role.id:
             instance.role = new_role
             instance.save(update_fields=['role'])
-
         return instance

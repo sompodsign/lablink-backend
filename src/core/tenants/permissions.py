@@ -39,7 +39,7 @@ class IsCenterDoctor(permissions.BasePermission):
 
 
 class IsCenterAdmin(permissions.BasePermission):
-    """User must be staff with ADMIN role at the tenant center."""
+    """User must be staff with manage_staff permission at the tenant center."""
 
     message = 'You must be an admin at this diagnostic center.'
 
@@ -49,16 +49,15 @@ class IsCenterAdmin(permissions.BasePermission):
         tenant = getattr(request, 'tenant', None)
         if not tenant:
             return False
-        from core.tenants.models import Staff
         return (
             hasattr(request.user, 'staff_profile')
             and request.user.staff_profile.center_id == tenant.id
-            and request.user.staff_profile.role == Staff.Role.ADMIN
+            and request.user.staff_profile.has_perm('manage_staff')
         )
 
 
 class IsCenterLabTechnician(permissions.BasePermission):
-    """User must be staff with LAB_TECHNICIAN role at the tenant center."""
+    """User must be staff with create_reports permission at the tenant center."""
 
     message = 'You must be a lab technician at this diagnostic center.'
 
@@ -68,11 +67,37 @@ class IsCenterLabTechnician(permissions.BasePermission):
         tenant = getattr(request, 'tenant', None)
         if not tenant:
             return False
-        from core.tenants.models import Staff
         return (
             hasattr(request.user, 'staff_profile')
             and request.user.staff_profile.center_id == tenant.id
-            and request.user.staff_profile.role == Staff.Role.LAB_TECHNICIAN
+            and request.user.staff_profile.has_perm('create_reports')
+        )
+
+
+class HasCenterPermission(permissions.BasePermission):
+    """
+    Generic permission check — requires a specific codename.
+
+    Usage on views:
+        permission_classes = [HasCenterPermission]
+        required_permission = 'manage_payments'
+    """
+
+    message = 'You do not have permission for this action.'
+
+    def has_permission(self, request, view) -> bool:
+        if not request.user.is_authenticated:
+            return False
+        tenant = getattr(request, 'tenant', None)
+        if not tenant:
+            return False
+        required = getattr(view, 'required_permission', None)
+        if not required:
+            return False
+        return (
+            hasattr(request.user, 'staff_profile')
+            and request.user.staff_profile.center_id == tenant.id
+            and request.user.staff_profile.has_perm(required)
         )
 
 

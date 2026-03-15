@@ -105,7 +105,7 @@ class ResultHistoryViewTest(TestCase):
         make_pricing(self.center, self.tt, '500.00')
         self.patient = make_patient('p1', self.center)
         self.staff_user = make_user('staff1')
-        make_staff(self.staff_user, self.center, role=Staff.Role.LAB_TECHNICIAN)
+        make_staff(self.staff_user, self.center, role='Lab Technician')
         self.auth = jwt_auth_header(self.staff_user)
 
     def test_returns_previous_reports(self):
@@ -165,7 +165,7 @@ class AnalyticsViewSetTest(TestCase):
         self.client = APIClient()
         self.center = make_center()
         self.admin_user = make_user('admin1')
-        make_staff(self.admin_user, self.center, role=Staff.Role.ADMIN)
+        make_staff(self.admin_user, self.center, role='Admin')
         self.auth = jwt_auth_header(self.admin_user)
 
         self.tt = make_test_type('CBC', '500.00')
@@ -200,7 +200,7 @@ class AnalyticsViewSetTest(TestCase):
 
     def test_non_admin_denied(self):
         tech_user = make_user('tech1')
-        make_staff(tech_user, self.center, role=Staff.Role.LAB_TECHNICIAN)
+        make_staff(tech_user, self.center, role='Lab Technician')
         tech_auth = jwt_auth_header(tech_user)
         resp = self.client.get('/api/diagnostics/analytics/revenue-by-test/', **tech_auth)
         self.assertEqual(resp.status_code, 403)
@@ -323,7 +323,7 @@ class LinkedReportCreationTest(TestCase):
 
         # Lab tech
         self.tech_user = make_user('tech1')
-        make_staff(self.tech_user, self.center, role=Staff.Role.LAB_TECHNICIAN)
+        make_staff(self.tech_user, self.center, role='Lab Technician')
         self.auth = jwt_auth_header(self.tech_user)
 
         # Doctor + order

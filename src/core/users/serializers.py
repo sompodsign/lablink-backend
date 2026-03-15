@@ -136,6 +136,7 @@ class UserSerializer(serializers.ModelSerializer):
     )
     staff_role = serializers.SerializerMethodField()
     role_display = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
     center = serializers.SerializerMethodField()
 
     class Meta:
@@ -143,11 +144,12 @@ class UserSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'username', 'email', 'password', 'confirm_password',
             'first_name', 'last_name', 'phone_number', 'groups',
-            'staff_role', 'role_display', 'is_superuser', 'is_active',
+            'staff_role', 'role_display', 'permissions',
+            'is_superuser', 'is_active',
             'approval_status', 'center',
         )
         read_only_fields = (
-            'username', 'groups', 'staff_role', 'role_display',
+            'username', 'groups', 'staff_role', 'role_display', 'permissions',
             'is_superuser', 'is_active', 'approval_status', 'center',
         )
         extra_kwargs = {
@@ -173,8 +175,25 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_staff_role(self, obj) -> str:
         if hasattr(obj, 'staff_profile'):
-            return obj.staff_profile.role
+            return obj.staff_profile.role.name
         return ''
+
+    def get_permissions(self, obj) -> list[str]:
+        if obj.is_superuser:
+            from core.tenants.models import Permission
+            return list(Permission.objects.values_list('codename', flat=True))
+        if hasattr(obj, 'staff_profile'):
+            return list(
+                obj.staff_profile.role.permissions.values_list(
+                    'codename', flat=True,
+                )
+            )
+        if hasattr(obj, 'doctor_profile'):
+            return [
+                'view_patients', 'view_appointments', 'manage_appointments',
+                'view_reports', 'create_reports',
+            ]
+        return []
 
     def get_role_display(self, obj) -> str:
         if obj.is_superuser:

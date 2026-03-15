@@ -102,12 +102,64 @@ class Doctor(models.Model):
         return f'Dr. {self.user.get_full_name()}'
 
 
-class Staff(models.Model):
-    class Role(models.TextChoices):
-        RECEPTIONIST = 'RECEPTIONIST', _('Receptionist')
-        LAB_TECHNICIAN = 'LAB_TECHNICIAN', _('Lab Technician')
-        ADMIN = 'ADMIN', _('Admin')
+class Permission(models.Model):
+    """Granular permission for RBAC."""
 
+    codename = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text=_('Programmatic identifier, e.g. view_reports'),
+    )
+    name = models.CharField(
+        max_length=150,
+        help_text=_('Human-readable name, e.g. View Reports'),
+    )
+    category = models.CharField(
+        max_length=50,
+        help_text=_('Grouping category for UI, e.g. Reports'),
+    )
+
+    class Meta:
+        db_table = 'core_permission'
+        ordering = ['category', 'codename']
+        verbose_name = _('permission')
+        verbose_name_plural = _('permissions')
+
+    def __str__(self) -> str:
+        return self.codename
+
+
+class Role(models.Model):
+    """Tenant-scoped role with associated permissions."""
+
+    name = models.CharField(max_length=100)
+    center = models.ForeignKey(
+        DiagnosticCenter,
+        on_delete=models.CASCADE,
+        related_name='roles',
+    )
+    permissions = models.ManyToManyField(
+        Permission,
+        blank=True,
+        related_name='roles',
+    )
+    is_system = models.BooleanField(
+        default=False,
+        help_text=_('System roles cannot be deleted.'),
+    )
+
+    class Meta:
+        db_table = 'core_role'
+        ordering = ['name']
+        unique_together = [('name', 'center')]
+        verbose_name = _('role')
+        verbose_name_plural = _('roles')
+
+    def __str__(self) -> str:
+        return f'{self.name} ({self.center.name})'
+
+
+class Staff(models.Model):
     user: 'User' = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -118,7 +170,11 @@ class Staff(models.Model):
         on_delete=models.CASCADE,
         related_name='staff',
     )
-    role = models.CharField(max_length=50, choices=Role.choices)
+    role = models.ForeignKey(
+        Role,
+        on_delete=models.PROTECT,
+        related_name='staff_members',
+    )
 
     class Meta:
         db_table = 'core_staff'
@@ -127,4 +183,16 @@ class Staff(models.Model):
         verbose_name_plural = _('staff')
 
     def __str__(self) -> str:
-        return f'{self.user.get_full_name()} - {self.role}'
+        return f'{self.user.get_full_name()} - {self.role.name}'
+
+    @property
+    def role_name(self) -> str:
+        return self.role.name
+
+    def has_perm(self, codename: str) -> bool:
+        """Check if this staff member's role includes the given permission."""
+        return self.role.permissions.filter(codename=codename).exists()
+
+    def get_role_display(self) -> str:
+        return self.role.name
+
