@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 
 from core.tenants.middleware import TenantMiddleware
 from core.tenants.models import Doctor, Service, Staff
+from core.users.models import User
 from core.tenants.permissions import (
     IsCenterAdmin,
     IsCenterDoctor,
