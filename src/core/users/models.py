@@ -10,12 +10,29 @@ class User(AbstractUser):
         DECLINED = 'DECLINED', _('Declined')
         APPROVED = 'APPROVED', _('Approved')
 
+    center = models.ForeignKey(
+        'tenants.DiagnosticCenter',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='users',
+        help_text=_('The center this user belongs to. NULL for superadmins.'),
+    )
     phone_number = models.CharField(max_length=20, blank=True)
     approval_status = models.CharField(
         max_length=10,
         choices=ApprovalStatus.choices,
         default=ApprovalStatus.APPROVED,
     )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['email', 'center'],
+                name='unique_email_per_center',
+                condition=~models.Q(email=''),
+            ),
+        ]
 
 
 class PatientProfile(models.Model):

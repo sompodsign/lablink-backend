@@ -43,7 +43,7 @@ class IsCenterDoctor(permissions.BasePermission):
         if not tenant:
             return False
         return hasattr(request.user, 'doctor_profile') and (
-            request.user.doctor_profile.centers.filter(id=tenant.id).exists()
+            request.user.center_id == tenant.id
         )
 
 

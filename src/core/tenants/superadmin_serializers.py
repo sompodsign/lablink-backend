@@ -87,24 +87,12 @@ class SuperadminUserSerializer(serializers.ModelSerializer):
         ]
 
     def get_center_name(self, obj):
-        if hasattr(obj, 'staff_profile'):
-            return obj.staff_profile.center.name
-        if hasattr(obj, 'doctor_profile'):
-            first_center = obj.doctor_profile.centers.first()
-            return first_center.name if first_center else None
-        if hasattr(obj, 'patient_profile') and obj.patient_profile.registered_at_center:
-            return obj.patient_profile.registered_at_center.name
+        if obj.center:
+            return obj.center.name
         return None
 
     def get_center_id(self, obj):
-        if hasattr(obj, 'staff_profile'):
-            return obj.staff_profile.center_id
-        if hasattr(obj, 'doctor_profile'):
-            first_center = obj.doctor_profile.centers.first()
-            return first_center.id if first_center else None
-        if hasattr(obj, 'patient_profile') and obj.patient_profile.registered_at_center:
-            return obj.patient_profile.registered_at_center_id
-        return None
+        return obj.center_id
 
     def get_role_name(self, obj):
         if obj.is_superuser:
@@ -154,14 +142,14 @@ class SuperadminStaffSerializer(serializers.ModelSerializer):
 
 
 class SuperadminDoctorSerializer(serializers.ModelSerializer):
-    """Doctor with user info and centers."""
+    """Doctor with user info and center."""
 
     username = serializers.CharField(source='user.username', read_only=True)
     full_name = serializers.CharField(
         source='user.get_full_name', read_only=True,
     )
     email = serializers.EmailField(source='user.email', read_only=True)
-    centers = serializers.SerializerMethodField()
+    center_name = serializers.SerializerMethodField()
     is_active = serializers.BooleanField(
         source='user.is_active', read_only=True,
     )
@@ -171,11 +159,12 @@ class SuperadminDoctorSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'full_name', 'email',
             'specialization', 'designation',
-            'centers', 'is_active',
+            'center_name', 'is_active',
         ]
 
-    def get_centers(self, obj):
-        return list(obj.centers.values_list('name', flat=True))
+    def get_center_name(self, obj):
+        center = obj.user.center
+        return center.name if center else None
 
 
 class SuperadminPatientSerializer(serializers.ModelSerializer):

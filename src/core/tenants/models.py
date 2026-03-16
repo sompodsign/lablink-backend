@@ -95,10 +95,6 @@ class Doctor(models.Model):
         on_delete=models.CASCADE,
         related_name='doctor_profile',
     )  # type: ignore[assignment]
-    centers = models.ManyToManyField(
-        DiagnosticCenter,
-        related_name='doctors',
-    )
     specialization = models.CharField(max_length=255)
     designation = models.CharField(max_length=255)
     bio = models.TextField(blank=True)
@@ -107,6 +103,11 @@ class Doctor(models.Model):
         db_table = 'core_doctor'
         verbose_name = _('doctor')
         verbose_name_plural = _('doctors')
+
+    @property
+    def center(self):
+        """Convenience: doctor's center is the user's center."""
+        return self.user.center
 
     def __str__(self) -> str:
         return f'Dr. {self.user.get_full_name()}'

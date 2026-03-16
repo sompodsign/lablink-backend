@@ -122,7 +122,8 @@ class UserSerializerTests(TestCase):
         user = make_user("gc_super", is_superuser=True)
         serializer = UserSerializer(user)
         center_data = serializer.data["center"]
-        self.assertIsNotNone(center_data)
+        # Superadmins have no center
+        self.assertIsNone(center_data)
 
     def test_user_serializer_get_center_none(self):
         user = make_user('gc_none')
@@ -182,7 +183,8 @@ class UserSerializerTests(TestCase):
         user = serializer.save()
         self.assertTrue(user.is_active)
         self.assertEqual(user.approval_status, User.ApprovalStatus.APPROVED)
-        self.assertEqual(user.username, 'new_reg')
+        # Username is auto-generated as email__platform
+        self.assertTrue(user.username.startswith('newreg@example.com__'))
         self.assertTrue(hasattr(user, 'patient_profile'))
 
     def test_patient_registration_auto_generates_username(self):
@@ -233,7 +235,8 @@ class RegisterViewTests(APITestCase):
         }
         response = self.client.post("/api/auth/register/", payload)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["username"], "new_user")
+        # Username is auto-generated as email__platform
+        self.assertTrue(response.data["username"].startswith('new@example.com__'))
 
     def test_register_missing_required_fields_fails(self):
         payload = {

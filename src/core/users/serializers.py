@@ -104,6 +104,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
             last_name=validated_data['last_name'],
             email=validated_data.get('email', ''),
             phone_number=validated_data.get('phone_number', ''),
+            center=center,
             # No password — staff-registered patients cannot log in initially
             password=None,
         )
@@ -205,16 +206,7 @@ class UserSerializer(serializers.ModelSerializer):
         return ''
 
     def get_center(self, obj) -> dict | None:
-        center = None
-        if hasattr(obj, 'staff_profile'):
-            center = obj.staff_profile.center
-        elif hasattr(obj, 'doctor_profile'):
-            center = obj.doctor_profile.centers.first()
-        elif hasattr(obj, 'patient_profile'):
-            center = obj.patient_profile.registered_at_center
-        if not center and obj.is_superuser:
-            from core.tenants.models import DiagnosticCenter
-            center = DiagnosticCenter.objects.first()
+        center = obj.center
         if center:
             return {
                 'id': center.id,
@@ -226,10 +218,18 @@ class UserSerializer(serializers.ModelSerializer):
         return None
 
     def create(self, validated_data):
-        # Auto-generate username from first + last name
-        first = validated_data['first_name'].lower().replace(' ', '_')
-        last = validated_data['last_name'].lower().replace(' ', '_')
-        base_username = f'{first}_{last}'
+        from core.users.views import _resolve_center_from_request
+
+        # Resolve center from subdomain
+        center = None
+        request = self.context.get('request')
+        if request:
+            center = _resolve_center_from_request(request)
+
+        # Auto-generate internal username
+        email = validated_data['email']
+        domain_suffix = center.domain if center else 'platform'
+        base_username = f"{email}__{domain_suffix}"
         username = base_username
         counter = 1
         while User.objects.filter(username=username).exists():
@@ -243,25 +243,8 @@ class UserSerializer(serializers.ModelSerializer):
             first_name=validated_data['first_name'],
             last_name=validated_data['last_name'],
             phone_number=validated_data.get('phone_number', ''),
+            center=center,
         )
-
-        # Resolve center from request origin (subdomain registration)
-        center = None
-        request = self.context.get('request')
-        if request:
-            from core.tenants.models import DiagnosticCenter
-            from urllib.parse import urlparse
-
-            origin = request.META.get('HTTP_ORIGIN', '')
-            if origin:
-                hostname = urlparse(origin).hostname or ''
-                # e.g. "pop.localhost" → subdomain "pop"
-                parts = hostname.split('.')
-                if len(parts) > 1:
-                    subdomain = parts[0]
-                    center = DiagnosticCenter.objects.filter(
-                        domain=subdomain, is_active=True,
-                    ).first()
 
         # Auto-create patient profile linked to center (if any)
         PatientProfile.objects.create(

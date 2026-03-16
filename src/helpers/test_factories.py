@@ -103,22 +103,31 @@ def make_staff(user, center, role_name='Receptionist', permissions=None, role=No
         permissions = perm_map.get(role_name, [])
 
     role = _get_or_create_role(center, role_name, permissions)
+
+    # Ensure user.center matches staff.center
+    if user.center_id != center.id:
+        user.center = center
+        user.save(update_fields=['center_id'])
+
     return Staff.objects.create(user=user, center=center, role=role)
 
 
-def make_doctor(user, *centers):
+def make_doctor(user, center=None):
+    # Set user.center if center provided
+    if center and user.center_id != center.id:
+        user.center = center
+        user.save(update_fields=['center_id'])
+
     doctor = Doctor.objects.create(
         user=user,
-        specialization="General",
-        designation="MD",
+        specialization='General',
+        designation='MD',
     )
-    for c in centers:
-        doctor.centers.add(c)
     return doctor
 
 
 def make_patient(username, center, **profile_kwargs):
-    user = make_user(username, "Pat", "Ient")
+    user = make_user(username, 'Pat', 'Ient', center=center)
     PatientProfile.objects.create(
         user=user,
         registered_at_center=center,

@@ -29,101 +29,126 @@ APPROVAL_MESSAGES = {
 }
 
 
+def _resolve_center_from_request(request):
+    """Resolve DiagnosticCenter from the request Origin header subdomain.
+
+    Returns None for main domain requests (no subdomain).
+    """
+    from urllib.parse import urlparse
+
+    from core.tenants.models import DiagnosticCenter
+
+    origin = request.META.get('HTTP_ORIGIN', '')
+    if not origin:
+        # Fallback to Host header
+        origin = request.META.get('HTTP_HOST', '')
+        if origin:
+            origin = f'http://{origin}'
+
+    if not origin:
+        return None
+
+    hostname = urlparse(origin).hostname or ''
+    parts = hostname.split('.')
+    if len(parts) > 1:
+        subdomain = parts[0]
+        return DiagnosticCenter.objects.filter(
+            domain=subdomain,
+        ).first()
+
+    return None
+
+
 @extend_schema(
     tags=['Authentication'],
     summary='Obtain JWT token pair',
     description='Authenticate with username or email and password.',
 )
 class CustomTokenObtainView(APIView):
-    """Custom login that checks approval_status before issuing tokens."""
+    """Custom login scoped to the center resolved from the request origin."""
 
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        username = request.data.get('username', '')
+        email = request.data.get('username', '')  # frontend sends email as "username"
         password = request.data.get('password', '')
 
-        if not username or not password:
+        if not email or not password:
             return Response(
-                {'detail': 'Username and password are required.'},
+                {'detail': 'Email and password are required.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user = authenticate(request, username=username, password=password)
+        # Resolve center from request origin (subdomain)
+        center = _resolve_center_from_request(request)
 
-        if user is None:
-            # Check if user exists but has approval issue
-            try:
-                lookup = User.objects.get(
-                    Q(username=username) | Q(email=username),
-                )
-            except User.DoesNotExist:
-                return Response(
-                    {'detail': 'Invalid credentials.'},
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
+        # Build user lookup scoped to center
+        if center:
+            lookup_qs = User.objects.filter(
+                Q(email=email) | Q(username=email),
+                center=center,
+            )
+        else:
+            # Main domain — only superadmins (center=NULL)
+            lookup_qs = User.objects.filter(
+                Q(email=email) | Q(username=email),
+                center__isnull=True,
+                is_superuser=True,
+            )
 
-            # User exists — check approval status
-            if lookup.approval_status != User.ApprovalStatus.APPROVED:
-                msg = APPROVAL_MESSAGES.get(
-                    lookup.approval_status,
-                    'Account access denied.',
-                )
-                return Response(
-                    {
-                        'detail': msg,
-                        'approval_status': lookup.approval_status,
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-            if not lookup.is_active:
-                return Response(
-                    {
-                        'detail': 'Your account has been deactivated by an administrator.',
-                        'approval_status': 'DEACTIVATED',
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-            # Wrong password
+        try:
+            user_record = lookup_qs.get()
+        except User.DoesNotExist:
             return Response(
                 {'detail': 'Invalid credentials.'},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        # User authenticated — check approval status
-        if user.approval_status != User.ApprovalStatus.APPROVED:
+        # Check approval status
+        if user_record.approval_status != User.ApprovalStatus.APPROVED:
             msg = APPROVAL_MESSAGES.get(
-                user.approval_status, 'Account access denied.',
+                user_record.approval_status,
+                'Account access denied.',
             )
             return Response(
                 {
                     'detail': msg,
-                    'approval_status': user.approval_status,
+                    'approval_status': user_record.approval_status,
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Check if user's center is deactivated (superadmins bypass)
-        if not user.is_superuser:
-            from core.tenants.middleware import TenantMiddleware
-            _mw = TenantMiddleware(lambda r: None)
-            center = _mw._get_tenant_for_user(user)
-            if center and not center.is_active:
-                return Response(
-                    {
-                        'detail': (
-                            'Your diagnostic center has been deactivated. '
-                            'Please contact the platform administrator.'
-                        ),
-                        'approval_status': 'CENTER_DEACTIVATED',
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        if not user_record.is_active:
+            return Response(
+                {
+                    'detail': 'Your account has been deactivated by an administrator.',
+                    'approval_status': 'DEACTIVATED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Verify password
+        if not user_record.check_password(password):
+            return Response(
+                {'detail': 'Invalid credentials.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Check if center is deactivated (superadmins bypass)
+        if center and not center.is_active and not user_record.is_superuser:
+            return Response(
+                {
+                    'detail': (
+                        'Your diagnostic center has been deactivated. '
+                        'Please contact the platform administrator.'
+                    ),
+                    'approval_status': 'CENTER_DEACTIVATED',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # Issue tokens
-        refresh = RefreshToken.for_user(user)
+        refresh = RefreshToken.for_user(user_record)
         return Response({
             'access': str(refresh.access_token),
             'refresh': str(refresh),

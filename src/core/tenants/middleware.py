@@ -14,7 +14,7 @@ class TenantMiddleware:
     """
     Middleware to identify the current tenant from the authenticated user.
     Uses JWT token from the Authorization header to identify the user,
-    then resolves their diagnostic center.
+    then reads their `center` FK directly.
     """
 
     def __init__(self, get_response):
@@ -60,25 +60,11 @@ class TenantMiddleware:
         return None
 
     def _get_tenant_for_user(self, user):
-        # Staff → center
-        try:
-            return user.staff_profile.center
-        except Exception:
-            pass
+        """Return the user's center directly from User.center FK."""
+        if user.center_id:
+            return user.center
 
-        # Doctor → first center
-        try:
-            return user.doctor_profile.centers.first()
-        except Exception:
-            pass
-
-        # Patient → registered center
-        try:
-            return user.patient_profile.registered_at_center
-        except Exception:
-            pass
-
-        # Superadmin fallback
+        # Superadmin fallback — they have center=None
         if user.is_superuser:
             return DiagnosticCenter.objects.first()
 

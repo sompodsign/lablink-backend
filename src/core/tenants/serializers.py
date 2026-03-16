@@ -88,8 +88,9 @@ class DoctorCreateSerializer(serializers.Serializer):
     bio = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate_email(self, value):
-        if value and User.objects.filter(email=value).exists():
-            raise serializers.ValidationError('A user with this email already exists.')
+        tenant = self.context['request'].tenant
+        if value and User.objects.filter(email=value, center=tenant).exists():
+            raise serializers.ValidationError('A user with this email already exists at this center.')
         return value
 
     def create(self, validated_data):
@@ -108,6 +109,7 @@ class DoctorCreateSerializer(serializers.Serializer):
                 first_name=validated_data['first_name'],
                 last_name=validated_data['last_name'],
                 phone_number=validated_data.get('phone_number', ''),
+                center=tenant,
             )
 
             doctor = Doctor.objects.create(
@@ -116,7 +118,6 @@ class DoctorCreateSerializer(serializers.Serializer):
                 designation=validated_data['designation'],
                 bio=validated_data.get('bio', ''),
             )
-            doctor.centers.add(tenant)
 
         return doctor
 

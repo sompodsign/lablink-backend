@@ -367,9 +367,9 @@ class DeactivatedCenterLoginTests(APITestCase):
 
     def test_active_center_allows_login(self):
         response = self.client.post('/api/token/', {
-            'username': 'login_staff',
+            'username': 'lstaff@test.com',
             'password': 'testpass123',
-        })
+        }, HTTP_ORIGIN='http://login-center.localhost:8000')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('access', response.data)
 
@@ -378,9 +378,9 @@ class DeactivatedCenterLoginTests(APITestCase):
         self.center.save()
 
         response = self.client.post('/api/token/', {
-            'username': 'login_staff',
+            'username': 'lstaff@test.com',
             'password': 'testpass123',
-        })
+        }, HTTP_ORIGIN='http://login-center.localhost:8000')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(
             response.data['approval_status'], 'CENTER_DEACTIVATED',
@@ -392,7 +392,7 @@ class DeactivatedCenterLoginTests(APITestCase):
         self.center.save()
 
         response = self.client.post('/api/token/', {
-            'username': 'login_super',
+            'username': 'lsuper@test.com',
             'password': 'testpass123',
         })
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -504,7 +504,12 @@ class SelfRegistrationCenterLinkTests(APITestCase):
         user = User.objects.get(id=response.data['id'])
         self.assertIsNone(user.patient_profile.registered_at_center)
 
-    def test_registration_from_deactivated_center_no_link(self):
+    def test_registration_from_deactivated_center_still_links(self):
+        """Registration still links user to a deactivated center.
+
+        Deactivation blocks login, not registration — user is linked
+        so that when the center is reactivated they can log in.
+        """
         self.center.is_active = False
         self.center.save()
 
@@ -521,4 +526,5 @@ class SelfRegistrationCenterLinkTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         user = User.objects.get(id=response.data['id'])
-        self.assertIsNone(user.patient_profile.registered_at_center)
+        # Still linked to center — login will be blocked separately
+        self.assertEqual(user.patient_profile.registered_at_center, self.center)

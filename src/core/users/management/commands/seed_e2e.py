@@ -135,9 +135,15 @@ class Command(BaseCommand):
             self.stdout.write(f'  [{tag}] {cfg["username"]}')
 
             center_domain = cfg.get('center')
-            if not center_domain:
+            center = centers.get(center_domain) if center_domain else None
+
+            # Set user.center for non-superadmins
+            if center and user.center_id != center.id:
+                user.center = center
+                user.save(update_fields=['center_id'])
+
+            if not center:
                 continue
-            center = centers[center_domain]
 
             # Staff role
             role = cfg.get('role')
@@ -150,7 +156,7 @@ class Command(BaseCommand):
             # Doctor
             doctor_cfg = cfg.get('doctor')
             if doctor_cfg:
-                doc, _ = Doctor.objects.get_or_create(
+                Doctor.objects.get_or_create(
                     user=user,
                     defaults={
                         'specialization': doctor_cfg['specialization'],
@@ -158,7 +164,6 @@ class Command(BaseCommand):
                         'bio': '',
                     },
                 )
-                doc.centers.add(center)
 
             # Patient
             patient_cfg = cfg.get('patient')

@@ -79,7 +79,11 @@ class SuperadminCenterListView(SuperadminBaseView):
     def get(self, request):
         centers = DiagnosticCenter.objects.annotate(
             staff_count=Count('staff', distinct=True),
-            doctor_count=Count('doctors', distinct=True),
+            doctor_count=Count(
+                'users',
+                filter=Q(users__doctor_profile__isnull=False),
+                distinct=True,
+            ),
             patient_count=Count('registered_patients', distinct=True),
         ).order_by('name')
 
@@ -100,7 +104,11 @@ class SuperadminCenterDetailView(SuperadminBaseView):
         try:
             center = DiagnosticCenter.objects.annotate(
                 staff_count=Count('staff', distinct=True),
-                doctor_count=Count('doctors', distinct=True),
+                doctor_count=Count(
+                    'users',
+                    filter=Q(users__doctor_profile__isnull=False),
+                    distinct=True,
+                ),
                 patient_count=Count('registered_patients', distinct=True),
             ).get(pk=center_id)
         except DiagnosticCenter.DoesNotExist:
@@ -181,8 +189,11 @@ class SuperadminUserListView(SuperadminBaseView):
     def get(self, request):
         users = (
             User.objects
-            .select_related('staff_profile__center', 'staff_profile__role')
-            .prefetch_related('doctor_profile__centers', 'patient_profile')
+            .select_related(
+                'staff_profile__center', 'staff_profile__role',
+                'center',
+            )
+            .prefetch_related('patient_profile')
             .order_by('-date_joined')
         )
 
@@ -192,11 +203,7 @@ class SuperadminUserListView(SuperadminBaseView):
         search = request.query_params.get('search', '').strip()
 
         if center_id:
-            users = users.filter(
-                Q(staff_profile__center_id=center_id)
-                | Q(doctor_profile__centers__id=center_id)
-                | Q(patient_profile__registered_at_center_id=center_id),
-            ).distinct()
+            users = users.filter(center_id=center_id)
 
         if user_type == 'staff':
             users = users.filter(staff_profile__isnull=False)
@@ -230,8 +237,9 @@ class SuperadminUserDetailView(SuperadminBaseView):
         try:
             user = User.objects.select_related(
                 'staff_profile__center', 'staff_profile__role',
+                'center',
             ).prefetch_related(
-                'doctor_profile__centers', 'patient_profile',
+                'patient_profile',
             ).get(pk=user_id)
         except User.DoesNotExist:
             return Response(
@@ -352,14 +360,13 @@ class SuperadminDoctorListView(SuperadminBaseView):
     def get(self, request):
         doctors = (
             Doctor.objects
-            .select_related('user')
-            .prefetch_related('centers')
+            .select_related('user', 'user__center')
             .order_by('user__first_name')
         )
 
         center_id = request.query_params.get('center')
         if center_id:
-            doctors = doctors.filter(centers__id=center_id)
+            doctors = doctors.filter(user__center_id=center_id)
 
         serializer = SuperadminDoctorSerializer(doctors, many=True)
         return Response(serializer.data)

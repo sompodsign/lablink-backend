@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from core.tenants.middleware import TenantMiddleware
-from core.tenants.models import Service, Staff
+from core.tenants.models import Doctor, Service, Staff
 from core.tenants.permissions import (
     IsCenterAdmin,
     IsCenterDoctor,
@@ -479,50 +479,7 @@ class DoctorManagementViewTests(APITestCase):
         names = [d["name"] for d in response.data["results"]]
         self.assertIn("Dr Test", names)
 
-    def test_add_doctor_to_center(self):
-        new_doc_user = make_user("new_doc", "New", "Doctor")
-        new_doctor = make_doctor(new_doc_user)  # Not associated with center yet
-        self._auth(self.admin_user)
-        response = self.client.post(
-            f"/api/tenants/doctors/{new_doctor.id}/add-to-center/",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(new_doctor.centers.filter(id=self.center.id).exists())
 
-    def test_remove_doctor_from_center(self):
-        self._auth(self.admin_user)
-        response = self.client.post(
-            f"/api/tenants/doctors/{self.doctor.id}/remove-from-center/",
-        )
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(self.doctor.centers.filter(id=self.center.id).exists())
-
-    def test_non_admin_cannot_add_doctor(self):
-        new_doc_user = make_user("blocked_doc", "Bl", "Doc")
-        new_doctor = make_doctor(new_doc_user)
-        self._auth(self.staff_user)
-        response = self.client.post(
-            f"/api/tenants/doctors/{new_doctor.id}/add-to-center/",
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_doctor_activity(self):
-        patient = make_patient("act_patient", self.center)
-        make_appointment(patient, self.center, doctor=self.doctor)
-        self._auth(self.staff_user)
-        response = self.client.get(
-            f"/api/tenants/doctors/{self.doctor.id}/activity/",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("total_appointments", response.data)
-        self.assertIn("total_test_orders", response.data)
-
-    def test_add_nonexistent_doctor_404(self):
-        self._auth(self.admin_user)
-        response = self.client.post(
-            "/api/tenants/doctors/99999/add-to-center/",
-        )
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     # ── CRUD Tests ──────────────────────────────────────────────────
 
@@ -552,13 +509,15 @@ class DoctorManagementViewTests(APITestCase):
 
     def test_admin_can_delete_doctor(self):
         self._auth(self.admin_user)
+        doctor_id = self.doctor.id
+        user_id = self.doctor_user.id
         response = self.client.delete(
-            f'/api/tenants/doctors/{self.doctor.id}/',
+            f'/api/tenants/doctors/{doctor_id}/',
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        # Doctor still exists but is no longer linked to center
-        self.doctor.refresh_from_db()
-        self.assertFalse(self.doctor.centers.filter(id=self.center.id).exists())
+        # User and doctor are both deleted (cascade)
+        self.assertFalse(Doctor.objects.filter(id=doctor_id).exists())
+        self.assertFalse(User.objects.filter(id=user_id).exists())
 
     def test_receptionist_cannot_create_doctor(self):
         self._auth(self.staff_user)

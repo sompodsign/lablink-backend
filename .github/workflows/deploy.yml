@@ -1,0 +1,177 @@
+name: LabLink CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'deployment/**'
+      - '.github/workflows/deploy.yml'
+      - 'Dockerfile'
+      - 'manage.py'
+  workflow_dispatch:
+
+jobs:
+  # ── Test ──────────────────────────────────────────────────────
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lablink
+          POSTGRES_USER: lablink_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U lablink_user -d lablink"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-ansi --no-root
+
+      - name: Lint
+        run: poetry run ruff check src/ || true
+
+      - name: Run tests
+        env:
+          DJANGO_SETTINGS_MODULE: core.config.local
+          POSTGRES_DB: lablink
+          POSTGRES_USER: lablink_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+          PYTHONPATH: src
+        run: poetry run python manage.py test core apps.appointments apps.payments --keepdb -v 2
+
+  # ── Deploy ────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          path: lablink-backend
+
+      - name: Checkout frontend
+        uses: actions/checkout@v4
+        with:
+          repository: sompodsign/lablink-frontend
+          path: lablink-frontend
+
+      - name: Sync backend to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: "lablink-backend/"
+          target: ${{ secrets.PROD_DEPLOY_PATH }}
+          rm: false
+          overwrite: true
+
+      - name: Sync frontend to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: "lablink-frontend/"
+          target: ${{ secrets.PROD_DEPLOY_PATH }}
+          rm: false
+          overwrite: true
+
+      - name: Build and deploy on server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            set -euo pipefail
+            cd ${{ secrets.PROD_DEPLOY_PATH }}
+
+            # ── Create production .env ──────────────────────────
+            cat > lablink-backend/deployment/.env << 'ENVEOF'
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
+            DEBUG=False
+            ALLOWED_HOSTS=${{ secrets.DOMAIN }},*.${{ secrets.DOMAIN }},localhost
+            POSTGRES_DB=lablink
+            POSTGRES_USER=lablink_user
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_HOST=db
+            POSTGRES_PORT=5432
+            CELERY_BROKER_URL=redis://redis:6379/0
+            CELERY_RESULT_BACKEND=redis://redis:6379/0
+            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+            CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
+            ENVEOF
+
+            # ── Build backend image ─────────────────────────────
+            echo "🔨 Building backend image..."
+            docker build -t lablink-backend:latest ./lablink-backend/
+
+            # ── Build frontend ──────────────────────────────────
+            echo "🔨 Building frontend..."
+            docker build -f lablink-frontend/Dockerfile.prod \
+              -t lablink-frontend-build:latest ./lablink-frontend/
+
+            # ── Start services ──────────────────────────────────
+            echo "🚀 Starting services..."
+            cd lablink-backend/deployment
+            docker compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+            docker compose -f docker-compose.prod.yml up -d
+
+            # Copy frontend dist into the nginx volume
+            echo "📦 Extracting frontend build into nginx..."
+            docker rm -f lablink_frontend_copy 2>/dev/null || true
+            docker create --name lablink_frontend_copy lablink-frontend-build:latest
+            docker cp lablink_frontend_copy:/dist/. lablink_nginx:/app/frontend/dist/
+            docker rm lablink_frontend_copy
+
+            # Reload nginx
+            docker exec lablink_nginx nginx -s reload 2>/dev/null || true
+
+            # ── Health check ────────────────────────────────────
+            echo "⏳ Waiting for startup..."
+            sleep 10
+            HTTP_CODE=$(curl -sf http://localhost:4010/api/auth/profile/ -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Backend is healthy! (HTTP $HTTP_CODE)"
+            else
+              echo "⚠️ Health check returned HTTP $HTTP_CODE"
+            fi

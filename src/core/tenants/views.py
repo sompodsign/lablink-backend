@@ -224,22 +224,21 @@ class RoleViewSet(viewsets.ModelViewSet):
     ),
     destroy=extend_schema(
         tags=["Doctors"],
-        summary="Remove doctor from center",
+        summary="Delete doctor from center",
         description=(
-            "Admin removes a doctor from the current center. "
-            "This only removes the M2M relationship — the doctor and user records are preserved."
+            "Admin deletes a doctor and their user account from the center."
         ),
     ),
 )
 class DoctorManagementViewSet(viewsets.ModelViewSet):
-    """Admin manages doctors associated with their center (full CRUD)."""
+    """Admin manages doctors at their center (full CRUD)."""
 
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_queryset(self):
         tenant = self.request.tenant
         return (
-            Doctor.objects.filter(centers=tenant)
+            Doctor.objects.filter(user__center=tenant)
             .select_related("user")
             .order_by("user__first_name")
         )
@@ -271,71 +270,14 @@ class DoctorManagementViewSet(viewsets.ModelViewSet):
         )
 
     def perform_destroy(self, instance):
-        """Remove doctor from center only — preserve User and Doctor records."""
+        """Delete doctor and user from center."""
         tenant = self.request.tenant
-        instance.centers.remove(tenant)
+        user = instance.user
         logger.info(
-            'Doctor removed from center',
+            'Doctor deleted from center',
             extra={'doctor_id': instance.id, 'center_id': tenant.id},
         )
-
-    @extend_schema(
-        tags=["Doctors"],
-        summary="Add doctor to center",
-        description=(
-            "Admin adds an existing doctor (by ID) to the current center. "
-            "This creates the M2M relationship — it does NOT create a new doctor record."
-        ),
-        request=None,
-        responses={200: DoctorManagementSerializer},
-    )
-    @action(detail=True, methods=["post"], url_path="add-to-center")
-    def add_to_center(self, request, pk=None):
-        if not IsCenterAdmin().has_permission(request, self):
-            return Response(
-                {"detail": "Only admins can add doctors to the center."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        try:
-            doctor = Doctor.objects.get(pk=pk)
-        except Doctor.DoesNotExist:
-            return Response(
-                {"detail": "Doctor not found."}, status=status.HTTP_404_NOT_FOUND
-            )
-
-        tenant = request.tenant
-        doctor.centers.add(tenant)
-        logger.info(
-            "Doctor added to center",
-            extra={"doctor_id": doctor.id, "center_id": tenant.id},
-        )
-        return Response(DoctorManagementSerializer(doctor).data)
-
-    @extend_schema(
-        tags=["Doctors"],
-        summary="Remove doctor from center",
-        description=(
-            "Admin removes a doctor from the current center. "
-            "This only removes the M2M relationship — the doctor record is NOT deleted."
-        ),
-        request=None,
-        responses={204: None},
-    )
-    @action(detail=True, methods=["post"], url_path="remove-from-center")
-    def remove_from_center(self, request, pk=None):
-        if not IsCenterAdmin().has_permission(request, self):
-            return Response(
-                {"detail": "Only admins can remove doctors from the center."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        doctor = self.get_object()
-        tenant = request.tenant
-        doctor.centers.remove(tenant)
-        logger.info(
-            "Doctor removed from center",
-            extra={"doctor_id": doctor.id, "center_id": tenant.id},
-        )
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        user.delete()  # cascades to delete Doctor too
 
     @extend_schema(
         tags=["Doctors"],
