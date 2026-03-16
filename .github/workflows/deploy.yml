@@ -116,7 +116,7 @@ jobs:
             cat > lablink-backend/deployment/.env << 'ENVEOF'
             SECRET_KEY=${{ secrets.SECRET_KEY }}
             DEBUG=False
-            ALLOWED_HOSTS=${{ secrets.DOMAIN }},*.${{ secrets.DOMAIN }},localhost
+            ALLOWED_HOSTS=${{ secrets.DOMAIN }},*.${{ secrets.DOMAIN }},api.${{ secrets.DOMAIN }},localhost
             POSTGRES_DB=lablink
             POSTGRES_USER=lablink_user
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
@@ -130,12 +130,12 @@ jobs:
 
             # Build backend image
             echo "🔨 Building backend image..."
-            docker build -t lablink-backend:latest ./lablink-backend/
+            docker build --no-cache -t lablink-backend:latest ./lablink-backend/
 
             # Start services
             echo "🚀 Starting services..."
             cd lablink-backend/deployment
-            docker compose -f docker-compose.prod.yml up -d --force-recreate backend celery_worker celery_beat
+            docker compose -f docker-compose.prod.yml up -d --force-recreate
 
             # Health check
             echo "⏳ Waiting for startup..."

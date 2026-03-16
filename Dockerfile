@@ -5,6 +5,7 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
     DJANGO_SETTINGS_MODULE=core.config.prod
 
 # Install system dependencies
@@ -26,9 +27,6 @@ RUN poetry config virtualenvs.create false \
 
 # Copy project
 COPY . /app/
-
-# Set working directory to src/ where Django modules live
-WORKDIR /app/src
 
 # Collect static files at build time
 RUN python manage.py collectstatic --noinput 2>/dev/null || true
