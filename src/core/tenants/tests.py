@@ -259,6 +259,87 @@ class TenantMiddlewareTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Subdomain Validation Middleware Tests
+# ---------------------------------------------------------------------------
+
+
+class TenantSubdomainMiddlewareTests(TestCase):
+    def setUp(self):
+        self.center = make_center('Sub Center', 'sub-clinic')
+        self.factory = RequestFactory()
+
+    def _make_middleware(self):
+        return TenantMiddleware(get_response=lambda r: r)
+
+    def _request(self, host):
+        return self.factory.get('/', HTTP_HOST=host)
+
+    def test_registered_subdomain_passes(self):
+        """Requests to a known subdomain are allowed through."""
+        mw = self._make_middleware()
+        response = mw(self._request('sub-clinic.lablink.bd'))
+        # Middleware returns the request itself (our lambda); no JsonResponse
+        self.assertFalse(hasattr(response, 'status_code') and response.status_code == 404)
+
+    def test_unknown_subdomain_returns_404(self):
+        """Requests to an unregistered subdomain are rejected with 404."""
+        mw = self._make_middleware()
+        response = mw(self._request('notexist.lablink.bd'))
+        self.assertEqual(response.status_code, 404)
+        import json
+        data = json.loads(response.content)
+        self.assertEqual(data['detail'], 'Tenant not found.')
+
+    def test_api_subdomain_bypasses_validation(self):
+        """api.lablink.bd is reserved and should never be blocked."""
+        mw = self._make_middleware()
+        response = mw(self._request('api.lablink.bd'))
+        self.assertNotEqual(getattr(response, 'status_code', 200), 404)
+
+    def test_bare_domain_bypasses_validation(self):
+        """lablink.bd itself is not a tenant subdomain — skip check."""
+        mw = self._make_middleware()
+        response = mw(self._request('lablink.bd'))
+        self.assertNotEqual(getattr(response, 'status_code', 200), 404)
+
+    def test_localhost_bypasses_validation(self):
+        """Local dev requests (non lablink.bd hosts) are not validated."""
+        mw = self._make_middleware()
+        response = mw(self._request('localhost:8000'))
+        self.assertNotEqual(getattr(response, 'status_code', 200), 404)
+
+
+# ---------------------------------------------------------------------------
+# TenantByDomainView Tests
+# ---------------------------------------------------------------------------
+
+
+class TenantByDomainViewTests(APITestCase):
+    def setUp(self):
+        self.center = make_center('By Domain Center', 'bydomain')
+
+    def test_known_domain_returns_200(self):
+        response = self.client.get('/api/tenants/by-domain/?domain=bydomain')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['name'], 'By Domain Center')
+
+    def test_unknown_domain_returns_404(self):
+        response = self.client.get('/api/tenants/by-domain/?domain=ghost')
+        self.assertEqual(response.status_code, 404)
+
+    def test_missing_domain_param_returns_400(self):
+        response = self.client.get('/api/tenants/by-domain/')
+        self.assertEqual(response.status_code, 400)
+
+    def test_inactive_center_still_returns_200(self):
+        """by-domain does not enforce deactivation — that's handled by the middleware."""
+        self.center.is_active = False
+        self.center.save()
+        response = self.client.get('/api/tenants/by-domain/?domain=bydomain')
+        self.assertEqual(response.status_code, 200)
+
+
+# ---------------------------------------------------------------------------
 # Mixin Tests
 # ---------------------------------------------------------------------------
 

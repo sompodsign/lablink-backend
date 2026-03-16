@@ -20,6 +20,7 @@ from .views import (
     PermissionViewSet,
     RoleViewSet,
     StaffViewSet,
+    TenantByDomainView,
 )
 
 router = DefaultRouter()
@@ -54,6 +55,7 @@ superadmin_patterns = [
 
 urlpatterns = [
     path('current/', CurrentTenantView.as_view(), name='current-tenant'),
+    path('by-domain/', TenantByDomainView.as_view(), name='tenant-by-domain'),
     path('centers/', CenterListView.as_view(), name='center-list'),
     path(
         'centers/<int:center_id>/permissions/',

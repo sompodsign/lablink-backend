@@ -53,6 +53,51 @@ class CurrentTenantView(APIView):
         )
 
 
+@extend_schema(
+    tags=["Tenant"],
+    summary="Validate tenant subdomain",
+    description=(
+        "Public endpoint used by the frontend to check if a subdomain "
+        "corresponds to a registered diagnostic center. "
+        "Returns 200 with center data if found, 404 if not registered."
+    ),
+    parameters=[
+        {
+            "name": "domain",
+            "in": "query",
+            "required": True,
+            "schema": {"type": "string"},
+            "description": "Subdomain identifier, e.g. 'alpha'",
+        }
+    ],
+    responses={
+        200: DiagnosticCenterSerializer,
+        400: {"description": "Missing domain query parameter"},
+        404: {"description": "Tenant not found for this domain"},
+    },
+)
+class TenantByDomainView(APIView):
+    permission_classes = []  # Public endpoint
+
+    def get(self, request):
+        domain = request.query_params.get('domain', '').strip().lower()
+        if not domain:
+            return Response(
+                {'detail': 'domain query parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            center = DiagnosticCenter.objects.get(domain=domain)
+        except DiagnosticCenter.DoesNotExist:
+            return Response(
+                {'detail': 'Tenant not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(
+            DiagnosticCenterSerializer(center, context={'request': request}).data
+        )
+
+
 # ── Role & Permission Views ──────────────────────────────────────
 
 

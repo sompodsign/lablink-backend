@@ -2,6 +2,7 @@
 import logging
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from core.tenants.models import DiagnosticCenter
@@ -9,12 +10,55 @@ from core.tenants.models import DiagnosticCenter
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+# Subdomains that are not tenant identifiers — skip domain validation for these
+_RESERVED_SUBDOMAINS = {'api', 'www', 'lablink', ''}
+_BASE_DOMAIN = 'lablink.bd'
+_SUBDOMAIN_CACHE_TTL = 1200  # 20 minutes
+
+
+def _extract_subdomain(host: str) -> str | None:
+    """
+    Extract the subdomain from a Host header value.
+    Returns None if the host is the bare domain or a reserved subdomain.
+
+    Examples:
+        'alpha.lablink.bd'  -> 'alpha'
+        'lablink.bd'        -> None  (bare domain)
+        'api.lablink.bd'    -> None  (reserved)
+        'localhost'         -> None  (local dev)
+    """
+    host = host.split(':')[0].lower()  # strip port
+    if not host.endswith(_BASE_DOMAIN):
+        return None  # local dev or other domain — skip
+    subdomain = host[: -(len(_BASE_DOMAIN))].rstrip('.')
+    if subdomain in _RESERVED_SUBDOMAINS:
+        return None
+    return subdomain or None
+
+
+def _is_registered_subdomain(subdomain: str) -> bool:
+    """
+    Returns True if the subdomain maps to a DiagnosticCenter.
+    Result is cached in Redis for _SUBDOMAIN_CACHE_TTL seconds to avoid
+    a DB hit on every request.
+    """
+    cache_key = f'tenant_domain_exists:{subdomain}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    exists = DiagnosticCenter.objects.filter(domain=subdomain).exists()
+    cache.set(cache_key, exists, _SUBDOMAIN_CACHE_TTL)
+    return exists
+
 
 class TenantMiddleware:
     """
     Middleware to identify the current tenant from the authenticated user.
     Uses JWT token from the Authorization header to identify the user,
     then reads their `center` FK directly.
+
+    Also validates subdomain-based access: requests to unregistered subdomains
+    (e.g. unknown.lablink.bd) are rejected with HTTP 404.
     """
 
     def __init__(self, get_response):
@@ -23,6 +67,16 @@ class TenantMiddleware:
 
     def __call__(self, request):
         request.tenant = None
+
+        # ── Subdomain validation (cached — 1 DB hit per 5 min per subdomain) ─
+        subdomain = _extract_subdomain(request.get_host())
+        if subdomain is not None and not _is_registered_subdomain(subdomain):
+            from django.http import JsonResponse
+            logger.warning('Unregistered subdomain access attempt: %s', subdomain)
+            return JsonResponse(
+                {'detail': 'Tenant not found.'},
+                status=404,
+            )
 
         # Try to get user from JWT token
         user = self._get_user_from_jwt(request)
