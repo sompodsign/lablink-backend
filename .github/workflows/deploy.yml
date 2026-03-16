@@ -1,4 +1,4 @@
-name: LabLink CI/CD
+name: LabLink Backend CI/CD
 
 on:
   push:
@@ -71,7 +71,7 @@ jobs:
           POSTGRES_PORT: "5432"
           SECRET_KEY: ci-test-secret-key-not-for-production
           CELERY_BROKER_URL: redis://localhost:6379/0
-          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://redis:6379/0
           PYTHONPATH: src
         run: poetry run python manage.py test core apps.appointments apps.payments --keepdb -v 2
 
@@ -84,14 +84,6 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          path: lablink-backend
-
-      - name: Checkout frontend
-        uses: actions/checkout@v4
-        with:
-          repository: sompodsign/lablink-frontend
-          path: lablink-frontend
 
       - name: Sync backend to server
         uses: appleboy/scp-action@v0.1.7
@@ -99,19 +91,8 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
-          source: "lablink-backend/"
-          target: ${{ secrets.PROD_DEPLOY_PATH }}
-          rm: false
-          overwrite: true
-
-      - name: Sync frontend to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          source: "lablink-frontend/"
-          target: ${{ secrets.PROD_DEPLOY_PATH }}
+          source: "./"
+          target: "${{ secrets.PROD_DEPLOY_PATH }}/lablink-backend"
           rm: false
           overwrite: true
 
@@ -145,26 +126,11 @@ jobs:
             echo "🔨 Building backend image..."
             docker build -t lablink-backend:latest ./lablink-backend/
 
-            # ── Build frontend ──────────────────────────────────
-            echo "🔨 Building frontend..."
-            docker build -f lablink-frontend/Dockerfile.prod \
-              -t lablink-frontend-build:latest ./lablink-frontend/
-
             # ── Start services ──────────────────────────────────
             echo "🚀 Starting services..."
             cd lablink-backend/deployment
             docker compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
             docker compose -f docker-compose.prod.yml up -d
-
-            # Copy frontend dist into the nginx volume
-            echo "📦 Extracting frontend build into nginx..."
-            docker rm -f lablink_frontend_copy 2>/dev/null || true
-            docker create --name lablink_frontend_copy lablink-frontend-build:latest
-            docker cp lablink_frontend_copy:/dist/. lablink_nginx:/app/frontend/dist/
-            docker rm lablink_frontend_copy
-
-            # Reload nginx
-            docker exec lablink_nginx nginx -s reload 2>/dev/null || true
 
             # ── Health check ────────────────────────────────────
             echo "⏳ Waiting for startup..."

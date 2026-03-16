@@ -1,21 +1,4 @@
 services:
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: lablink_nginx
-    restart: unless-stopped
-    ports:
-      - "4010:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - frontend_dist:/app/frontend/dist:ro
-      - backend_static:/app/backend/staticfiles:ro
-      - backend_media:/app/backend/media
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - lablink_network
-
   backend:
     image: lablink-backend:latest
     container_name: lablink_backend
@@ -27,11 +10,11 @@ services:
       - POSTGRES_HOST=db
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    ports:
+      - "4010:8000"
     volumes:
       - backend_static:/app/src/staticfiles
       - backend_media:/app/src/media
-    expose:
-      - "8000"
     depends_on:
       db:
         condition: service_healthy
@@ -140,7 +123,6 @@ volumes:
   redis_data:
   backend_static:
   backend_media:
-  frontend_dist:
 
 networks:
   lablink_network:
