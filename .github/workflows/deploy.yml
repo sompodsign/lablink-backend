@@ -71,16 +71,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure SSH key
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          if printf '%s' "$SSH_KEY" | grep -q '\\n'; then
+            printf '%s' "$SSH_KEY" | sed 's/\\n/\n/g' > "$HOME/.ssh/deploy_key"
+          else
+            printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/deploy_key"
+          fi
+          chmod 600 "$HOME/.ssh/deploy_key"
+          ssh-keyscan -p 22 ${{ secrets.DEPLOY_HOST }} >> "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/deploy_key" -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p '${{ secrets.PROD_DEPLOY_PATH }}/lablink-backend'"
+
       - name: Sync to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_KEY }}
-          source: "./"
-          target: "${{ secrets.PROD_DEPLOY_PATH }}/lablink-backend"
-          rm: false
-          overwrite: true
+        run: |
+          set -euo pipefail
+          RSYNC_SSH="ssh -i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=no"
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude '.venv' \
+            --exclude '.ruff_cache' \
+            --exclude '.mypy_cache' \
+            --exclude '.pytest_cache' \
+            --exclude 'deployment/.env' \
+            -e "$RSYNC_SSH" \
+            ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/lablink-backend/
 
       - name: Build and deploy
         uses: appleboy/ssh-action@v1.0.0
