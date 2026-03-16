@@ -29,26 +29,6 @@ services:
       timeout: 5s
       retries: 5
 
-  web:
-    build: .
-    container_name: lablink_web
-    command: python manage.py runserver 0.0.0.0:8000
-    volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    environment:
-      - POSTGRES_HOST=db
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
   celery_worker:
     build: .
     container_name: lablink_celery_worker
