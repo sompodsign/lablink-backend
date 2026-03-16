@@ -245,7 +245,29 @@ class UserSerializer(serializers.ModelSerializer):
             phone_number=validated_data.get('phone_number', ''),
         )
 
-        # Auto-create patient profile
-        PatientProfile.objects.create(user=user)
+        # Resolve center from request origin (subdomain registration)
+        center = None
+        request = self.context.get('request')
+        if request:
+            from core.tenants.models import DiagnosticCenter
+            from urllib.parse import urlparse
+
+            origin = request.META.get('HTTP_ORIGIN', '')
+            if origin:
+                hostname = urlparse(origin).hostname or ''
+                # e.g. "pop.localhost" → subdomain "pop"
+                parts = hostname.split('.')
+                if len(parts) > 1:
+                    subdomain = parts[0]
+                    center = DiagnosticCenter.objects.filter(
+                        domain=subdomain, is_active=True,
+                    ).first()
+
+        # Auto-create patient profile linked to center (if any)
+        PatientProfile.objects.create(
+            user=user,
+            registered_at_center=center,
+            phone_number=validated_data.get('phone_number', ''),
+        )
 
         return user

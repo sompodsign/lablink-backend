@@ -105,6 +105,23 @@ class CustomTokenObtainView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # Check if user's center is deactivated (superadmins bypass)
+        if not user.is_superuser:
+            from core.tenants.middleware import TenantMiddleware
+            _mw = TenantMiddleware(lambda r: None)
+            center = _mw._get_tenant_for_user(user)
+            if center and not center.is_active:
+                return Response(
+                    {
+                        'detail': (
+                            'Your diagnostic center has been deactivated. '
+                            'Please contact the platform administrator.'
+                        ),
+                        'approval_status': 'CENTER_DEACTIVATED',
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         # Issue tokens
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -147,6 +164,13 @@ class PasswordResetRequestView(APIView):
             settings, 'FRONTEND_URL', 'http://localhost:5173',
         )
         reset_url = f'{frontend_base}/reset-password/{uid}/{token}'
+
+        # DEV: print clean URL — the console email backend mangles it
+        # with quoted-printable line wrapping that corrupts the token.
+        import sys
+        sys.stderr.write(
+            f'\n\033[92m[RESET URL]\033[0m {reset_url}\n\n',
+        )
 
         send_mail(
             subject='Password Reset — LabLink',
@@ -193,12 +217,22 @@ class PasswordResetConfirmView(APIView):
             user_id = force_str(urlsafe_base64_decode(uid))
             user = User.objects.get(pk=user_id)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            logger.warning(
+                'Password reset: invalid uid=%s', uid,
+            )
             return Response(
                 {'detail': 'Invalid or expired reset link.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not default_token_generator.check_token(user, token):
+        token_valid = default_token_generator.check_token(user, token)
+        logger.info(
+            'Password reset attempt: user=%s uid=%s token_valid=%s '
+            'last_login=%s',
+            user.username, uid, token_valid, user.last_login,
+        )
+
+        if not token_valid:
             return Response(
                 {'detail': 'Invalid or expired reset link.'},
                 status=status.HTTP_400_BAD_REQUEST,

@@ -139,7 +139,8 @@ class DoctorActivitySerializer(serializers.Serializer):
 class PermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Permission
-        fields = ['id', 'codename', 'name', 'category']
+        fields = ['id', 'codename', 'name', 'category', 'is_custom']
+        read_only_fields = ['id']
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -171,6 +172,31 @@ class RoleSerializer(serializers.ModelSerializer):
         if permissions:
             role.permissions.set(permissions)
         return role
+
+    def validate(self, data):
+        """Ensure assigned permissions are within center's available set."""
+        perms = data.get('permissions')
+        if perms is not None:
+            request = self.context.get('request')
+            if request and hasattr(request, 'tenant') and request.tenant:
+                available_ids = set(
+                    request.tenant.available_permissions.values_list(
+                        'id', flat=True,
+                    )
+                )
+                invalid = [
+                    p.codename for p in perms if p.id not in available_ids
+                ]
+                if invalid:
+                    raise serializers.ValidationError(
+                        {
+                            'permission_ids': (
+                                f'Permissions not available at this center: '
+                                f'{", ".join(invalid)}'
+                            )
+                        }
+                    )
+        return data
 
     def update(self, instance, validated_data):
         permissions = validated_data.pop('permissions', None)

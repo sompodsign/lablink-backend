@@ -38,6 +38,16 @@ class DiagnosticCenter(models.Model):
     lab_support_availability = models.CharField(max_length=50, default='24/7')
 
     opening_hours = models.CharField(max_length=100, default='8:00 AM - 10:00 PM')
+    available_permissions = models.ManyToManyField(
+        'Permission',
+        blank=True,
+        related_name='available_at_centers',
+        help_text=_('Permissions available to this center for building roles.'),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_('Inactive centers are blocked from all API access.'),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -117,6 +127,10 @@ class Permission(models.Model):
     category = models.CharField(
         max_length=50,
         help_text=_('Grouping category for UI, e.g. Reports'),
+    )
+    is_custom = models.BooleanField(
+        default=False,
+        help_text=_('True for superadmin-created permissions.'),
     )
 
     class Meta:

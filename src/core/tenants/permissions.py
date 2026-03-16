@@ -5,6 +5,15 @@ from rest_framework import permissions
 logger = logging.getLogger(__name__)
 
 
+class IsSuperAdmin(permissions.BasePermission):
+    """User must be a Django superuser (platform-level admin)."""
+
+    message = 'You must be a superadmin to perform this action.'
+
+    def has_permission(self, request, view) -> bool:
+        return request.user.is_authenticated and request.user.is_superuser
+
+
 class IsCenterStaff(permissions.BasePermission):
     """User must be staff at the request's tenant center."""
 

@@ -6,9 +6,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.tenants.permissions import IsCenterAdmin, IsCenterStaff, IsCenterStaffOrDoctor
+from core.tenants.permissions import IsCenterAdmin, IsCenterStaff, IsCenterStaffOrDoctor, IsSuperAdmin
 
-from .models import Doctor, Permission, Role, Staff
+from .models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from .serializers import (
     DiagnosticCenterSerializer,
     DoctorActivitySerializer,
@@ -56,15 +56,93 @@ class CurrentTenantView(APIView):
 # ── Role & Permission Views ──────────────────────────────────────
 
 
-@extend_schema(tags=["Permissions"])
-class PermissionListView(APIView):
-    """List all available permissions (for role management UI)."""
+@extend_schema(tags=['Permissions'])
+@extend_schema_view(
+    list=extend_schema(summary='List all permissions'),
+    create=extend_schema(summary='Create custom permission (superadmin)'),
+    partial_update=extend_schema(summary='Update permission (superadmin)'),
+    destroy=extend_schema(summary='Delete custom permission (superadmin)'),
+)
+class PermissionViewSet(viewsets.ModelViewSet):
+    """Superadmin CRUD for permissions. List is available to center admins too."""
 
-    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+    serializer_class = PermissionSerializer
+    queryset = Permission.objects.all()
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
+    def get_permissions(self):
+        if self.action == 'list':
+            # Center admins can list (for role management UI)
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsSuperAdmin()]
+
+    def perform_create(self, serializer):
+        serializer.save(is_custom=True)
+
+    def perform_destroy(self, instance):
+        if not instance.is_custom:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('System permissions cannot be deleted.')
+        instance.delete()
+
+
+@extend_schema(tags=['Superadmin'])
+class CenterListView(APIView):
+    """Superadmin lists all diagnostic centers."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    @extend_schema(
+        summary='List all centers (superadmin)',
+        responses={200: DiagnosticCenterSerializer(many=True)},
+    )
     def get(self, request):
-        perms = Permission.objects.all()
+        centers = DiagnosticCenter.objects.all().order_by('name')
+        return Response(DiagnosticCenterSerializer(centers, many=True, context={'request': request}).data)
+
+
+@extend_schema(tags=['Superadmin'])
+class CenterPermissionView(APIView):
+    """Superadmin manages available permissions per center."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    @extend_schema(
+        summary='Get center available permissions',
+        responses={200: PermissionSerializer(many=True)},
+    )
+    def get(self, request, center_id):
+        try:
+            center = DiagnosticCenter.objects.get(pk=center_id)
+        except DiagnosticCenter.DoesNotExist:
+            return Response(
+                {'detail': 'Center not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        perms = center.available_permissions.all()
         return Response(PermissionSerializer(perms, many=True).data)
+
+    @extend_schema(
+        summary='Set center available permissions',
+        request={'application/json': {'type': 'object', 'properties': {'permission_ids': {'type': 'array', 'items': {'type': 'integer'}}}}},
+        responses={200: PermissionSerializer(many=True)},
+    )
+    def put(self, request, center_id):
+        try:
+            center = DiagnosticCenter.objects.get(pk=center_id)
+        except DiagnosticCenter.DoesNotExist:
+            return Response(
+                {'detail': 'Center not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        perm_ids = request.data.get('permission_ids', [])
+        valid_perms = Permission.objects.filter(id__in=perm_ids)
+        center.available_permissions.set(valid_perms)
+        logger.info(
+            'Center permissions updated',
+            extra={'center_id': center.id, 'perm_count': valid_perms.count()},
+        )
+        return Response(PermissionSerializer(center.available_permissions.all(), many=True).data)
 
 
 @extend_schema_view(

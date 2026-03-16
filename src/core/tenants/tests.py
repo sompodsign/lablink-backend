@@ -14,6 +14,7 @@ from core.tenants.permissions import (
     IsCenterStaff,
     IsCenterStaffOrDoctor,
     IsPatientOwner,
+    IsSuperAdmin,
 )
 from core.tenants.serializers import (
     DiagnosticCenterSerializer,
@@ -765,3 +766,175 @@ class PatientRegistrationTests(APITestCase):
         user_id = response.data["id"]
         profile = PatientProfile.objects.get(user_id=user_id)
         self.assertEqual(profile.registered_at_center, self.center)
+
+
+# ---------------------------------------------------------------------------
+# Superadmin Permission Management Tests
+# ---------------------------------------------------------------------------
+
+
+class IsSuperAdminPermTests(TestCase):
+    def setUp(self):
+        self.center = make_center('SA Center', 'sa-center')
+        self.superuser = make_user('super_perm', is_superuser=True)
+        self.regular_user = make_user('regular_perm')
+        self.admin_user = make_user('admin_perm')
+        make_staff(self.admin_user, self.center, 'Admin')
+
+    def test_superuser_allowed(self):
+        req = FakeRequest(self.superuser, self.center)
+        self.assertTrue(IsSuperAdmin().has_permission(req, None))
+
+    def test_center_admin_denied(self):
+        req = FakeRequest(self.admin_user, self.center)
+        self.assertFalse(IsSuperAdmin().has_permission(req, None))
+
+    def test_regular_user_denied(self):
+        req = FakeRequest(self.regular_user, self.center)
+        self.assertFalse(IsSuperAdmin().has_permission(req, None))
+
+    def test_unauthenticated_denied(self):
+        anon = MagicMock()
+        anon.is_authenticated = False
+        req = FakeRequest(anon, self.center)
+        self.assertFalse(IsSuperAdmin().has_permission(req, None))
+
+
+class SuperadminPermissionViewTests(APITestCase):
+    def setUp(self):
+        self.center = make_center('Perm Center', 'perm-center')
+        self.superuser = make_user('sa_view', is_superuser=True)
+        self.admin_user = make_user('admin_view')
+        make_staff(self.admin_user, self.center, 'Admin')
+
+    def _auth_super(self):
+        self.client.credentials(**jwt_auth_header(self.superuser))
+
+    def _auth_admin(self):
+        self.client.credentials(**jwt_auth_header(self.admin_user))
+        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+
+    # ── Permission CRUD ──────────────────────────────────────────
+
+    def test_superadmin_can_list_permissions(self):
+        self._auth_super()
+        response = self.client.get('/api/tenants/permissions/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreater(len(response.data['results']), 0)
+
+    def test_admin_can_list_permissions(self):
+        self._auth_admin()
+        response = self.client.get('/api/tenants/permissions/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_superadmin_can_create_permission(self):
+        self._auth_super()
+        response = self.client.post('/api/tenants/permissions/', {
+            'codename': 'custom_test_perm',
+            'name': 'Custom Test Perm',
+            'category': 'Custom',
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['is_custom'])
+
+    def test_admin_cannot_create_permission(self):
+        self._auth_admin()
+        response = self.client.post('/api/tenants/permissions/', {
+            'codename': 'hacked_perm',
+            'name': 'Hacked',
+            'category': 'Hacked',
+        })
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_superadmin_can_delete_custom_permission(self):
+        from core.tenants.models import Permission
+        self._auth_super()
+        perm = Permission.objects.create(
+            codename='deletable', name='Deletable', category='Test', is_custom=True,
+        )
+        response = self.client.delete(f'/api/tenants/permissions/{perm.id}/')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_superadmin_cannot_delete_system_permission(self):
+        from core.tenants.models import Permission
+        self._auth_super()
+        perm = Permission.objects.filter(is_custom=False).first()
+        response = self.client.delete(f'/api/tenants/permissions/{perm.id}/')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # ── Center Permission Management ─────────────────────────────
+
+    def test_superadmin_can_list_centers(self):
+        self._auth_super()
+        response = self.client.get('/api/tenants/centers/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    def test_admin_cannot_list_centers(self):
+        self._auth_admin()
+        response = self.client.get('/api/tenants/centers/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_superadmin_can_get_center_permissions(self):
+        self._auth_super()
+        response = self.client.get(
+            f'/api/tenants/centers/{self.center.id}/permissions/',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_superadmin_can_set_center_permissions(self):
+        from core.tenants.models import Permission
+        self._auth_super()
+        perms = list(Permission.objects.values_list('id', flat=True)[:3])
+        response = self.client.put(
+            f'/api/tenants/centers/{self.center.id}/permissions/',
+            {'permission_ids': perms},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), len(perms))
+
+    def test_center_not_found_returns_404(self):
+        self._auth_super()
+        response = self.client.get('/api/tenants/centers/99999/permissions/')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class RolePermissionValidationTests(APITestCase):
+    """RoleSerializer should reject permissions not in center's available set."""
+
+    def setUp(self):
+        from core.tenants.models import Permission
+        self.center = make_center('Val Center', 'val-center')
+        self.admin_user = make_user('val_admin')
+        make_staff(self.admin_user, self.center, 'Admin')
+
+        # Give center only 2 permissions
+        avail = Permission.objects.all()[:2]
+        self.center.available_permissions.set(avail)
+        self.available_ids = list(avail.values_list('id', flat=True))
+        self.unavailable_perm = Permission.objects.exclude(
+            id__in=self.available_ids,
+        ).first()
+
+    def _auth(self):
+        self.client.credentials(**jwt_auth_header(self.admin_user))
+        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+
+    def test_create_role_with_available_permissions_succeeds(self):
+        self._auth()
+        response = self.client.post('/api/tenants/roles/', {
+            'name': 'Custom Good',
+            'permission_ids': self.available_ids,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_role_with_unavailable_permission_fails(self):
+        self._auth()
+        response = self.client.post('/api/tenants/roles/', {
+            'name': 'Custom Bad',
+            'permission_ids': [self.unavailable_perm.id],
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('permission_ids', str(response.data))
+

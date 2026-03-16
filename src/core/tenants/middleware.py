@@ -29,6 +29,24 @@ class TenantMiddleware:
         if user:
             request.tenant = self._get_tenant_for_user(user)
 
+        # Block deactivated centers (superadmins bypass)
+        if (
+            request.tenant
+            and not request.tenant.is_active
+            and user
+            and not user.is_superuser
+        ):
+            from django.http import JsonResponse
+            return JsonResponse(
+                {
+                    'detail': (
+                        'This diagnostic center has been deactivated. '
+                        'Please contact the platform administrator.'
+                    ),
+                },
+                status=403,
+            )
+
         response = self.get_response(request)
         return response
 
