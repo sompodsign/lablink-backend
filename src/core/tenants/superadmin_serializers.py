@@ -104,7 +104,7 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
     def validate_domain(self, value):
         if DiagnosticCenter.objects.filter(domain=value).exists():
             raise serializers.ValidationError(
-                'A center with this domain already exists.',
+                "A center with this domain already exists.",
             )
         return value
 
