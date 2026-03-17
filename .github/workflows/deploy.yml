@@ -217,13 +217,17 @@ jobs:
             cd lablink-backend/deployment
             docker compose -f docker-compose.prod.yml up -d --force-recreate
 
-            # Health check
+            # Health check with retry
             echo "⏳ Waiting for startup..."
-            sleep 10
-            HTTP_CODE=$(curl -sf http://localhost:4010/api/auth/profile/ -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
-            if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Backend is healthy! (HTTP $HTTP_CODE)"
-            else
-              echo "⚠️ Health check returned HTTP $HTTP_CODE"
-              exit 1
-            fi
+            for i in $(seq 1 12); do
+              sleep 5
+              HTTP_CODE=$(curl -sf http://localhost:8001/api/auth/profile/ -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+              if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "200" ]; then
+                echo "✅ Backend is healthy! (HTTP $HTTP_CODE, attempt $i)"
+                exit 0
+              fi
+              echo "  Attempt $i/12 — HTTP $HTTP_CODE, retrying..."
+            done
+            echo "⚠️ Health check failed after 60s (last HTTP $HTTP_CODE)"
+            docker logs lablink_backend --tail 20
+            exit 1
