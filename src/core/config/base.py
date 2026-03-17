@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'corsheaders',
     'django_celery_results',
+    'django_celery_beat',
     # Local apps
     'core.users',
     'core.tenants',

@@ -94,6 +94,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "55436:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lablink_user -d lablink"]
       interval: 5s
