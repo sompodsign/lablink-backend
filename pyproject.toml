@@ -25,6 +25,31 @@ dependencies = [
     "django-celery-beat (>=2.9.0,<3.0.0)"
 ]
 
+[tool.poetry.group.dev.dependencies]
+ruff = ">=0.11.0,<1.0.0"
+coverage = ">=7.8.0,<8.0.0"
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "T201", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "apps", "libs"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/migrations/*", "*/tests/*", "*/tests.py", "manage.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
