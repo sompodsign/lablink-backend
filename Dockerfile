@@ -28,15 +28,14 @@ RUN poetry config virtualenvs.create false \
 # Copy project
 COPY . /app/
 
-# Collect static files at build time
-RUN python manage.py collectstatic --noinput 2>/dev/null || true
-
-# Entrypoint: run migrations then start Gunicorn
+# Entrypoint: run migrations, collect static, then start Gunicorn
 COPY <<'EOF' /app/entrypoint.sh
 #!/bin/sh
 set -e
 echo "🔄 Running migrations..."
 python manage.py migrate --noinput
+echo "📦 Collecting static files..."
+python manage.py collectstatic --noinput
 echo "🚀 Starting Gunicorn..."
 exec gunicorn core.wsgi:application \
     --bind 0.0.0.0:8000 \
