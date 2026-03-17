@@ -28,124 +28,124 @@ env:
 # ──────────────────────────────────────────────────────────
 jobs:
 
-  # # ── 1. Lint ─────────────────────────────────────────────
-  # lint:
-  #   name: Lint & Format Check
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - uses: actions/setup-python@v5
-  #       with:
-  #         python-version: ${{ env.PYTHON_VERSION }}
-  #
-  #     - name: Install tools
-  #       run: pip install ruff
-  #
-  #     - name: Ruff lint
-  #       run: ruff check src/
-  #
-  #     - name: Ruff format check
-  #       run: ruff format --check src/
-  #
-  # # ── 2. Test & Coverage ──────────────────────────────────
-  # test:
-  #   name: Test & Coverage
-  #   runs-on: ubuntu-latest
-  #   needs: lint
-  #   services:
-  #     postgres:
-  #       image: postgres:16-alpine
-  #       env:
-  #         POSTGRES_DB: lablink
-  #         POSTGRES_USER: lablink_user
-  #         POSTGRES_PASSWORD: ci_test_password
-  #       ports:
-  #         - 5432:5432
-  #       options: >-
-  #         --health-cmd="pg_isready -U lablink_user -d lablink"
-  #         --health-interval=5s
-  #         --health-timeout=5s
-  #         --health-retries=5
-  #     redis:
-  #       image: redis:7-alpine
-  #       ports:
-  #         - 6379:6379
-  #       options: >-
-  #         --health-cmd="redis-cli ping"
-  #         --health-interval=5s
-  #         --health-timeout=5s
-  #         --health-retries=5
-  #   env:
-  #     DJANGO_SETTINGS_MODULE: core.config.local
-  #     POSTGRES_DB: lablink
-  #     POSTGRES_USER: lablink_user
-  #     POSTGRES_PASSWORD: ci_test_password
-  #     POSTGRES_HOST: localhost
-  #     POSTGRES_PORT: '5432'
-  #     SECRET_KEY: ci-test-secret-key-not-for-production
-  #     CELERY_BROKER_URL: redis://localhost:6379/0
-  #     CELERY_RESULT_BACKEND: redis://localhost:6379/0
-  #     EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - uses: actions/setup-python@v5
-  #       with:
-  #         python-version: ${{ env.PYTHON_VERSION }}
-  #
-  #     - name: Install Poetry
-  #       run: pip install poetry==${{ env.POETRY_VERSION }}
-  #
-  #     - name: Cache dependencies
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: ~/.cache/pypoetry
-  #         key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
-  #         restore-keys: poetry-${{ runner.os }}-
-  #
-  #     - name: Install dependencies
-  #       run: poetry install --no-interaction --no-ansi --no-root
-  #
-  #     - name: Check migrations
-  #       run: poetry run python manage.py makemigrations --check --dry-run
-  #
-  #     - name: Run migrations
-  #       run: poetry run python manage.py migrate --noinput
-  #
-  #     - name: Collect static (dry run)
-  #       run: poetry run python manage.py collectstatic --noinput --dry-run 2>/dev/null || poetry run python manage.py collectstatic --noinput
-  #
-  #     - name: Run tests with coverage
-  #       run: |
-  #         poetry run coverage run manage.py test \
-  #           core.tenants.tests \
-  #           core.users.tests \
-  #           apps.appointments.tests \
-  #           apps.diagnostics.tests \
-  #           apps.diagnostics.management.commands.tests \
-  #           apps.notifications.tests \
-  #           apps.payments.tests \
-  #           -v 2
-  #
-  #     - name: Coverage report
-  #       run: |
-  #         poetry run coverage report --fail-under=50
-  #         poetry run coverage xml -o coverage.xml
-  #
-  #     - name: Upload coverage artifact
-  #       if: always()
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: coverage-report
-  #         path: coverage.xml
-  #         retention-days: 14
+  # ── 1. Lint ─────────────────────────────────────────────
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install tools
+        run: pip install ruff
+
+      - name: Ruff lint
+        run: ruff check src/
+
+      - name: Ruff format check
+        run: ruff format --check src/
+
+  # ── 2. Test & Coverage ──────────────────────────────────
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lablink
+          POSTGRES_USER: lablink_user
+          POSTGRES_PASSWORD: ci_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U lablink_user -d lablink"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DJANGO_SETTINGS_MODULE: core.config.local
+      POSTGRES_DB: lablink
+      POSTGRES_USER: lablink_user
+      POSTGRES_PASSWORD: ci_test_password
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
+      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        run: pip install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: poetry-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-ansi --no-root
+
+      - name: Check migrations
+        run: poetry run python manage.py makemigrations --check --dry-run
+
+      - name: Run migrations
+        run: poetry run python manage.py migrate --noinput
+
+      - name: Collect static (dry run)
+        run: poetry run python manage.py collectstatic --noinput --dry-run 2>/dev/null || poetry run python manage.py collectstatic --noinput
+
+      - name: Run tests with coverage
+        run: |
+          poetry run coverage run manage.py test \
+            core.tenants.tests \
+            core.users.tests \
+            apps.appointments.tests \
+            apps.diagnostics.tests \
+            apps.diagnostics.management.commands.tests \
+            apps.notifications.tests \
+            apps.payments.tests \
+            -v 2
+
+      - name: Coverage report
+        run: |
+          poetry run coverage report --fail-under=50
+          poetry run coverage xml -o coverage.xml
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 14
 
   # ── 3. Deploy (main branch only) ────────────────────────
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    # needs: test  # TODO: re-enable after health check is verified
+    needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     steps:
       - name: Checkout
