@@ -14,20 +14,22 @@ from rest_framework_simplejwt.views import (
 from core.users.views import CustomTokenObtainView
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
     # App APIs
-    path('api/tenants/', include('core.tenants.urls')),
-    path('api/diagnostics/', include('apps.diagnostics.urls')),
-    path('api/appointments/', include('apps.appointments.urls')),
-    path('api/payments/', include('apps.payments.urls')),
+    path("api/tenants/", include("core.tenants.urls")),
+    path("api/diagnostics/", include("apps.diagnostics.urls")),
+    path("api/appointments/", include("apps.appointments.urls")),
+    path("api/payments/", include("apps.payments.urls")),
     # Auth
-    path('api/auth/', include('core.users.urls')),
-    path('api/token/', CustomTokenObtainView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path("api/auth/", include("core.users.urls")),
+    path("api/token/", CustomTokenObtainView.as_view(), name="token_obtain_pair"),
+    path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     # API Documentation (drf-spectacular)
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('swagger/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path(
+        "swagger/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"
+    ),
+    path("redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
 ]
 
 if settings.DEBUG:

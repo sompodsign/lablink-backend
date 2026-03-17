@@ -4,15 +4,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0006_add_receptionist_group'),
+        ("users", "0006_add_receptionist_group"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='user',
-            name='approval_status',
-            field=models.CharField(choices=[('PENDING', 'Pending'), ('DECLINED', 'Declined'), ('APPROVED', 'Approved')], default='APPROVED', max_length=10),
+            model_name="user",
+            name="approval_status",
+            field=models.CharField(
+                choices=[
+                    ("PENDING", "Pending"),
+                    ("DECLINED", "Declined"),
+                    ("APPROVED", "Approved"),
+                ],
+                default="APPROVED",
+                max_length=10,
+            ),
         ),
     ]

@@ -10,7 +10,6 @@ from apps.appointments.serializers import (
     AppointmentSerializer,
     ConsultationUpdateSerializer,
 )
-from core.tenants.models import Staff
 from helpers.test_factories import (
     jwt_auth_header,
     make_appointment,
@@ -101,7 +100,7 @@ class AppointmentViewTests(APITestCase):
         self.center = make_center()
 
         self.staff_user = make_user("appt_staff")
-        make_staff(self.staff_user, self.center, 'Admin')
+        make_staff(self.staff_user, self.center, "Admin")
 
         self.doc_user = make_user("appt_view_doc", "Dr", "View")
         self.doctor = make_doctor(self.doc_user, self.center)

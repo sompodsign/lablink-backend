@@ -1,4 +1,3 @@
-
 import logging
 
 from django.contrib.auth import get_user_model
@@ -11,8 +10,8 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 # Subdomains that are not tenant identifiers — skip domain validation for these
-_RESERVED_SUBDOMAINS = {'api', 'www', 'lablink', ''}
-_BASE_DOMAIN = 'lablink.bd'
+_RESERVED_SUBDOMAINS = {"api", "www", "lablink", ""}
+_BASE_DOMAIN = "lablink.bd"
 _SUBDOMAIN_CACHE_TTL = 1200  # 20 minutes
 
 
@@ -27,10 +26,10 @@ def _extract_subdomain(host: str) -> str | None:
         'api.lablink.bd'    -> None  (reserved)
         'localhost'         -> None  (local dev)
     """
-    host = host.split(':')[0].lower()  # strip port
+    host = host.split(":")[0].lower()  # strip port
     if not host.endswith(_BASE_DOMAIN):
         return None  # local dev or other domain — skip
-    subdomain = host[: -(len(_BASE_DOMAIN))].rstrip('.')
+    subdomain = host[: -(len(_BASE_DOMAIN))].rstrip(".")
     if subdomain in _RESERVED_SUBDOMAINS:
         return None
     return subdomain or None
@@ -42,7 +41,7 @@ def _is_registered_subdomain(subdomain: str) -> bool:
     Result is cached in Redis for _SUBDOMAIN_CACHE_TTL seconds to avoid
     a DB hit on every request.
     """
-    cache_key = f'tenant_domain_exists:{subdomain}'
+    cache_key = f"tenant_domain_exists:{subdomain}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -72,9 +71,10 @@ class TenantMiddleware:
         subdomain = _extract_subdomain(request.get_host())
         if subdomain is not None and not _is_registered_subdomain(subdomain):
             from django.http import JsonResponse
-            logger.warning('Unregistered subdomain access attempt: %s', subdomain)
+
+            logger.warning("Unregistered subdomain access attempt: %s", subdomain)
             return JsonResponse(
-                {'detail': 'Tenant not found.'},
+                {"detail": "Tenant not found."},
                 status=404,
             )
 
@@ -91,11 +91,12 @@ class TenantMiddleware:
             and not user.is_superuser
         ):
             from django.http import JsonResponse
+
             return JsonResponse(
                 {
-                    'detail': (
-                        'This diagnostic center has been deactivated. '
-                        'Please contact the platform administrator.'
+                    "detail": (
+                        "This diagnostic center has been deactivated. "
+                        "Please contact the platform administrator."
                     ),
                 },
                 status=403,

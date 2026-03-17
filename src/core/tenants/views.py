@@ -6,7 +6,11 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from core.tenants.permissions import IsCenterAdmin, IsCenterStaff, IsCenterStaffOrDoctor, IsSuperAdmin
+from core.tenants.permissions import (
+    IsCenterAdmin,
+    IsCenterStaffOrDoctor,
+    IsSuperAdmin,
+)
 
 from .models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from .serializers import (
@@ -80,43 +84,43 @@ class TenantByDomainView(APIView):
     permission_classes = []  # Public endpoint
 
     def get(self, request):
-        domain = request.query_params.get('domain', '').strip().lower()
+        domain = request.query_params.get("domain", "").strip().lower()
         if not domain:
             return Response(
-                {'detail': 'domain query parameter is required.'},
+                {"detail": "domain query parameter is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
             center = DiagnosticCenter.objects.get(domain=domain)
         except DiagnosticCenter.DoesNotExist:
             return Response(
-                {'detail': 'Tenant not found.'},
+                {"detail": "Tenant not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response(
-            DiagnosticCenterSerializer(center, context={'request': request}).data
+            DiagnosticCenterSerializer(center, context={"request": request}).data
         )
 
 
 # ── Role & Permission Views ──────────────────────────────────────
 
 
-@extend_schema(tags=['Permissions'])
+@extend_schema(tags=["Permissions"])
 @extend_schema_view(
-    list=extend_schema(summary='List all permissions'),
-    create=extend_schema(summary='Create custom permission (superadmin)'),
-    partial_update=extend_schema(summary='Update permission (superadmin)'),
-    destroy=extend_schema(summary='Delete custom permission (superadmin)'),
+    list=extend_schema(summary="List all permissions"),
+    create=extend_schema(summary="Create custom permission (superadmin)"),
+    partial_update=extend_schema(summary="Update permission (superadmin)"),
+    destroy=extend_schema(summary="Delete custom permission (superadmin)"),
 )
 class PermissionViewSet(viewsets.ModelViewSet):
     """Superadmin CRUD for permissions. List is available to center admins too."""
 
     serializer_class = PermissionSerializer
     queryset = Permission.objects.all()
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_permissions(self):
-        if self.action == 'list':
+        if self.action == "list":
             # Center admins can list (for role management UI)
             return [permissions.IsAuthenticated()]
         return [permissions.IsAuthenticated(), IsSuperAdmin()]
@@ -127,33 +131,38 @@ class PermissionViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not instance.is_custom:
             from rest_framework.exceptions import ValidationError
-            raise ValidationError('System permissions cannot be deleted.')
+
+            raise ValidationError("System permissions cannot be deleted.")
         instance.delete()
 
 
-@extend_schema(tags=['Superadmin'])
+@extend_schema(tags=["Superadmin"])
 class CenterListView(APIView):
     """Superadmin lists all diagnostic centers."""
 
     permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
 
     @extend_schema(
-        summary='List all centers (superadmin)',
+        summary="List all centers (superadmin)",
         responses={200: DiagnosticCenterSerializer(many=True)},
     )
     def get(self, request):
-        centers = DiagnosticCenter.objects.all().order_by('name')
-        return Response(DiagnosticCenterSerializer(centers, many=True, context={'request': request}).data)
+        centers = DiagnosticCenter.objects.all().order_by("name")
+        return Response(
+            DiagnosticCenterSerializer(
+                centers, many=True, context={"request": request}
+            ).data
+        )
 
 
-@extend_schema(tags=['Superadmin'])
+@extend_schema(tags=["Superadmin"])
 class CenterPermissionView(APIView):
     """Superadmin manages available permissions per center."""
 
     permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
 
     @extend_schema(
-        summary='Get center available permissions',
+        summary="Get center available permissions",
         responses={200: PermissionSerializer(many=True)},
     )
     def get(self, request, center_id):
@@ -161,15 +170,22 @@ class CenterPermissionView(APIView):
             center = DiagnosticCenter.objects.get(pk=center_id)
         except DiagnosticCenter.DoesNotExist:
             return Response(
-                {'detail': 'Center not found.'},
+                {"detail": "Center not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         perms = center.available_permissions.all()
         return Response(PermissionSerializer(perms, many=True).data)
 
     @extend_schema(
-        summary='Set center available permissions',
-        request={'application/json': {'type': 'object', 'properties': {'permission_ids': {'type': 'array', 'items': {'type': 'integer'}}}}},
+        summary="Set center available permissions",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "permission_ids": {"type": "array", "items": {"type": "integer"}}
+                },
+            }
+        },
         responses={200: PermissionSerializer(many=True)},
     )
     def put(self, request, center_id):
@@ -177,17 +193,19 @@ class CenterPermissionView(APIView):
             center = DiagnosticCenter.objects.get(pk=center_id)
         except DiagnosticCenter.DoesNotExist:
             return Response(
-                {'detail': 'Center not found.'},
+                {"detail": "Center not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        perm_ids = request.data.get('permission_ids', [])
+        perm_ids = request.data.get("permission_ids", [])
         valid_perms = Permission.objects.filter(id__in=perm_ids)
         center.available_permissions.set(valid_perms)
         logger.info(
-            'Center permissions updated',
-            extra={'center_id': center.id, 'perm_count': valid_perms.count()},
+            "Center permissions updated",
+            extra={"center_id": center.id, "perm_count": valid_perms.count()},
         )
-        return Response(PermissionSerializer(center.available_permissions.all(), many=True).data)
+        return Response(
+            PermissionSerializer(center.available_permissions.all(), many=True).data
+        )
 
 
 @extend_schema_view(
@@ -214,26 +232,28 @@ class RoleViewSet(viewsets.ModelViewSet):
 
     serializer_class = RoleSerializer
     permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         tenant = self.request.tenant
-        return Role.objects.filter(center=tenant).prefetch_related('permissions')
+        return Role.objects.filter(center=tenant).prefetch_related("permissions")
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
-        ctx['request'] = self.request
+        ctx["request"] = self.request
         return ctx
 
     def perform_destroy(self, instance):
         if instance.is_system:
             from rest_framework.exceptions import ValidationError
-            raise ValidationError('System roles cannot be deleted.')
+
+            raise ValidationError("System roles cannot be deleted.")
         if instance.staff_members.exists():
             from rest_framework.exceptions import ValidationError
+
             raise ValidationError(
-                'Cannot delete a role that is assigned to staff members. '
-                'Reassign them first.',
+                "Cannot delete a role that is assigned to staff members. "
+                "Reassign them first.",
             )
         instance.delete()
 
@@ -270,15 +290,13 @@ class RoleViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(
         tags=["Doctors"],
         summary="Delete doctor from center",
-        description=(
-            "Admin deletes a doctor and their user account from the center."
-        ),
+        description=("Admin deletes a doctor and their user account from the center."),
     ),
 )
 class DoctorManagementViewSet(viewsets.ModelViewSet):
     """Admin manages doctors at their center (full CRUD)."""
 
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         tenant = self.request.tenant
@@ -289,25 +307,25 @@ class DoctorManagementViewSet(viewsets.ModelViewSet):
         )
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action == "create":
             return DoctorCreateSerializer
         return DoctorManagementSerializer
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve', 'activity'):
+        if self.action in ("list", "retrieve", "activity"):
             return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
         return [permissions.IsAuthenticated(), IsCenterAdmin()]
 
     def create(self, request, *args, **kwargs):
         serializer = DoctorCreateSerializer(
             data=request.data,
-            context={'request': request},
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         doctor = serializer.save()
         logger.info(
-            'Doctor created and linked to center',
-            extra={'doctor_id': doctor.id, 'center_id': request.tenant.id},
+            "Doctor created and linked to center",
+            extra={"doctor_id": doctor.id, "center_id": request.tenant.id},
         )
         return Response(
             DoctorManagementSerializer(doctor).data,
@@ -319,8 +337,8 @@ class DoctorManagementViewSet(viewsets.ModelViewSet):
         tenant = self.request.tenant
         user = instance.user
         logger.info(
-            'Doctor deleted from center',
-            extra={'doctor_id': instance.id, 'center_id': tenant.id},
+            "Doctor deleted from center",
+            extra={"doctor_id": instance.id, "center_id": tenant.id},
         )
         user.delete()  # cascades to delete Doctor too
 
@@ -433,12 +451,12 @@ class StaffViewSet(viewsets.ModelViewSet):
 
     serializer_class = StaffSerializer
     permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
-    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action == "create":
             return StaffCreateSerializer
-        if self.action == 'partial_update':
+        if self.action == "partial_update":
             return StaffUpdateSerializer
         return StaffSerializer
 
@@ -449,23 +467,25 @@ class StaffViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = StaffCreateSerializer(
             data=request.data,
-            context={'request': request},
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         staff = serializer.save()
         logger.info(
-            'Staff member created',
-            extra={'staff_id': staff.id, 'center_id': request.tenant.id},
+            "Staff member created",
+            extra={"staff_id": staff.id, "center_id": request.tenant.id},
         )
         data = StaffSerializer(staff).data
-        data['generated_username'] = staff.user.username
-        data['generated_password'] = serializer._generated_password
+        data["generated_username"] = staff.user.username
+        data["generated_password"] = serializer._generated_password
         return Response(data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = StaffUpdateSerializer(
-            instance, data=request.data, partial=True,
+            instance,
+            data=request.data,
+            partial=True,
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -475,45 +495,46 @@ class StaffViewSet(viewsets.ModelViewSet):
         """Remove staff record but preserve the User account."""
         if instance.user == self.request.user:
             from rest_framework.exceptions import ValidationError
-            raise ValidationError('You cannot remove yourself.')
+
+            raise ValidationError("You cannot remove yourself.")
         logger.info(
-            'Staff member removed',
+            "Staff member removed",
             extra={
-                'staff_id': instance.id,
-                'user_id': instance.user.id,
-                'center_id': self.request.tenant.id,
+                "staff_id": instance.id,
+                "user_id": instance.user.id,
+                "center_id": self.request.tenant.id,
             },
         )
         instance.delete()
 
     @extend_schema(
-        tags=['Staff'],
-        summary='Toggle staff active status',
+        tags=["Staff"],
+        summary="Toggle staff active status",
         description=(
-            'Activate or deactivate a staff member. '
-            'Inactive users cannot log in.'
+            "Activate or deactivate a staff member. Inactive users cannot log in."
         ),
         request=None,
         responses={200: StaffSerializer},
     )
-    @action(detail=True, methods=['post'], url_path='toggle-active')
+    @action(detail=True, methods=["post"], url_path="toggle-active")
     def toggle_active(self, request, pk=None):
         staff = self.get_object()
         if staff.user == request.user:
             return Response(
-                {'detail': 'You cannot deactivate yourself.'},
+                {"detail": "You cannot deactivate yourself."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         user = staff.user
         user.is_active = not user.is_active
-        user.save(update_fields=['is_active'])
-        action_label = 'activated' if user.is_active else 'deactivated'
+        user.save(update_fields=["is_active"])
+        action_label = "activated" if user.is_active else "deactivated"
         logger.info(
-            'Staff member %s', action_label,
+            "Staff member %s",
+            action_label,
             extra={
-                'staff_id': staff.id,
-                'user_id': user.id,
-                'center_id': request.tenant.id,
+                "staff_id": staff.id,
+                "user_id": user.id,
+                "center_id": request.tenant.id,
             },
         )
         return Response(StaffSerializer(staff).data)

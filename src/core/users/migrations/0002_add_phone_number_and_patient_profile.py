@@ -6,38 +6,89 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0006_add_phone_number_and_patient_profile'),
-        ('users', '0001_initial'),
+        ("tenants", "0006_add_phone_number_and_patient_profile"),
+        ("users", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='user',
-            name='phone_number',
+            model_name="user",
+            name="phone_number",
             field=models.CharField(blank=True, max_length=20),
         ),
         migrations.CreateModel(
-            name='PatientProfile',
+            name="PatientProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('phone_number', models.CharField(blank=True, max_length=20)),
-                ('date_of_birth', models.DateField(blank=True, null=True)),
-                ('blood_group', models.CharField(blank=True, choices=[('A+', 'A+'), ('A-', 'A-'), ('B+', 'B+'), ('B-', 'B-'), ('AB+', 'AB+'), ('AB-', 'AB-'), ('O+', 'O+'), ('O-', 'O-')], max_length=3)),
-                ('address', models.TextField(blank=True)),
-                ('medical_history', models.TextField(blank=True, help_text='Free-text medical history notes')),
-                ('emergency_contact_name', models.CharField(blank=True, max_length=255)),
-                ('emergency_contact_phone', models.CharField(blank=True, max_length=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('registered_at_center', models.ForeignKey(blank=True, help_text='The center where this patient was first registered', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='registered_patients', to='tenants.diagnosticcenter')),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='patient_profile', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("phone_number", models.CharField(blank=True, max_length=20)),
+                ("date_of_birth", models.DateField(blank=True, null=True)),
+                (
+                    "blood_group",
+                    models.CharField(
+                        blank=True,
+                        choices=[
+                            ("A+", "A+"),
+                            ("A-", "A-"),
+                            ("B+", "B+"),
+                            ("B-", "B-"),
+                            ("AB+", "AB+"),
+                            ("AB-", "AB-"),
+                            ("O+", "O+"),
+                            ("O-", "O-"),
+                        ],
+                        max_length=3,
+                    ),
+                ),
+                ("address", models.TextField(blank=True)),
+                (
+                    "medical_history",
+                    models.TextField(
+                        blank=True, help_text="Free-text medical history notes"
+                    ),
+                ),
+                (
+                    "emergency_contact_name",
+                    models.CharField(blank=True, max_length=255),
+                ),
+                (
+                    "emergency_contact_phone",
+                    models.CharField(blank=True, max_length=20),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "registered_at_center",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="The center where this patient was first registered",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="registered_patients",
+                        to="tenants.diagnosticcenter",
+                    ),
+                ),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="patient_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'patient profile',
-                'verbose_name_plural': 'patient profiles',
-                'db_table': 'core_patient_profile',
+                "verbose_name": "patient profile",
+                "verbose_name_plural": "patient profiles",
+                "db_table": "core_patient_profile",
             },
         ),
     ]

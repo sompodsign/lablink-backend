@@ -23,14 +23,20 @@ ALL_PERMISSIONS = None  # sentinel — means "all available permissions"
 ADMIN_PERMISSIONS = ALL_PERMISSIONS
 
 LAB_TECH_PERMISSIONS = [
-    'view_patients', 'view_reports', 'create_reports',
-    'manage_reports', 'view_test_orders', 'manage_test_orders',
+    "view_patients",
+    "view_reports",
+    "create_reports",
+    "manage_reports",
+    "view_test_orders",
+    "manage_test_orders",
 ]
 
 RECEPTIONIST_PERMISSIONS = [
-    'view_patients', 'manage_patients',
-    'view_appointments', 'manage_appointments',
-    'view_payments',
+    "view_patients",
+    "manage_patients",
+    "view_appointments",
+    "manage_appointments",
+    "view_payments",
 ]
 
 
@@ -62,7 +68,9 @@ def _get_or_create_role(center, role_name, permissions=None):
     role, created = Role.objects.get_or_create(
         name=role_name,
         center=center,
-        defaults={'is_system': role_name in ('Admin', 'Lab Technician', 'Receptionist')},
+        defaults={
+            "is_system": role_name in ("Admin", "Lab Technician", "Receptionist")
+        },
     )
     if created or permissions is not None:
         if permissions is ALL_PERMISSIONS:
@@ -73,7 +81,7 @@ def _get_or_create_role(center, role_name, permissions=None):
     return role
 
 
-def make_staff(user, center, role_name='Receptionist', permissions=None, role=None):
+def make_staff(user, center, role_name="Receptionist", permissions=None, role=None):
     """Create a staff member with a named role.
 
     Args:
@@ -88,17 +96,17 @@ def make_staff(user, center, role_name='Receptionist', permissions=None, role=No
         role_name = role
     # Map legacy Staff.Role values to new names
     role_name_map = {
-        'ADMIN': 'Admin',
-        'LAB_TECHNICIAN': 'Lab Technician',
-        'RECEPTIONIST': 'Receptionist',
+        "ADMIN": "Admin",
+        "LAB_TECHNICIAN": "Lab Technician",
+        "RECEPTIONIST": "Receptionist",
     }
     role_name = role_name_map.get(role_name, role_name)
 
     if permissions is None:
         perm_map = {
-            'Admin': ALL_PERMISSIONS,
-            'Lab Technician': LAB_TECH_PERMISSIONS,
-            'Receptionist': RECEPTIONIST_PERMISSIONS,
+            "Admin": ALL_PERMISSIONS,
+            "Lab Technician": LAB_TECH_PERMISSIONS,
+            "Receptionist": RECEPTIONIST_PERMISSIONS,
         }
         permissions = perm_map.get(role_name, [])
 
@@ -107,7 +115,7 @@ def make_staff(user, center, role_name='Receptionist', permissions=None, role=No
     # Ensure user.center matches staff.center
     if user.center_id != center.id:
         user.center = center
-        user.save(update_fields=['center_id'])
+        user.save(update_fields=["center_id"])
 
     return Staff.objects.create(user=user, center=center, role=role)
 
@@ -116,18 +124,18 @@ def make_doctor(user, center=None):
     # Set user.center if center provided
     if center and user.center_id != center.id:
         user.center = center
-        user.save(update_fields=['center_id'])
+        user.save(update_fields=["center_id"])
 
     doctor = Doctor.objects.create(
         user=user,
-        specialization='General',
-        designation='MD',
+        specialization="General",
+        designation="MD",
     )
     return doctor
 
 
 def make_patient(username, center, **profile_kwargs):
-    user = make_user(username, 'Pat', 'Ient', center=center)
+    user = make_user(username, "Pat", "Ient", center=center)
     PatientProfile.objects.create(
         user=user,
         registered_at_center=center,
@@ -198,7 +206,9 @@ def make_report_template(test_type, center, fields=None):
             {"name": "Hemoglobin", "unit": "g/dL", "ref_range": "13.5-17.5"},
         ]
     return ReportTemplate.objects.create(
-        test_type=test_type, center=center, fields=fields,
+        test_type=test_type,
+        center=center,
+        fields=fields,
     )
 
 

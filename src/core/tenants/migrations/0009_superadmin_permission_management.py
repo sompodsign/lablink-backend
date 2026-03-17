@@ -4,20 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0008_rbac_permission_role'),
+        ("tenants", "0008_rbac_permission_role"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='available_permissions',
-            field=models.ManyToManyField(blank=True, help_text='Permissions available to this center for building roles.', related_name='available_at_centers', to='tenants.permission'),
+            model_name="diagnosticcenter",
+            name="available_permissions",
+            field=models.ManyToManyField(
+                blank=True,
+                help_text="Permissions available to this center for building roles.",
+                related_name="available_at_centers",
+                to="tenants.permission",
+            ),
         ),
         migrations.AddField(
-            model_name='permission',
-            name='is_custom',
-            field=models.BooleanField(default=False, help_text='True for superadmin-created permissions.'),
+            model_name="permission",
+            name="is_custom",
+            field=models.BooleanField(
+                default=False, help_text="True for superadmin-created permissions."
+            ),
         ),
     ]

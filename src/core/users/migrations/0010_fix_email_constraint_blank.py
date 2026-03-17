@@ -4,20 +4,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('auth', '0012_alter_user_first_name_max_length'),
-        ('tenants', '0012_user_center_fk_and_doctor_m2m_removal'),
-        ('users', '0009_backfill_user_center'),
+        ("auth", "0012_alter_user_first_name_max_length"),
+        ("tenants", "0012_user_center_fk_and_doctor_m2m_removal"),
+        ("users", "0009_backfill_user_center"),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='user',
-            name='unique_email_per_center',
+            model_name="user",
+            name="unique_email_per_center",
         ),
         migrations.AddConstraint(
-            model_name='user',
-            constraint=models.UniqueConstraint(condition=models.Q(('email', ''), _negated=True), fields=('email', 'center'), name='unique_email_per_center'),
+            model_name="user",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("email", ""), _negated=True),
+                fields=("email", "center"),
+                name="unique_email_per_center",
+            ),
         ),
     ]

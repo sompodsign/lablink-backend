@@ -4,14 +4,17 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0006_add_phone_number_and_patient_profile'),
+        ("tenants", "0006_add_phone_number_and_patient_profile"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='staff',
-            options={'ordering': ['id'], 'verbose_name': 'staff', 'verbose_name_plural': 'staff'},
+            name="staff",
+            options={
+                "ordering": ["id"],
+                "verbose_name": "staff",
+                "verbose_name_plural": "staff",
+            },
         ),
     ]

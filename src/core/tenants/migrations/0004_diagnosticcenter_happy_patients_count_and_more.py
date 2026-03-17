@@ -4,30 +4,29 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0003_diagnosticcenter_domain_and_more'),
+        ("tenants", "0003_diagnosticcenter_domain_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='happy_patients_count',
-            field=models.CharField(default='50,000+', max_length=50),
+            model_name="diagnosticcenter",
+            name="happy_patients_count",
+            field=models.CharField(default="50,000+", max_length=50),
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='lab_support_availability',
-            field=models.CharField(default='24/7', max_length=50),
+            model_name="diagnosticcenter",
+            name="lab_support_availability",
+            field=models.CharField(default="24/7", max_length=50),
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='test_types_available_count',
-            field=models.CharField(default='100+', max_length=50),
+            model_name="diagnosticcenter",
+            name="test_types_available_count",
+            field=models.CharField(default="100+", max_length=50),
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='years_of_experience',
-            field=models.CharField(default='15+', max_length=50),
+            model_name="diagnosticcenter",
+            name="years_of_experience",
+            field=models.CharField(default="15+", max_length=50),
         ),
     ]

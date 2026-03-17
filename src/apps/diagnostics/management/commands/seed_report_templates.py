@@ -26,29 +26,29 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = 'Seed default report templates for diagnostic centers.'
+    help = "Seed default report templates for diagnostic centers."
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--domain',
+            "--domain",
             type=str,
-            help='Seed templates for a single center identified by its domain.',
+            help="Seed templates for a single center identified by its domain.",
         )
         parser.add_argument(
-            '--center-id',
+            "--center-id",
             type=int,
-            help='Seed templates for a single center identified by its PK.',
+            help="Seed templates for a single center identified by its PK.",
         )
         parser.add_argument(
-            '--force',
-            action='store_true',
+            "--force",
+            action="store_true",
             default=False,
-            help='Overwrite existing templates (default: skip centers that already have templates).',
+            help="Overwrite existing templates (default: skip centers that already have templates).",
         )
 
     def handle(self, *args, **options):
         centers = self._resolve_centers(options)
-        force = options['force']
+        force = options["force"]
 
         total_created = 0
         total_skipped = 0
@@ -62,30 +62,30 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f'Done — created {total_created} templates, '
-                f'skipped {total_skipped} (already existed).'
+                f"Done — created {total_created} templates, "
+                f"skipped {total_skipped} (already existed)."
             )
         )
 
     # ─────────────────────────────────────────────────────────────
     def _resolve_centers(self, options):
-        domain = options.get('domain')
-        center_id = options.get('center_id')
+        domain = options.get("domain")
+        center_id = options.get("center_id")
 
         if domain and center_id:
-            raise CommandError('Specify --domain or --center-id, not both.')
+            raise CommandError("Specify --domain or --center-id, not both.")
 
         if domain:
             try:
                 return [DiagnosticCenter.objects.get(domain=domain)]
             except DiagnosticCenter.DoesNotExist:
-                raise CommandError(f'No center found with domain "{domain}".')
+                raise CommandError(f'No center found with domain "{domain}".') from None
 
         if center_id:
             try:
                 return [DiagnosticCenter.objects.get(pk=center_id)]
             except DiagnosticCenter.DoesNotExist:
-                raise CommandError(f'No center found with ID {center_id}.')
+                raise CommandError(f"No center found with ID {center_id}.") from None
 
         return DiagnosticCenter.objects.all()
 
@@ -94,8 +94,9 @@ class Command(BaseCommand):
         skipped = 0
 
         existing = set(
-            ReportTemplate.objects.filter(center=center)
-            .values_list('test_type_id', flat=True)
+            ReportTemplate.objects.filter(center=center).values_list(
+                "test_type_id", flat=True
+            )
         )
 
         templates_to_create = []
@@ -119,22 +120,24 @@ class Command(BaseCommand):
 
         if templates_to_create:
             ReportTemplate.objects.bulk_create(
-                templates_to_create, ignore_conflicts=True,
+                templates_to_create,
+                ignore_conflicts=True,
             )
             created = len(templates_to_create)
 
         if templates_to_update:
             for tt, fields in templates_to_update:
                 ReportTemplate.objects.filter(
-                    center=center, test_type=tt,
+                    center=center,
+                    test_type=tt,
                 ).update(fields=fields)
                 created += 1
 
         logger.info(
             'Center "%s": created=%d, skipped=%d',
-            center.name, created, skipped,
+            center.name,
+            created,
+            skipped,
         )
-        self.stdout.write(
-            f'  {center.name}: {created} created, {skipped} skipped'
-        )
+        self.stdout.write(f"  {center.name}: {created} created, {skipped} skipped")
         return created, skipped

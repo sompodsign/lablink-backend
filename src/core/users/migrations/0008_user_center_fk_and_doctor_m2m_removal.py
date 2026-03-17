@@ -5,35 +5,34 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('auth', '0012_alter_user_first_name_max_length'),
-        ('tenants', '0011_center_is_active'),
-        ('users', '0007_user_approval_status'),
+        ("auth", "0012_alter_user_first_name_max_length"),
+        ("tenants", "0011_center_is_active"),
+        ("users", "0007_user_approval_status"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='user',
+            name="user",
             options={},
         ),
         migrations.AddField(
-            model_name='user',
-            name='center',
+            model_name="user",
+            name="center",
             field=models.ForeignKey(
                 blank=True,
-                help_text='The center this user belongs to. NULL for superadmins.',
+                help_text="The center this user belongs to. NULL for superadmins.",
                 null=True,
                 on_delete=django.db.models.deletion.CASCADE,
-                related_name='users',
-                to='tenants.diagnosticcenter',
+                related_name="users",
+                to="tenants.diagnosticcenter",
             ),
         ),
         migrations.AddConstraint(
-            model_name='user',
+            model_name="user",
             constraint=models.UniqueConstraint(
-                fields=('email', 'center'),
-                name='unique_email_per_center',
+                fields=("email", "center"),
+                name="unique_email_per_center",
             ),
         ),
     ]

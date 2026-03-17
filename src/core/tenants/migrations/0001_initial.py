@@ -4,41 +4,81 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='DiagnosticCenter',
+            name="DiagnosticCenter",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('address', models.TextField()),
-                ('contact_number', models.CharField(max_length=20)),
-                ('email', models.EmailField(blank=True, max_length=254, null=True)),
-                ('logo', models.ImageField(blank=True, null=True, upload_to='center_logos/')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("address", models.TextField()),
+                ("contact_number", models.CharField(max_length=20)),
+                ("email", models.EmailField(blank=True, max_length=254, null=True)),
+                (
+                    "logo",
+                    models.ImageField(blank=True, null=True, upload_to="center_logos/"),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
         ),
         migrations.CreateModel(
-            name='Staff',
+            name="Staff",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('role', models.CharField(choices=[('RECEPTIONIST', 'Receptionist'), ('LAB_TECHNICIAN', 'Lab Technician'), ('ADMIN', 'Admin')], max_length=50)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "role",
+                    models.CharField(
+                        choices=[
+                            ("RECEPTIONIST", "Receptionist"),
+                            ("LAB_TECHNICIAN", "Lab Technician"),
+                            ("ADMIN", "Admin"),
+                        ],
+                        max_length=50,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='Doctor',
+            name="Doctor",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('specialization', models.CharField(max_length=255)),
-                ('designation', models.CharField(max_length=255)),
-                ('bio', models.TextField(blank=True)),
-                ('centers', models.ManyToManyField(related_name='doctors', to='tenants.diagnosticcenter')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("specialization", models.CharField(max_length=255)),
+                ("designation", models.CharField(max_length=255)),
+                ("bio", models.TextField(blank=True)),
+                (
+                    "centers",
+                    models.ManyToManyField(
+                        related_name="doctors", to="tenants.diagnosticcenter"
+                    ),
+                ),
             ],
         ),
     ]

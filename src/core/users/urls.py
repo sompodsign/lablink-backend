@@ -10,20 +10,20 @@ from .views import (
 )
 
 router = DefaultRouter()
-router.register(r'patients', PatientViewSet, basename='patient')
+router.register(r"patients", PatientViewSet, basename="patient")
 
 urlpatterns = [
-    path('register/', RegisterView.as_view(), name='register'),
-    path('profile/', UserProfileView.as_view(), name='profile'),
+    path("register/", RegisterView.as_view(), name="register"),
+    path("profile/", UserProfileView.as_view(), name="profile"),
     path(
-        'password-reset/',
+        "password-reset/",
         PasswordResetRequestView.as_view(),
-        name='password-reset-request',
+        name="password-reset-request",
     ),
     path(
-        'password-reset/confirm/',
+        "password-reset/confirm/",
         PasswordResetConfirmView.as_view(),
-        name='password-reset-confirm',
+        name="password-reset-confirm",
     ),
-    path('', include(router.urls)),
+    path("", include(router.urls)),
 ]

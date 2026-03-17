@@ -5,24 +5,30 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('diagnostics', '0004_add_test_order_and_enhance_report'),
-        ('payments', '0001_initial'),
+        ("diagnostics", "0004_add_test_order_and_enhance_report"),
+        ("payments", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='payment',
-            options={'verbose_name': 'payment', 'verbose_name_plural': 'payments'},
+            name="payment",
+            options={"verbose_name": "payment", "verbose_name_plural": "payments"},
         ),
         migrations.AddField(
-            model_name='payment',
-            name='test_order',
-            field=models.ForeignKey(blank=True, help_text='Optional: link payment to a specific test order', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='payments', to='diagnostics.testorder'),
+            model_name="payment",
+            name="test_order",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Optional: link payment to a specific test order",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="payments",
+                to="diagnostics.testorder",
+            ),
         ),
         migrations.AlterModelTable(
-            name='payment',
-            table='apps_payment',
+            name="payment",
+            table="apps_payment",
         ),
     ]

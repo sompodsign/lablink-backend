@@ -4,42 +4,48 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0005_service'),
+        ("tenants", "0005_service"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='diagnosticcenter',
-            options={'verbose_name': 'diagnostic center', 'verbose_name_plural': 'diagnostic centers'},
+            name="diagnosticcenter",
+            options={
+                "verbose_name": "diagnostic center",
+                "verbose_name_plural": "diagnostic centers",
+            },
         ),
         migrations.AlterModelOptions(
-            name='doctor',
-            options={'verbose_name': 'doctor', 'verbose_name_plural': 'doctors'},
+            name="doctor",
+            options={"verbose_name": "doctor", "verbose_name_plural": "doctors"},
         ),
         migrations.AlterModelOptions(
-            name='service',
-            options={'ordering': ['order', 'id'], 'verbose_name': 'service', 'verbose_name_plural': 'services'},
+            name="service",
+            options={
+                "ordering": ["order", "id"],
+                "verbose_name": "service",
+                "verbose_name_plural": "services",
+            },
         ),
         migrations.AlterModelOptions(
-            name='staff',
-            options={'verbose_name': 'staff', 'verbose_name_plural': 'staff'},
+            name="staff",
+            options={"verbose_name": "staff", "verbose_name_plural": "staff"},
         ),
         migrations.AlterModelTable(
-            name='diagnosticcenter',
-            table='core_diagnostic_center',
+            name="diagnosticcenter",
+            table="core_diagnostic_center",
         ),
         migrations.AlterModelTable(
-            name='doctor',
-            table='core_doctor',
+            name="doctor",
+            table="core_doctor",
         ),
         migrations.AlterModelTable(
-            name='service',
-            table='core_service',
+            name="service",
+            table="core_service",
         ),
         migrations.AlterModelTable(
-            name='staff',
-            table='core_staff',
+            name="staff",
+            table="core_staff",
         ),
     ]

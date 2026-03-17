@@ -5,25 +5,49 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0004_diagnosticcenter_happy_patients_count_and_more'),
+        ("tenants", "0004_diagnosticcenter_happy_patients_count_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Service',
+            name="Service",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('title', models.CharField(max_length=100)),
-                ('description', models.TextField()),
-                ('icon', models.CharField(default='🩺', help_text='Emoji or icon character', max_length=10)),
-                ('order', models.PositiveIntegerField(default=0, help_text='Display order on the landing page')),
-                ('is_active', models.BooleanField(default=True)),
-                ('center', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='services', to='tenants.diagnosticcenter')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=100)),
+                ("description", models.TextField()),
+                (
+                    "icon",
+                    models.CharField(
+                        default="🩺", help_text="Emoji or icon character", max_length=10
+                    ),
+                ),
+                (
+                    "order",
+                    models.PositiveIntegerField(
+                        default=0, help_text="Display order on the landing page"
+                    ),
+                ),
+                ("is_active", models.BooleanField(default=True)),
+                (
+                    "center",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="services",
+                        to="tenants.diagnosticcenter",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['order', 'id'],
+                "ordering": ["order", "id"],
             },
         ),
     ]

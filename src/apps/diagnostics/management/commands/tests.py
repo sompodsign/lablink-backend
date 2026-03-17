@@ -22,41 +22,41 @@ class SeedReportTemplatesCommandTests(TestCase):
 
     def test_seeds_all_centers(self):
         """Command seeds templates for all centers when no filter given."""
-        call_command('seed_report_templates')
+        call_command("seed_report_templates")
         count = ReportTemplate.objects.filter(center=self.center).count()
         self.assertGreater(count, 0)
 
     def test_skips_already_seeded_centers(self):
         """Without --force, existing templates are not overwritten."""
-        call_command('seed_report_templates')
+        call_command("seed_report_templates")
         initial_count = ReportTemplate.objects.filter(center=self.center).count()
 
         # Run again — should skip all
-        call_command('seed_report_templates')
+        call_command("seed_report_templates")
         final_count = ReportTemplate.objects.filter(center=self.center).count()
         self.assertEqual(initial_count, final_count)
 
     def test_force_flag_overwrites(self):
         """--force re-seeds templates even if they already exist."""
-        call_command('seed_report_templates')
+        call_command("seed_report_templates")
 
         # Corrupt a template's fields
         template = ReportTemplate.objects.filter(center=self.center).first()
-        original_fields = list(template.fields)
-        template.fields = [{'name': 'corrupted'}]
+        _original_fields = list(template.fields)
+        template.fields = [{"name": "corrupted"}]
         template.save()
 
         # Force re-seed
-        call_command('seed_report_templates', force=True)
+        call_command("seed_report_templates", force=True)
         template.refresh_from_db()
-        self.assertNotEqual(template.fields, [{'name': 'corrupted'}])
+        self.assertNotEqual(template.fields, [{"name": "corrupted"}])
 
     def test_filter_by_domain(self):
         """--domain seeds only the matching center."""
-        center_b = make_center('Center B', 'center-b')
+        center_b = make_center("Center B", "center-b")
         ReportTemplate.objects.filter(center=center_b).delete()
 
-        call_command('seed_report_templates', domain=self.center.domain)
+        call_command("seed_report_templates", domain=self.center.domain)
 
         a_count = ReportTemplate.objects.filter(center=self.center).count()
         b_count = ReportTemplate.objects.filter(center=center_b).count()
@@ -65,35 +65,36 @@ class SeedReportTemplatesCommandTests(TestCase):
 
     def test_filter_by_center_id(self):
         """--center-id seeds only the matching center."""
-        call_command('seed_report_templates', center_id=self.center.id)
+        call_command("seed_report_templates", center_id=self.center.id)
         count = ReportTemplate.objects.filter(center=self.center).count()
         self.assertGreater(count, 0)
 
     def test_invalid_domain_raises_error(self):
         """Non-existent domain raises CommandError."""
         with self.assertRaises(CommandError):
-            call_command('seed_report_templates', domain='nonexistent')
+            call_command("seed_report_templates", domain="nonexistent")
 
     def test_invalid_center_id_raises_error(self):
         """Non-existent center ID raises CommandError."""
         with self.assertRaises(CommandError):
-            call_command('seed_report_templates', center_id=99999)
+            call_command("seed_report_templates", center_id=99999)
 
     def test_both_filters_raises_error(self):
         """Specifying both --domain and --center-id raises CommandError."""
         with self.assertRaises(CommandError):
             call_command(
-                'seed_report_templates',
+                "seed_report_templates",
                 domain=self.center.domain,
                 center_id=self.center.id,
             )
 
     def test_only_matching_test_types_seeded(self):
         """Only TestTypes present in TEMPLATE_FIELDS get templates."""
-        custom_tt = make_test_type('Totally Custom Test', '100.00')
-        call_command('seed_report_templates')
+        custom_tt = make_test_type("Totally Custom Test", "100.00")
+        call_command("seed_report_templates")
         has_custom = ReportTemplate.objects.filter(
-            center=self.center, test_type=custom_tt,
+            center=self.center,
+            test_type=custom_tt,
         ).exists()
         self.assertFalse(has_custom)
 
@@ -107,7 +108,8 @@ class CreateReportTemplatesSignalTests(TestCase):
         sample_names = list(TEMPLATE_FIELDS.keys())[:3]
         for name in sample_names:
             TestType.objects.get_or_create(
-                name=name, defaults={'base_price': '100.00'},
+                name=name,
+                defaults={"base_price": "100.00"},
             )
 
         # Count how many TestType rows match the seed data
@@ -118,8 +120,10 @@ class CreateReportTemplatesSignalTests(TestCase):
 
         # Now create a center — the signal should fire
         from core.tenants.models import DiagnosticCenter
+
         center = DiagnosticCenter.objects.create(
-            name='Signal Test Center', domain='signal-test',
+            name="Signal Test Center",
+            domain="signal-test",
         )
 
         templates = ReportTemplate.objects.filter(center=center).count()

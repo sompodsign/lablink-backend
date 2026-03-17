@@ -11,8 +11,16 @@ This module is used by:
 TEMPLATE_FIELDS = {
     # ── Hematology ──────────────────────────────────────────────
     "CBC (Complete Blood Count)": [
-        {"name": "Hemoglobin (Hb)", "unit": "g/dL", "ref_range": "M: 13.5-17.5 / F: 12.0-16.0"},
-        {"name": "RBC Count", "unit": "million/cumm", "ref_range": "M: 4.5-5.9 / F: 3.8-5.2"},
+        {
+            "name": "Hemoglobin (Hb)",
+            "unit": "g/dL",
+            "ref_range": "M: 13.5-17.5 / F: 12.0-16.0",
+        },
+        {
+            "name": "RBC Count",
+            "unit": "million/cumm",
+            "ref_range": "M: 4.5-5.9 / F: 3.8-5.2",
+        },
         {"name": "Total WBC Count", "unit": "/cumm", "ref_range": "4000-11000"},
         {"name": "Neutrophils", "unit": "%", "ref_range": "40-70"},
         {"name": "Lymphocytes", "unit": "%", "ref_range": "20-40"},
@@ -20,21 +28,33 @@ TEMPLATE_FIELDS = {
         {"name": "Eosinophils", "unit": "%", "ref_range": "1-6"},
         {"name": "Basophils", "unit": "%", "ref_range": "0-1"},
         {"name": "Platelet Count", "unit": "/cumm", "ref_range": "150000-450000"},
-        {"name": "Hematocrit (HCT/PCV)", "unit": "%", "ref_range": "M: 38-50 / F: 36-44"},
+        {
+            "name": "Hematocrit (HCT/PCV)",
+            "unit": "%",
+            "ref_range": "M: 38-50 / F: 36-44",
+        },
         {"name": "MCV", "unit": "fL", "ref_range": "80-100"},
         {"name": "MCH", "unit": "pg", "ref_range": "27-33"},
         {"name": "MCHC", "unit": "g/dL", "ref_range": "32-36"},
         {"name": "RDW", "unit": "%", "ref_range": "11.5-14.5"},
     ],
     "ESR (Erythrocyte Sedimentation Rate)": [
-        {"name": "ESR (Westergren)", "unit": "mm/1st hr", "ref_range": "M: 0-15 / F: 0-20"},
+        {
+            "name": "ESR (Westergren)",
+            "unit": "mm/1st hr",
+            "ref_range": "M: 0-15 / F: 0-20",
+        },
     ],
     "Blood Group & Rh Typing": [
         {"name": "ABO Group", "unit": "", "ref_range": "A / B / AB / O"},
         {"name": "Rh Factor", "unit": "", "ref_range": "Positive / Negative"},
     ],
     "Hemoglobin (Hb)": [
-        {"name": "Hemoglobin", "unit": "g/dL", "ref_range": "M: 13.5-17.5 / F: 12.0-16.0"},
+        {
+            "name": "Hemoglobin",
+            "unit": "g/dL",
+            "ref_range": "M: 13.5-17.5 / F: 12.0-16.0",
+        },
     ],
     "Peripheral Blood Film (PBF)": [
         {"name": "RBC Morphology", "unit": "", "ref_range": "Normocytic Normochromic"},
@@ -83,7 +103,6 @@ TEMPLATE_FIELDS = {
         {"name": "Eosinophils", "unit": "%", "ref_range": "1-6"},
         {"name": "Basophils", "unit": "%", "ref_range": "0-1"},
     ],
-
     # ── Biochemistry: Sugar ─────────────────────────────────────
     "Blood Sugar (Fasting)": [
         {"name": "Fasting Blood Sugar", "unit": "mmol/L", "ref_range": "3.9-6.1"},
@@ -95,14 +114,17 @@ TEMPLATE_FIELDS = {
         {"name": "Blood Sugar (2hr PP)", "unit": "mmol/L", "ref_range": "<7.8"},
     ],
     "HbA1c (Glycated Hemoglobin)": [
-        {"name": "HbA1c", "unit": "%", "ref_range": "4.0-5.6 (Normal) / 5.7-6.4 (Pre-DM)"},
+        {
+            "name": "HbA1c",
+            "unit": "%",
+            "ref_range": "4.0-5.6 (Normal) / 5.7-6.4 (Pre-DM)",
+        },
     ],
     "OGTT (Oral Glucose Tolerance Test)": [
         {"name": "Fasting", "unit": "mmol/L", "ref_range": "<6.1"},
         {"name": "1 Hour", "unit": "mmol/L", "ref_range": "<10.0"},
         {"name": "2 Hour", "unit": "mmol/L", "ref_range": "<7.8"},
     ],
-
     # ── Biochemistry: Lipid ─────────────────────────────────────
     "Lipid Profile": [
         {"name": "Total Cholesterol", "unit": "mg/dL", "ref_range": "<200"},
@@ -124,7 +146,6 @@ TEMPLATE_FIELDS = {
     "LDL Cholesterol": [
         {"name": "LDL Cholesterol", "unit": "mg/dL", "ref_range": "<100"},
     ],
-
     # ── Biochemistry: Liver ─────────────────────────────────────
     "Liver Function Test (LFT)": [
         {"name": "Bilirubin (Total)", "unit": "mg/dL", "ref_range": "0.1-1.2"},
@@ -160,26 +181,41 @@ TEMPLATE_FIELDS = {
     "Serum Albumin": [
         {"name": "Serum Albumin", "unit": "g/dL", "ref_range": "3.5-5.5"},
     ],
-
     # ── Biochemistry: Renal ─────────────────────────────────────
     "Renal Function Test (RFT)": [
-        {"name": "Serum Creatinine", "unit": "mg/dL", "ref_range": "M: 0.7-1.3 / F: 0.6-1.1"},
+        {
+            "name": "Serum Creatinine",
+            "unit": "mg/dL",
+            "ref_range": "M: 0.7-1.3 / F: 0.6-1.1",
+        },
         {"name": "Blood Urea", "unit": "mg/dL", "ref_range": "15-40"},
         {"name": "BUN", "unit": "mg/dL", "ref_range": "7-20"},
-        {"name": "Serum Uric Acid", "unit": "mg/dL", "ref_range": "M: 3.4-7.0 / F: 2.4-6.0"},
+        {
+            "name": "Serum Uric Acid",
+            "unit": "mg/dL",
+            "ref_range": "M: 3.4-7.0 / F: 2.4-6.0",
+        },
         {"name": "Sodium (Na+)", "unit": "mmol/L", "ref_range": "136-145"},
         {"name": "Potassium (K+)", "unit": "mmol/L", "ref_range": "3.5-5.1"},
         {"name": "Chloride (Cl-)", "unit": "mmol/L", "ref_range": "98-106"},
     ],
     "Serum Creatinine": [
-        {"name": "Serum Creatinine", "unit": "mg/dL", "ref_range": "M: 0.7-1.3 / F: 0.6-1.1"},
+        {
+            "name": "Serum Creatinine",
+            "unit": "mg/dL",
+            "ref_range": "M: 0.7-1.3 / F: 0.6-1.1",
+        },
     ],
     "Blood Urea / BUN": [
         {"name": "Blood Urea", "unit": "mg/dL", "ref_range": "15-40"},
         {"name": "BUN", "unit": "mg/dL", "ref_range": "7-20"},
     ],
     "Serum Uric Acid": [
-        {"name": "Serum Uric Acid", "unit": "mg/dL", "ref_range": "M: 3.4-7.0 / F: 2.4-6.0"},
+        {
+            "name": "Serum Uric Acid",
+            "unit": "mg/dL",
+            "ref_range": "M: 3.4-7.0 / F: 2.4-6.0",
+        },
     ],
     "Serum Electrolytes": [
         {"name": "Sodium (Na+)", "unit": "mmol/L", "ref_range": "136-145"},
@@ -196,7 +232,6 @@ TEMPLATE_FIELDS = {
     "Serum Magnesium": [
         {"name": "Serum Magnesium", "unit": "mg/dL", "ref_range": "1.7-2.2"},
     ],
-
     # ── Iron Studies ────────────────────────────────────────────
     "Serum Iron": [
         {"name": "Serum Iron", "unit": "μg/dL", "ref_range": "M: 65-176 / F: 50-170"},
@@ -205,15 +240,22 @@ TEMPLATE_FIELDS = {
         {"name": "TIBC", "unit": "μg/dL", "ref_range": "250-370"},
     ],
     "Serum Ferritin": [
-        {"name": "Serum Ferritin", "unit": "ng/mL", "ref_range": "M: 12-300 / F: 12-150"},
+        {
+            "name": "Serum Ferritin",
+            "unit": "ng/mL",
+            "ref_range": "M: 12-300 / F: 12-150",
+        },
     ],
-
     # ── Inflammatory Markers ────────────────────────────────────
     "CRP (C-Reactive Protein)": [
         {"name": "CRP", "unit": "mg/L", "ref_range": "<6"},
     ],
     "hs-CRP (High Sensitivity CRP)": [
-        {"name": "hs-CRP", "unit": "mg/L", "ref_range": "<1.0 (Low Risk) / 1.0-3.0 (Moderate)"},
+        {
+            "name": "hs-CRP",
+            "unit": "mg/L",
+            "ref_range": "<1.0 (Low Risk) / 1.0-3.0 (Moderate)",
+        },
     ],
     "ASO Titre": [
         {"name": "ASO Titre", "unit": "IU/mL", "ref_range": "<200"},
@@ -224,7 +266,6 @@ TEMPLATE_FIELDS = {
     "ANA (Anti-Nuclear Antibody)": [
         {"name": "ANA", "unit": "", "ref_range": "Negative"},
     ],
-
     # ── Thyroid ─────────────────────────────────────────────────
     "Thyroid Profile (T3, T4, TSH)": [
         {"name": "T3 (Total)", "unit": "ng/dL", "ref_range": "80-200"},
@@ -246,10 +287,13 @@ TEMPLATE_FIELDS = {
     "Total T4": [
         {"name": "Total T4", "unit": "μg/dL", "ref_range": "5.1-14.1"},
     ],
-
     # ── Hormones ────────────────────────────────────────────────
     "Testosterone": [
-        {"name": "Testosterone", "unit": "ng/dL", "ref_range": "M: 270-1070 / F: 15-70"},
+        {
+            "name": "Testosterone",
+            "unit": "ng/dL",
+            "ref_range": "M: 270-1070 / F: 15-70",
+        },
     ],
     "Prolactin": [
         {"name": "Prolactin", "unit": "ng/mL", "ref_range": "M: 2-18 / F: 2-29"},
@@ -281,10 +325,13 @@ TEMPLATE_FIELDS = {
     "PTH (Parathyroid Hormone)": [
         {"name": "PTH (Intact)", "unit": "pg/mL", "ref_range": "15-65"},
     ],
-
     # ── Vitamins ────────────────────────────────────────────────
     "Vitamin D (25-OH)": [
-        {"name": "Vitamin D (25-OH)", "unit": "ng/mL", "ref_range": "30-100 (Sufficient)"},
+        {
+            "name": "Vitamin D (25-OH)",
+            "unit": "ng/mL",
+            "ref_range": "30-100 (Sufficient)",
+        },
     ],
     "Vitamin B12": [
         {"name": "Vitamin B12", "unit": "pg/mL", "ref_range": "200-900"},
@@ -292,7 +339,6 @@ TEMPLATE_FIELDS = {
     "Folic Acid (Folate)": [
         {"name": "Folic Acid", "unit": "ng/mL", "ref_range": "3.1-17.5"},
     ],
-
     # ── Serology / Infectious ───────────────────────────────────
     "HBsAg (Hepatitis B Surface Antigen)": [
         {"name": "HBsAg", "unit": "", "ref_range": "Negative"},
@@ -331,7 +377,6 @@ TEMPLATE_FIELDS = {
         {"name": "MP (Thick Film)", "unit": "", "ref_range": "Not Found"},
         {"name": "MP (Thin Film)", "unit": "", "ref_range": "Not Found"},
     ],
-
     # ── Cardiac Markers ─────────────────────────────────────────
     "Troponin I": [
         {"name": "Troponin I", "unit": "ng/mL", "ref_range": "<0.04"},
@@ -342,7 +387,6 @@ TEMPLATE_FIELDS = {
     "Procalcitonin": [
         {"name": "Procalcitonin", "unit": "ng/mL", "ref_range": "<0.05"},
     ],
-
     # ── Urine ───────────────────────────────────────────────────
     "Urine Routine (R/E)": [
         {"name": "Color", "unit": "", "ref_range": "Pale Yellow"},
@@ -377,7 +421,6 @@ TEMPLATE_FIELDS = {
     "Urine Sugar (Benedict)": [
         {"name": "Urine Sugar (Benedict)", "unit": "", "ref_range": "Nil"},
     ],
-
     # ── Stool ───────────────────────────────────────────────────
     "Stool Routine (R/E)": [
         {"name": "Color", "unit": "", "ref_range": "Brown"},
@@ -397,7 +440,6 @@ TEMPLATE_FIELDS = {
     "Stool for Reducing Substance": [
         {"name": "Reducing Substance", "unit": "", "ref_range": "Negative"},
     ],
-
     # ── Culture & Sensitivity ───────────────────────────────────
     "Blood Culture & Sensitivity": [
         {"name": "Organism", "unit": "", "ref_range": "No Growth (after 48-72 hrs)"},
@@ -420,7 +462,6 @@ TEMPLATE_FIELDS = {
     "KOH Mount (Fungal Smear)": [
         {"name": "KOH Mount", "unit": "", "ref_range": "No Fungal Element Seen"},
     ],
-
     # ── Tumor Markers ───────────────────────────────────────────
     "AFP (Alpha-Fetoprotein)": [
         {"name": "AFP", "unit": "ng/mL", "ref_range": "<7.0"},
@@ -440,7 +481,6 @@ TEMPLATE_FIELDS = {
     "CA 15-3": [
         {"name": "CA 15-3", "unit": "U/mL", "ref_range": "<31.3"},
     ],
-
     # ── Enzymes ─────────────────────────────────────────────────
     "Amylase (Serum)": [
         {"name": "Serum Amylase", "unit": "U/L", "ref_range": "28-100"},
@@ -457,7 +497,6 @@ TEMPLATE_FIELDS = {
     "CPK-MB": [
         {"name": "CPK-MB", "unit": "U/L", "ref_range": "<25"},
     ],
-
     # ── Body Fluid Analysis ─────────────────────────────────────
     "CSF Analysis": [
         {"name": "Appearance", "unit": "", "ref_range": "Clear, Colorless"},
@@ -486,7 +525,6 @@ TEMPLATE_FIELDS = {
         {"name": "WBC Count", "unit": "/cumm", "ref_range": "<200"},
         {"name": "Crystals", "unit": "", "ref_range": "None"},
     ],
-
     # ── Semen ───────────────────────────────────────────────────
     "Semen Analysis": [
         {"name": "Volume", "unit": "mL", "ref_range": "1.5-5.0"},
@@ -498,7 +536,6 @@ TEMPLATE_FIELDS = {
         {"name": "Progressive Motility", "unit": "%", "ref_range": ">32"},
         {"name": "Normal Morphology", "unit": "%", "ref_range": ">4"},
     ],
-
     # ── Allergy ─────────────────────────────────────────────────
     "Serum IgE (Total)": [
         {"name": "Total IgE", "unit": "IU/mL", "ref_range": "<100"},
@@ -506,7 +543,6 @@ TEMPLATE_FIELDS = {
     "Specific IgE Panel": [
         {"name": "Specific IgE", "unit": "kU/L", "ref_range": "<0.35 (Class 0)"},
     ],
-
     # ── Imaging / Other ─────────────────────────────────────────
     "ECG (Electrocardiogram)": [
         {"name": "Heart Rate", "unit": "bpm", "ref_range": "60-100"},

@@ -4,14 +4,17 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('diagnostics', '0013_report_template_enforce_constraints'),
+        ("diagnostics", "0013_report_template_enforce_constraints"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='report',
-            options={'ordering': ['-updated_at', '-created_at'], 'verbose_name': 'report', 'verbose_name_plural': 'reports'},
+            name="report",
+            options={
+                "ordering": ["-updated_at", "-created_at"],
+                "verbose_name": "report",
+                "verbose_name_plural": "reports",
+            },
         ),
     ]

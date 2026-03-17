@@ -25,7 +25,6 @@ from apps.diagnostics.serializers import (
     TestOrderStatusUpdateSerializer,
     TestTypeSerializer,
 )
-from core.tenants.models import Staff
 from helpers.test_factories import (
     jwt_auth_header,
     make_appointment,
@@ -125,7 +124,7 @@ class DiagnosticSerializerTests(TestCase):
         make_pricing(self.center, self.test_type)
         self.patient = make_patient("ds_pat", self.center)
         self.staff_user = make_user("ds_staff")
-        make_staff(self.staff_user, self.center, 'Lab Technician')
+        make_staff(self.staff_user, self.center, "Lab Technician")
 
     def _mock_request(self):
         from unittest.mock import MagicMock
@@ -414,13 +413,13 @@ class TestOrderViewTests(APITestCase):
         make_pricing(self.center, self.test_type)
 
         self.staff_user = make_user("tov_staff")
-        make_staff(self.staff_user, self.center, 'Admin')
+        make_staff(self.staff_user, self.center, "Admin")
 
         self.doc_user = make_user("tov_doc")
         self.doctor = make_doctor(self.doc_user, self.center)
 
         self.lab_tech_user = make_user("tov_tech")
-        make_staff(self.lab_tech_user, self.center, 'Lab Technician')
+        make_staff(self.lab_tech_user, self.center, "Lab Technician")
 
         self.patient = make_patient("tov_pat", self.center)
         self.appt = make_appointment(self.patient, self.center, doctor=self.doctor)
@@ -487,10 +486,10 @@ class ReportViewTests(APITestCase):
         make_pricing(self.center, self.test_type)
 
         self.lab_tech_user = make_user("rv_tech")
-        make_staff(self.lab_tech_user, self.center, 'Lab Technician')
+        make_staff(self.lab_tech_user, self.center, "Lab Technician")
 
         self.staff_user = make_user("rv_staff")
-        make_staff(self.staff_user, self.center, 'Admin')
+        make_staff(self.staff_user, self.center, "Admin")
 
         self.patient = make_patient("rv_pat", self.center)
 
@@ -672,7 +671,7 @@ class ReferringDoctorViewTests(APITestCase):
     def setUp(self):
         self.center = make_center()
         self.staff_user = make_user("rd_staff")
-        make_staff(self.staff_user, self.center, 'Admin')
+        make_staff(self.staff_user, self.center, "Admin")
 
     def _auth(self):
         self.client.credentials(**jwt_auth_header(self.staff_user))
@@ -705,7 +704,7 @@ class ReportTemplateViewTests(APITestCase):
     def setUp(self):
         self.center = make_center()
         self.staff_user = make_user("rt_staff")
-        make_staff(self.staff_user, self.center, 'Admin')
+        make_staff(self.staff_user, self.center, "Admin")
         self.test_type = make_test_type()
 
     def _auth(self):

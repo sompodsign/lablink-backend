@@ -22,12 +22,28 @@ dependencies = [
     "django-environ (>=0.11.2,<1.0.0)",
     "environ (>=1.0,<2.0)",
     "django-env (>=0.2.1,<0.3.0)",
-    "django-celery-beat (>=2.9.0,<3.0.0)"
+    "django-celery-beat (>=2.9.0,<3.0.0)",
+    "whitenoise (>=6.9.0,<7.0.0)"
 ]
 
 [tool.poetry.group.dev.dependencies]
 ruff = ">=0.11.0,<1.0.0"
 coverage = ">=7.8.0,<8.0.0"
+mypy = ">=1.15.0,<2.0.0"
+django-stubs = ">=6.0.0,<7.0.0"
+poethepoet = ">=0.34.0,<1.0.0"
+
+
+# ── Poe Tasks ────────────────────────────────────────────
+[tool.poe.tasks]
+ruff_check = { cmd = "ruff check src/", help = "Lint with ruff" }
+ruff_fix = { cmd = "ruff check src/ --fix", help = "Lint and auto-fix with ruff" }
+format = { cmd = "ruff format src/", help = "Format code with ruff" }
+format_check = { cmd = "ruff format --check src/", help = "Check formatting without changing files" }
+mypy = { cmd = "mypy src/ --ignore-missing-imports", help = "Type-check with mypy", env = { PYTHONPATH = "src" } }
+lint = { sequence = ["ruff_check", "format_check", "mypy"], help = "Run all linters" }
+test = { cmd = "coverage run manage.py test core.tenants.tests core.users.tests apps.appointments.tests apps.diagnostics.tests apps.diagnostics.management.commands.tests apps.notifications.tests apps.payments.tests --keepdb -v 2", help = "Run tests with coverage", envfile = ".env.test" }
+coverage = { sequence = ["test", { cmd = "coverage report" }], help = "Run tests and show coverage report" }
 
 
 [tool.ruff]
@@ -38,9 +54,21 @@ src = ["src"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "T201", "UP", "B", "SIM"]
 ignore = ["E501"]
+per-file-ignores = { "src/core/config/*.py" = ["F401", "F403", "F405"], "src/*/migrations/*.py" = ["E501", "F841", "T201"] }
 
 [tool.ruff.lint.isort]
 known-first-party = ["core", "apps", "libs"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_configs = true
+disable_error_code = ["no-any-return", "var-annotated"]
+
+[tool.django-stubs]
+django_settings_module = "core.config.local"
 
 [tool.coverage.run]
 source = ["src"]

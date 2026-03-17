@@ -8,8 +8,8 @@ from django.db import migrations
 
 def backfill_available_permissions(apps, schema_editor):
     """Give all existing centers access to ALL existing permissions."""
-    DiagnosticCenter = apps.get_model('tenants', 'DiagnosticCenter')
-    Permission = apps.get_model('tenants', 'Permission')
+    DiagnosticCenter = apps.get_model("tenants", "DiagnosticCenter")
+    Permission = apps.get_model("tenants", "Permission")
 
     all_perms = Permission.objects.all()
     for center in DiagnosticCenter.objects.all():
@@ -18,23 +18,23 @@ def backfill_available_permissions(apps, schema_editor):
 
 def add_manage_roles_permission(apps, schema_editor):
     """Add 'manage_roles' permission and assign it to Admin roles."""
-    Permission = apps.get_model('tenants', 'Permission')
-    Role = apps.get_model('tenants', 'Role')
+    Permission = apps.get_model("tenants", "Permission")
+    Role = apps.get_model("tenants", "Role")
 
     perm, _created = Permission.objects.get_or_create(
-        codename='manage_roles',
+        codename="manage_roles",
         defaults={
-            'name': 'Manage Roles',
-            'category': 'Administration',
-            'is_custom': False,
+            "name": "Manage Roles",
+            "category": "Administration",
+            "is_custom": False,
         },
     )
 
     # Add to all Admin roles and all center available_permissions
-    for role in Role.objects.filter(name='Admin'):
+    for role in Role.objects.filter(name="Admin"):
         role.permissions.add(perm)
 
-    DiagnosticCenter = apps.get_model('tenants', 'DiagnosticCenter')
+    DiagnosticCenter = apps.get_model("tenants", "DiagnosticCenter")
     for center in DiagnosticCenter.objects.all():
         center.available_permissions.add(perm)
 
@@ -44,9 +44,8 @@ def noop(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0009_superadmin_permission_management'),
+        ("tenants", "0009_superadmin_permission_management"),
     ]
 
     operations = [

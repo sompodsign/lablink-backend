@@ -10,19 +10,19 @@ class AppointmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment
         fields = [
-            'id',
-            'patient',
-            'patient_name',
-            'center',
-            'doctor',
-            'doctor_name',
-            'date',
-            'time',
-            'status',
-            'symptoms',
-            'created_at',
+            "id",
+            "patient",
+            "patient_name",
+            "center",
+            "doctor",
+            "doctor_name",
+            "date",
+            "time",
+            "status",
+            "symptoms",
+            "created_at",
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ["id", "created_at"]
 
     def get_patient_name(self, obj) -> str:
         return obj.patient.get_full_name()
@@ -30,7 +30,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
     def get_doctor_name(self, obj) -> str:
         if obj.doctor:
             return str(obj.doctor)
-        return ''
+        return ""
 
 
 class ConsultationUpdateSerializer(serializers.ModelSerializer):
@@ -38,4 +38,4 @@ class ConsultationUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Appointment
-        fields = ['symptoms', 'status']
+        fields = ["symptoms", "status"]

@@ -4,30 +4,38 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0002_initial'),
+        ("tenants", "0002_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='domain',
-            field=models.CharField(default='demo', help_text="Subdomain identifier, e.g., 'popularhospital'", max_length=100, unique=True),
+            model_name="diagnosticcenter",
+            name="domain",
+            field=models.CharField(
+                default="demo",
+                help_text="Subdomain identifier, e.g., 'popularhospital'",
+                max_length=100,
+                unique=True,
+            ),
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='opening_hours',
-            field=models.CharField(default='8:00 AM - 10:00 PM', max_length=100),
+            model_name="diagnosticcenter",
+            name="opening_hours",
+            field=models.CharField(default="8:00 AM - 10:00 PM", max_length=100),
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='primary_color',
-            field=models.CharField(default='#0d9488', help_text='Hex color code', max_length=7),
+            model_name="diagnosticcenter",
+            name="primary_color",
+            field=models.CharField(
+                default="#0d9488", help_text="Hex color code", max_length=7
+            ),
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='tagline',
-            field=models.CharField(blank=True, default='Your trusted diagnostic partner', max_length=255),
+            model_name="diagnosticcenter",
+            name="tagline",
+            field=models.CharField(
+                blank=True, default="Your trusted diagnostic partner", max_length=255
+            ),
         ),
     ]

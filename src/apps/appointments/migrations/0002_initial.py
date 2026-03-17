@@ -5,23 +5,32 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('appointments', '0001_initial'),
-        ('tenants', '0001_initial'),
+        ("appointments", "0001_initial"),
+        ("tenants", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='appointment',
-            name='center',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='appointments', to='tenants.diagnosticcenter'),
+            model_name="appointment",
+            name="center",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="appointments",
+                to="tenants.diagnosticcenter",
+            ),
         ),
         migrations.AddField(
-            model_name='appointment',
-            name='doctor',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='appointments', to='tenants.doctor'),
+            model_name="appointment",
+            name="doctor",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="appointments",
+                to="tenants.doctor",
+            ),
         ),
     ]

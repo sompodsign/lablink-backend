@@ -81,7 +81,7 @@ def create_report_templates_for_new_center(
     if templates_to_create:
         ReportTemplate.objects.bulk_create(templates_to_create, ignore_conflicts=True)
         logger.info(
-            'Created %d report templates for center %s',
+            "Created %d report templates for center %s",
             len(templates_to_create),
             instance.name,
         )

@@ -1,7 +1,6 @@
 import logging
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q
 from rest_framework import serializers
 
 from core.users.models import PatientProfile
@@ -38,17 +37,28 @@ class SuperadminCenterSerializer(serializers.ModelSerializer):
     class Meta:
         model = DiagnosticCenter
         fields = [
-            'id', 'name', 'domain', 'tagline', 'address',
-            'contact_number', 'email', 'logo_url', 'primary_color',
-            'opening_hours', 'is_active',
-            'staff_count', 'doctor_count', 'patient_count',
-            'created_at', 'updated_at',
+            "id",
+            "name",
+            "domain",
+            "tagline",
+            "address",
+            "contact_number",
+            "email",
+            "logo_url",
+            "primary_color",
+            "opening_hours",
+            "is_active",
+            "staff_count",
+            "doctor_count",
+            "patient_count",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ["id", "created_at", "updated_at"]
 
     def get_logo_url(self, obj):
         if obj.logo:
-            request = self.context.get('request')
+            request = self.context.get("request")
             if request:
                 return request.build_absolute_uri(obj.logo.url)
             return obj.logo.url
@@ -60,8 +70,10 @@ class SuperadminCenterDetailSerializer(SuperadminCenterSerializer):
 
     class Meta(SuperadminCenterSerializer.Meta):
         fields = SuperadminCenterSerializer.Meta.fields + [
-            'years_of_experience', 'happy_patients_count',
-            'test_types_available_count', 'lab_support_availability',
+            "years_of_experience",
+            "happy_patients_count",
+            "test_types_available_count",
+            "lab_support_availability",
         ]
 
 
@@ -76,14 +88,29 @@ class SuperadminUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'first_name', 'last_name',
-            'phone_number', 'is_active', 'is_superuser',
-            'approval_status', 'date_joined',
-            'center_name', 'center_id', 'role_name', 'user_type',
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "phone_number",
+            "is_active",
+            "is_superuser",
+            "approval_status",
+            "date_joined",
+            "center_name",
+            "center_id",
+            "role_name",
+            "user_type",
         ]
         read_only_fields = [
-            'id', 'username', 'date_joined',
-            'center_name', 'center_id', 'role_name', 'user_type',
+            "id",
+            "username",
+            "date_joined",
+            "center_name",
+            "center_id",
+            "role_name",
+            "user_type",
         ]
 
     def get_center_name(self, obj):
@@ -96,70 +123,85 @@ class SuperadminUserSerializer(serializers.ModelSerializer):
 
     def get_role_name(self, obj):
         if obj.is_superuser:
-            return 'Superadmin'
-        if hasattr(obj, 'staff_profile'):
+            return "Superadmin"
+        if hasattr(obj, "staff_profile"):
             return obj.staff_profile.role.name
-        if hasattr(obj, 'doctor_profile'):
-            return 'Doctor'
-        if hasattr(obj, 'patient_profile'):
-            return 'Patient'
-        return 'Unassigned'
+        if hasattr(obj, "doctor_profile"):
+            return "Doctor"
+        if hasattr(obj, "patient_profile"):
+            return "Patient"
+        return "Unassigned"
 
     def get_user_type(self, obj):
         if obj.is_superuser:
-            return 'superadmin'
-        if hasattr(obj, 'staff_profile'):
-            return 'staff'
-        if hasattr(obj, 'doctor_profile'):
-            return 'doctor'
-        if hasattr(obj, 'patient_profile'):
-            return 'patient'
-        return 'unassigned'
+            return "superadmin"
+        if hasattr(obj, "staff_profile"):
+            return "staff"
+        if hasattr(obj, "doctor_profile"):
+            return "doctor"
+        if hasattr(obj, "patient_profile"):
+            return "patient"
+        return "unassigned"
 
 
 class SuperadminStaffSerializer(serializers.ModelSerializer):
     """Staff with user info and center name."""
 
-    username = serializers.CharField(source='user.username', read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
     full_name = serializers.CharField(
-        source='user.get_full_name', read_only=True,
+        source="user.get_full_name",
+        read_only=True,
     )
-    email = serializers.EmailField(source='user.email', read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
     center_name = serializers.CharField(
-        source='center.name', read_only=True,
+        source="center.name",
+        read_only=True,
     )
-    role_name = serializers.CharField(source='role.name', read_only=True)
+    role_name = serializers.CharField(source="role.name", read_only=True)
     is_active = serializers.BooleanField(
-        source='user.is_active', read_only=True,
+        source="user.is_active",
+        read_only=True,
     )
 
     class Meta:
         model = Staff
         fields = [
-            'id', 'username', 'full_name', 'email',
-            'center_name', 'role_name', 'is_active',
+            "id",
+            "username",
+            "full_name",
+            "email",
+            "center_name",
+            "role_name",
+            "is_active",
         ]
 
 
 class SuperadminDoctorSerializer(serializers.ModelSerializer):
     """Doctor with user info and center."""
 
-    username = serializers.CharField(source='user.username', read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
     full_name = serializers.CharField(
-        source='user.get_full_name', read_only=True,
+        source="user.get_full_name",
+        read_only=True,
     )
-    email = serializers.EmailField(source='user.email', read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
     center_name = serializers.SerializerMethodField()
     is_active = serializers.BooleanField(
-        source='user.is_active', read_only=True,
+        source="user.is_active",
+        read_only=True,
     )
 
     class Meta:
         model = Doctor
         fields = [
-            'id', 'username', 'full_name', 'email',
-            'specialization', 'designation',
-            'center_name', 'is_active',
+            "id",
+            "username",
+            "full_name",
+            "email",
+            "specialization",
+            "designation",
+            "center_name",
+            "is_active",
         ]
 
     def get_center_name(self, obj):
@@ -170,19 +212,27 @@ class SuperadminDoctorSerializer(serializers.ModelSerializer):
 class SuperadminPatientSerializer(serializers.ModelSerializer):
     """Patient with user info and registered center."""
 
-    username = serializers.CharField(source='user.username', read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
     full_name = serializers.CharField(
-        source='user.get_full_name', read_only=True,
+        source="user.get_full_name",
+        read_only=True,
     )
-    email = serializers.EmailField(source='user.email', read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
     center_name = serializers.SerializerMethodField()
 
     class Meta:
         model = PatientProfile
         fields = [
-            'id', 'username', 'full_name', 'email',
-            'phone_number', 'date_of_birth', 'gender', 'blood_group',
-            'center_name', 'created_at',
+            "id",
+            "username",
+            "full_name",
+            "email",
+            "phone_number",
+            "date_of_birth",
+            "gender",
+            "blood_group",
+            "center_name",
+            "created_at",
         ]
 
     def get_center_name(self, obj):

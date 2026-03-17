@@ -1,12 +1,11 @@
 from django.contrib.auth.models import Group
 from django.db import migrations
 
-
 GROUPS = [
-    'LABLINK | BASIC',
-    'LABLINK | STAFF',
-    'LABLINK | ADMIN',
-    'LABLINK | DOCTOR',
+    "LABLINK | BASIC",
+    "LABLINK | STAFF",
+    "LABLINK | ADMIN",
+    "LABLINK | DOCTOR",
 ]
 
 
@@ -20,9 +19,8 @@ def remove_groups(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0002_add_phone_number_and_patient_profile'),
+        ("users", "0002_add_phone_number_and_patient_profile"),
     ]
 
     operations = [

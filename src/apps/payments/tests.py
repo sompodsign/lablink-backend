@@ -7,7 +7,6 @@ from rest_framework.test import APITestCase
 
 from apps.payments.models import Payment
 from apps.payments.serializers import PaymentCreateSerializer, PaymentSerializer
-from core.tenants.models import Staff
 from helpers.test_factories import (
     jwt_auth_header,
     make_appointment,
@@ -150,7 +149,7 @@ class PaymentViewTests(APITestCase):
         self.center = make_center()
 
         self.staff_user = make_user("pv_staff")
-        make_staff(self.staff_user, self.center, 'Admin')
+        make_staff(self.staff_user, self.center, "Admin")
 
         self.doc_user = make_user("pv_doc")
         make_doctor(self.doc_user, self.center)

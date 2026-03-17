@@ -6,32 +6,40 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('diagnostics', '0002_initial'),
+        ("diagnostics", "0002_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='report',
-            name='verified_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL),
+            model_name="report",
+            name="verified_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='report',
-            name='test_type',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='diagnostics.testtype'),
+            model_name="report",
+            name="test_type",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.PROTECT, to="diagnostics.testtype"
+            ),
         ),
         migrations.AddField(
-            model_name='centertestpricing',
-            name='test_type',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='diagnostics.testtype'),
+            model_name="centertestpricing",
+            name="test_type",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE, to="diagnostics.testtype"
+            ),
         ),
         migrations.AlterUniqueTogether(
-            name='centertestpricing',
-            unique_together={('center', 'test_type')},
+            name="centertestpricing",
+            unique_together={("center", "test_type")},
         ),
     ]

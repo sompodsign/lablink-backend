@@ -4,16 +4,15 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0011_center_is_active'),
+        ("tenants", "0011_center_is_active"),
         # Data migration must complete before we drop the M2M
-        ('users', '0009_backfill_user_center'),
+        ("users", "0009_backfill_user_center"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='doctor',
-            name='centers',
+            model_name="doctor",
+            name="centers",
         ),
     ]

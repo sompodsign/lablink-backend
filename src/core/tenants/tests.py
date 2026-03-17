@@ -7,7 +7,6 @@ from rest_framework.test import APITestCase
 
 from core.tenants.middleware import TenantMiddleware
 from core.tenants.models import Doctor, Service, Staff
-from core.users.models import User
 from core.tenants.permissions import (
     IsCenterAdmin,
     IsCenterDoctor,
@@ -24,6 +23,7 @@ from core.tenants.serializers import (
     ServiceSerializer,
     StaffSerializer,
 )
+from core.users.models import User
 from helpers.test_factories import (
     FakeRequest,
     jwt_auth_header,
@@ -67,13 +67,13 @@ class ModelStrTests(TestCase):
         self.assertEqual(str(doctor), "Dr. John Doe")
 
     def test_staff_str(self):
-        staff = make_staff(self.user, self.center, 'Receptionist')
+        staff = make_staff(self.user, self.center, "Receptionist")
         self.assertEqual(str(staff), "John Doe - Receptionist")
 
     def test_staff_has_perm(self):
-        staff = make_staff(self.user, self.center, 'Receptionist')
-        self.assertTrue(staff.has_perm('view_patients'))
-        self.assertFalse(staff.has_perm('manage_staff'))
+        staff = make_staff(self.user, self.center, "Receptionist")
+        self.assertTrue(staff.has_perm("view_patients"))
+        self.assertFalse(staff.has_perm("manage_staff"))
 
 
 # ---------------------------------------------------------------------------
@@ -87,13 +87,13 @@ class PermissionClassTests(TestCase):
         self.center_b = make_center("Center B", "center-b")
 
         self.staff_user = make_user("staff_a")
-        make_staff(self.staff_user, self.center_a, 'Receptionist')
+        make_staff(self.staff_user, self.center_a, "Receptionist")
 
         self.admin_user = make_user("admin_a")
-        make_staff(self.admin_user, self.center_a, 'Admin')
+        make_staff(self.admin_user, self.center_a, "Admin")
 
         self.lab_tech_user = make_user("labtech_a")
-        make_staff(self.lab_tech_user, self.center_a, 'Lab Technician')
+        make_staff(self.lab_tech_user, self.center_a, "Lab Technician")
 
         self.doctor_user = make_user("doctor_a")
         make_doctor(self.doctor_user, self.center_a)
@@ -265,48 +265,51 @@ class TenantMiddlewareTests(TestCase):
 
 class TenantSubdomainMiddlewareTests(TestCase):
     def setUp(self):
-        self.center = make_center('Sub Center', 'sub-clinic')
+        self.center = make_center("Sub Center", "sub-clinic")
         self.factory = RequestFactory()
 
     def _make_middleware(self):
         return TenantMiddleware(get_response=lambda r: r)
 
     def _request(self, host):
-        return self.factory.get('/', HTTP_HOST=host)
+        return self.factory.get("/", HTTP_HOST=host)
 
     def test_registered_subdomain_passes(self):
         """Requests to a known subdomain are allowed through."""
         mw = self._make_middleware()
-        response = mw(self._request('sub-clinic.lablink.bd'))
+        response = mw(self._request("sub-clinic.lablink.bd"))
         # Middleware returns the request itself (our lambda); no JsonResponse
-        self.assertFalse(hasattr(response, 'status_code') and response.status_code == 404)
+        self.assertFalse(
+            hasattr(response, "status_code") and response.status_code == 404
+        )
 
     def test_unknown_subdomain_returns_404(self):
         """Requests to an unregistered subdomain are rejected with 404."""
         mw = self._make_middleware()
-        response = mw(self._request('notexist.lablink.bd'))
+        response = mw(self._request("notexist.lablink.bd"))
         self.assertEqual(response.status_code, 404)
         import json
+
         data = json.loads(response.content)
-        self.assertEqual(data['detail'], 'Tenant not found.')
+        self.assertEqual(data["detail"], "Tenant not found.")
 
     def test_api_subdomain_bypasses_validation(self):
         """api.lablink.bd is reserved and should never be blocked."""
         mw = self._make_middleware()
-        response = mw(self._request('api.lablink.bd'))
-        self.assertNotEqual(getattr(response, 'status_code', 200), 404)
+        response = mw(self._request("api.lablink.bd"))
+        self.assertNotEqual(getattr(response, "status_code", 200), 404)
 
     def test_bare_domain_bypasses_validation(self):
         """lablink.bd itself is not a tenant subdomain — skip check."""
         mw = self._make_middleware()
-        response = mw(self._request('lablink.bd'))
-        self.assertNotEqual(getattr(response, 'status_code', 200), 404)
+        response = mw(self._request("lablink.bd"))
+        self.assertNotEqual(getattr(response, "status_code", 200), 404)
 
     def test_localhost_bypasses_validation(self):
         """Local dev requests (non lablink.bd hosts) are not validated."""
         mw = self._make_middleware()
-        response = mw(self._request('localhost:8000'))
-        self.assertNotEqual(getattr(response, 'status_code', 200), 404)
+        response = mw(self._request("localhost:8000"))
+        self.assertNotEqual(getattr(response, "status_code", 200), 404)
 
 
 # ---------------------------------------------------------------------------
@@ -316,26 +319,26 @@ class TenantSubdomainMiddlewareTests(TestCase):
 
 class TenantByDomainViewTests(APITestCase):
     def setUp(self):
-        self.center = make_center('By Domain Center', 'bydomain')
+        self.center = make_center("By Domain Center", "bydomain")
 
     def test_known_domain_returns_200(self):
-        response = self.client.get('/api/tenants/by-domain/?domain=bydomain')
+        response = self.client.get("/api/tenants/by-domain/?domain=bydomain")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['name'], 'By Domain Center')
+        self.assertEqual(response.data["name"], "By Domain Center")
 
     def test_unknown_domain_returns_404(self):
-        response = self.client.get('/api/tenants/by-domain/?domain=ghost')
+        response = self.client.get("/api/tenants/by-domain/?domain=ghost")
         self.assertEqual(response.status_code, 404)
 
     def test_missing_domain_param_returns_400(self):
-        response = self.client.get('/api/tenants/by-domain/')
+        response = self.client.get("/api/tenants/by-domain/")
         self.assertEqual(response.status_code, 400)
 
     def test_inactive_center_still_returns_200(self):
         """by-domain does not enforce deactivation — that's handled by the middleware."""
         self.center.is_active = False
         self.center.save()
-        response = self.client.get('/api/tenants/by-domain/?domain=bydomain')
+        response = self.client.get("/api/tenants/by-domain/?domain=bydomain")
         self.assertEqual(response.status_code, 200)
 
 
@@ -437,7 +440,7 @@ class TenantSerializerTests(TestCase):
 
     def test_staff_serializer_fields(self):
         user = make_user("staff_ser", "Alice", "Green")
-        staff = make_staff(user, self.center, 'Admin')
+        staff = make_staff(user, self.center, "Admin")
         serializer = StaffSerializer(staff)
         data = serializer.data
         self.assertEqual(data["role_name"], "Admin")
@@ -457,10 +460,10 @@ class TenantIsolationTests(APITestCase):
         self.center_b = make_center("Center B", "center-b")
 
         self.staff_a_user = make_user("staff_a")
-        self.staff_a = make_staff(self.staff_a_user, self.center_a, 'Admin')
+        self.staff_a = make_staff(self.staff_a_user, self.center_a, "Admin")
 
         self.staff_b_user = make_user("staff_b")
-        self.staff_b = make_staff(self.staff_b_user, self.center_b, 'Admin')
+        self.staff_b = make_staff(self.staff_b_user, self.center_b, "Admin")
 
         self.patient_a = make_patient("patient_a", self.center_a)
         self.patient_b = make_patient("patient_b", self.center_b)
@@ -542,10 +545,10 @@ class DoctorManagementViewTests(APITestCase):
         self.center = make_center()
 
         self.admin_user = make_user("admin_doc_mgmt")
-        make_staff(self.admin_user, self.center, 'Admin')
+        make_staff(self.admin_user, self.center, "Admin")
 
         self.staff_user = make_user("staff_doc_mgmt")
-        make_staff(self.staff_user, self.center, 'Receptionist')
+        make_staff(self.staff_user, self.center, "Receptionist")
 
         self.doctor_user = make_user("doc_mgmt", "Dr", "Test")
         self.doctor = make_doctor(self.doctor_user, self.center)
@@ -561,40 +564,38 @@ class DoctorManagementViewTests(APITestCase):
         names = [d["name"] for d in response.data["results"]]
         self.assertIn("Dr Test", names)
 
-
-
     # ── CRUD Tests ──────────────────────────────────────────────────
 
     def test_admin_can_create_doctor(self):
         self._auth(self.admin_user)
         payload = {
-            'first_name': 'Rina',
-            'last_name': 'Akter',
-            'email': 'rina@example.com',
-            'specialization': 'Cardiology',
-            'designation': 'Consultant',
+            "first_name": "Rina",
+            "last_name": "Akter",
+            "email": "rina@example.com",
+            "specialization": "Cardiology",
+            "designation": "Consultant",
         }
-        response = self.client.post('/api/tenants/doctors/', payload)
+        response = self.client.post("/api/tenants/doctors/", payload)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['specialization'], 'Cardiology')
-        self.assertIn('id', response.data)
+        self.assertEqual(response.data["specialization"], "Cardiology")
+        self.assertIn("id", response.data)
 
     def test_admin_can_update_doctor(self):
         self._auth(self.admin_user)
         response = self.client.patch(
-            f'/api/tenants/doctors/{self.doctor.id}/',
-            {'specialization': 'Neurology'},
+            f"/api/tenants/doctors/{self.doctor.id}/",
+            {"specialization": "Neurology"},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.doctor.refresh_from_db()
-        self.assertEqual(self.doctor.specialization, 'Neurology')
+        self.assertEqual(self.doctor.specialization, "Neurology")
 
     def test_admin_can_delete_doctor(self):
         self._auth(self.admin_user)
         doctor_id = self.doctor.id
         user_id = self.doctor_user.id
         response = self.client.delete(
-            f'/api/tenants/doctors/{doctor_id}/',
+            f"/api/tenants/doctors/{doctor_id}/",
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         # User and doctor are both deleted (cascade)
@@ -604,51 +605,51 @@ class DoctorManagementViewTests(APITestCase):
     def test_receptionist_cannot_create_doctor(self):
         self._auth(self.staff_user)
         payload = {
-            'first_name': 'Blocked',
-            'last_name': 'Doc',
-            'specialization': 'General',
-            'designation': 'Intern',
+            "first_name": "Blocked",
+            "last_name": "Doc",
+            "specialization": "General",
+            "designation": "Intern",
         }
-        response = self.client.post('/api/tenants/doctors/', payload)
+        response = self.client.post("/api/tenants/doctors/", payload)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_receptionist_cannot_update_doctor(self):
         self._auth(self.staff_user)
         response = self.client.patch(
-            f'/api/tenants/doctors/{self.doctor.id}/',
-            {'specialization': 'Hacked'},
+            f"/api/tenants/doctors/{self.doctor.id}/",
+            {"specialization": "Hacked"},
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_receptionist_cannot_delete_doctor(self):
         self._auth(self.staff_user)
         response = self.client.delete(
-            f'/api/tenants/doctors/{self.doctor.id}/',
+            f"/api/tenants/doctors/{self.doctor.id}/",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_doctor_cannot_create_doctor(self):
         self._auth(self.doctor_user)
         payload = {
-            'first_name': 'Blocked',
-            'last_name': 'Doc',
-            'specialization': 'General',
-            'designation': 'Intern',
+            "first_name": "Blocked",
+            "last_name": "Doc",
+            "specialization": "General",
+            "designation": "Intern",
         }
-        response = self.client.post('/api/tenants/doctors/', payload)
+        response = self.client.post("/api/tenants/doctors/", payload)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_create_doctor_duplicate_email_rejected(self):
         self._auth(self.admin_user)
         payload = {
-            'first_name': 'First',
-            'last_name': 'Doc',
-            'email': 'unique@example.com',
-            'specialization': 'General',
-            'designation': 'Intern',
+            "first_name": "First",
+            "last_name": "Doc",
+            "email": "unique@example.com",
+            "specialization": "General",
+            "designation": "Intern",
         }
-        self.client.post('/api/tenants/doctors/', payload)
-        response = self.client.post('/api/tenants/doctors/', payload)
+        self.client.post("/api/tenants/doctors/", payload)
+        response = self.client.post("/api/tenants/doctors/", payload)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
@@ -656,10 +657,10 @@ class StaffViewTests(APITestCase):
     def setUp(self):
         self.center = make_center()
         self.admin_user = make_user("admin_staff_view")
-        make_staff(self.admin_user, self.center, 'Admin')
+        make_staff(self.admin_user, self.center, "Admin")
 
         self.receptionist_user = make_user("recep_staff_view")
-        make_staff(self.receptionist_user, self.center, 'Receptionist')
+        make_staff(self.receptionist_user, self.center, "Receptionist")
 
     def _auth(self, user):
         self.client.credentials(**jwt_auth_header(user))
@@ -667,65 +668,73 @@ class StaffViewTests(APITestCase):
 
     def test_admin_can_list_staff(self):
         self._auth(self.admin_user)
-        response = self.client.get('/api/tenants/staff/')
+        response = self.client.get("/api/tenants/staff/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 2)
+        self.assertEqual(len(response.data["results"]), 2)
 
     def test_non_admin_denied(self):
         self._auth(self.receptionist_user)
-        response = self.client.get('/api/tenants/staff/')
+        response = self.client.get("/api/tenants/staff/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_can_create_staff(self):
         self._auth(self.admin_user)
         from helpers.test_factories import _get_or_create_role
-        lab_tech_role = _get_or_create_role(self.center, 'Lab Technician')
+
+        lab_tech_role = _get_or_create_role(self.center, "Lab Technician")
         payload = {
-            'first_name': 'Kamal',
-            'last_name': 'Hossain',
-            'email': 'kamal@example.com',
-            'role_id': lab_tech_role.id,
+            "first_name": "Kamal",
+            "last_name": "Hossain",
+            "email": "kamal@example.com",
+            "role_id": lab_tech_role.id,
         }
-        response = self.client.post('/api/tenants/staff/', payload)
+        response = self.client.post("/api/tenants/staff/", payload)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['role_name'], 'Lab Technician')
-        self.assertIn('Kamal', response.data['name'])
+        self.assertEqual(response.data["role_name"], "Lab Technician")
+        self.assertIn("Kamal", response.data["name"])
 
     def test_admin_can_update_staff_role(self):
         self._auth(self.admin_user)
         from helpers.test_factories import _get_or_create_role
-        lab_tech_role = _get_or_create_role(self.center, 'Lab Technician')
+
+        lab_tech_role = _get_or_create_role(self.center, "Lab Technician")
         staff_id = Staff.objects.get(user=self.receptionist_user).id
         response = self.client.patch(
-            f'/api/tenants/staff/{staff_id}/',
-            {'role_id': lab_tech_role.id},
+            f"/api/tenants/staff/{staff_id}/",
+            {"role_id": lab_tech_role.id},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['role_name'], 'Lab Technician')
+        self.assertEqual(response.data["role_name"], "Lab Technician")
 
     def test_admin_can_delete_staff(self):
         self._auth(self.admin_user)
         staff_id = Staff.objects.get(user=self.receptionist_user).id
-        response = self.client.delete(f'/api/tenants/staff/{staff_id}/')
+        response = self.client.delete(f"/api/tenants/staff/{staff_id}/")
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         # Staff record gone, but User still exists
         self.assertFalse(Staff.objects.filter(id=staff_id).exists())
         from django.contrib.auth import get_user_model
+
         self.assertTrue(
-            get_user_model().objects.filter(
+            get_user_model()
+            .objects.filter(
                 username=self.receptionist_user.username,
-            ).exists(),
+            )
+            .exists(),
         )
 
     def test_create_staff_duplicate_email_fails(self):
         self._auth(self.admin_user)
-        make_user('existing', email='taken@example.com')
-        response = self.client.post('/api/tenants/staff/', {
-            'first_name': 'New',
-            'last_name': 'User',
-            'email': 'taken@example.com',
-            'role': 'RECEPTIONIST',
-        })
+        make_user("existing", email="taken@example.com")
+        response = self.client.post(
+            "/api/tenants/staff/",
+            {
+                "first_name": "New",
+                "last_name": "User",
+                "email": "taken@example.com",
+                "role": "RECEPTIONIST",
+            },
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_can_toggle_staff_active(self):
@@ -733,45 +742,54 @@ class StaffViewTests(APITestCase):
         staff_id = Staff.objects.get(user=self.receptionist_user).id
         # Deactivate
         response = self.client.post(
-            f'/api/tenants/staff/{staff_id}/toggle-active/',
+            f"/api/tenants/staff/{staff_id}/toggle-active/",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertFalse(response.data['is_active'])
+        self.assertFalse(response.data["is_active"])
         # Activate
         response = self.client.post(
-            f'/api/tenants/staff/{staff_id}/toggle-active/',
+            f"/api/tenants/staff/{staff_id}/toggle-active/",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data['is_active'])
+        self.assertTrue(response.data["is_active"])
 
     def test_staff_create_sends_email(self):
         from django.core import mail
 
         from core.tenants.models import Role
+
         self._auth(self.admin_user)
-        recep_role = Role.objects.get(name='Receptionist', center=self.center)
-        self.client.post('/api/tenants/staff/', {
-            'first_name': 'Email',
-            'last_name': 'Test',
-            'email': 'emailtest@example.com',
-            'role_id': recep_role.id,
-        })
+        recep_role = Role.objects.get(name="Receptionist", center=self.center)
+        self.client.post(
+            "/api/tenants/staff/",
+            {
+                "first_name": "Email",
+                "last_name": "Test",
+                "email": "emailtest@example.com",
+                "role_id": recep_role.id,
+            },
+        )
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('emailtest@example.com', mail.outbox[0].to)
-        self.assertIn('Username:', mail.outbox[0].body)
-        self.assertIn('Password:', mail.outbox[0].body)
+        self.assertIn("emailtest@example.com", mail.outbox[0].to)
+        self.assertIn("Username:", mail.outbox[0].body)
+        self.assertIn("Password:", mail.outbox[0].body)
 
     def test_staff_create_requires_email(self):
         self._auth(self.admin_user)
         from core.tenants.models import Role
-        recep_role = Role.objects.get(name='Receptionist', center=self.center)
-        response = self.client.post('/api/tenants/staff/', {
-            'first_name': 'No',
-            'last_name': 'Email',
-            'role_id': recep_role.id,
-        })
+
+        recep_role = Role.objects.get(name="Receptionist", center=self.center)
+        response = self.client.post(
+            "/api/tenants/staff/",
+            {
+                "first_name": "No",
+                "last_name": "Email",
+                "role_id": recep_role.id,
+            },
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('email', response.data)
+        self.assertIn("email", response.data)
+
 
 # ---------------------------------------------------------------------------
 # Patient Registration Tests (kept from original)
@@ -782,7 +800,7 @@ class PatientRegistrationTests(APITestCase):
     def setUp(self):
         self.center = make_center()
         self.admin_user = make_user("admin_user")
-        make_staff(self.admin_user, self.center, 'Admin')
+        make_staff(self.admin_user, self.center, "Admin")
         self.client.credentials(**jwt_auth_header(self.admin_user))
         self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
 
@@ -816,11 +834,11 @@ class PatientRegistrationTests(APITestCase):
 
 class IsSuperAdminPermTests(TestCase):
     def setUp(self):
-        self.center = make_center('SA Center', 'sa-center')
-        self.superuser = make_user('super_perm', is_superuser=True)
-        self.regular_user = make_user('regular_perm')
-        self.admin_user = make_user('admin_perm')
-        make_staff(self.admin_user, self.center, 'Admin')
+        self.center = make_center("SA Center", "sa-center")
+        self.superuser = make_user("super_perm", is_superuser=True)
+        self.regular_user = make_user("regular_perm")
+        self.admin_user = make_user("admin_perm")
+        make_staff(self.admin_user, self.center, "Admin")
 
     def test_superuser_allowed(self):
         req = FakeRequest(self.superuser, self.center)
@@ -843,101 +861,113 @@ class IsSuperAdminPermTests(TestCase):
 
 class SuperadminPermissionViewTests(APITestCase):
     def setUp(self):
-        self.center = make_center('Perm Center', 'perm-center')
-        self.superuser = make_user('sa_view', is_superuser=True)
-        self.admin_user = make_user('admin_view')
-        make_staff(self.admin_user, self.center, 'Admin')
+        self.center = make_center("Perm Center", "perm-center")
+        self.superuser = make_user("sa_view", is_superuser=True)
+        self.admin_user = make_user("admin_view")
+        make_staff(self.admin_user, self.center, "Admin")
 
     def _auth_super(self):
         self.client.credentials(**jwt_auth_header(self.superuser))
 
     def _auth_admin(self):
         self.client.credentials(**jwt_auth_header(self.admin_user))
-        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
 
     # ── Permission CRUD ──────────────────────────────────────────
 
     def test_superadmin_can_list_permissions(self):
         self._auth_super()
-        response = self.client.get('/api/tenants/permissions/')
+        response = self.client.get("/api/tenants/permissions/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreater(len(response.data['results']), 0)
+        self.assertGreater(len(response.data["results"]), 0)
 
     def test_admin_can_list_permissions(self):
         self._auth_admin()
-        response = self.client.get('/api/tenants/permissions/')
+        response = self.client.get("/api/tenants/permissions/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_superadmin_can_create_permission(self):
         self._auth_super()
-        response = self.client.post('/api/tenants/permissions/', {
-            'codename': 'custom_test_perm',
-            'name': 'Custom Test Perm',
-            'category': 'Custom',
-        })
+        response = self.client.post(
+            "/api/tenants/permissions/",
+            {
+                "codename": "custom_test_perm",
+                "name": "Custom Test Perm",
+                "category": "Custom",
+            },
+        )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data['is_custom'])
+        self.assertTrue(response.data["is_custom"])
 
     def test_admin_cannot_create_permission(self):
         self._auth_admin()
-        response = self.client.post('/api/tenants/permissions/', {
-            'codename': 'hacked_perm',
-            'name': 'Hacked',
-            'category': 'Hacked',
-        })
+        response = self.client.post(
+            "/api/tenants/permissions/",
+            {
+                "codename": "hacked_perm",
+                "name": "Hacked",
+                "category": "Hacked",
+            },
+        )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_superadmin_can_delete_custom_permission(self):
         from core.tenants.models import Permission
+
         self._auth_super()
         perm = Permission.objects.create(
-            codename='deletable', name='Deletable', category='Test', is_custom=True,
+            codename="deletable",
+            name="Deletable",
+            category="Test",
+            is_custom=True,
         )
-        response = self.client.delete(f'/api/tenants/permissions/{perm.id}/')
+        response = self.client.delete(f"/api/tenants/permissions/{perm.id}/")
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_superadmin_cannot_delete_system_permission(self):
         from core.tenants.models import Permission
+
         self._auth_super()
         perm = Permission.objects.filter(is_custom=False).first()
-        response = self.client.delete(f'/api/tenants/permissions/{perm.id}/')
+        response = self.client.delete(f"/api/tenants/permissions/{perm.id}/")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     # ── Center Permission Management ─────────────────────────────
 
     def test_superadmin_can_list_centers(self):
         self._auth_super()
-        response = self.client.get('/api/tenants/centers/')
+        response = self.client.get("/api/tenants/centers/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreater(len(response.data), 0)
 
     def test_admin_cannot_list_centers(self):
         self._auth_admin()
-        response = self.client.get('/api/tenants/centers/')
+        response = self.client.get("/api/tenants/centers/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_superadmin_can_get_center_permissions(self):
         self._auth_super()
         response = self.client.get(
-            f'/api/tenants/centers/{self.center.id}/permissions/',
+            f"/api/tenants/centers/{self.center.id}/permissions/",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_superadmin_can_set_center_permissions(self):
         from core.tenants.models import Permission
+
         self._auth_super()
-        perms = list(Permission.objects.values_list('id', flat=True)[:3])
+        perms = list(Permission.objects.values_list("id", flat=True)[:3])
         response = self.client.put(
-            f'/api/tenants/centers/{self.center.id}/permissions/',
-            {'permission_ids': perms},
-            format='json',
+            f"/api/tenants/centers/{self.center.id}/permissions/",
+            {"permission_ids": perms},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), len(perms))
 
     def test_center_not_found_returns_404(self):
         self._auth_super()
-        response = self.client.get('/api/tenants/centers/99999/permissions/')
+        response = self.client.get("/api/tenants/centers/99999/permissions/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
@@ -946,36 +976,44 @@ class RolePermissionValidationTests(APITestCase):
 
     def setUp(self):
         from core.tenants.models import Permission
-        self.center = make_center('Val Center', 'val-center')
-        self.admin_user = make_user('val_admin')
-        make_staff(self.admin_user, self.center, 'Admin')
+
+        self.center = make_center("Val Center", "val-center")
+        self.admin_user = make_user("val_admin")
+        make_staff(self.admin_user, self.center, "Admin")
 
         # Give center only 2 permissions
         avail = Permission.objects.all()[:2]
         self.center.available_permissions.set(avail)
-        self.available_ids = list(avail.values_list('id', flat=True))
+        self.available_ids = list(avail.values_list("id", flat=True))
         self.unavailable_perm = Permission.objects.exclude(
             id__in=self.available_ids,
         ).first()
 
     def _auth(self):
         self.client.credentials(**jwt_auth_header(self.admin_user))
-        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
 
     def test_create_role_with_available_permissions_succeeds(self):
         self._auth()
-        response = self.client.post('/api/tenants/roles/', {
-            'name': 'Custom Good',
-            'permission_ids': self.available_ids,
-        }, format='json')
+        response = self.client.post(
+            "/api/tenants/roles/",
+            {
+                "name": "Custom Good",
+                "permission_ids": self.available_ids,
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_create_role_with_unavailable_permission_fails(self):
         self._auth()
-        response = self.client.post('/api/tenants/roles/', {
-            'name': 'Custom Bad',
-            'permission_ids': [self.unavailable_perm.id],
-        }, format='json')
+        response = self.client.post(
+            "/api/tenants/roles/",
+            {
+                "name": "Custom Bad",
+                "permission_ids": [self.unavailable_perm.id],
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('permission_ids', str(response.data))
-
+        self.assertIn("permission_ids", str(response.data))

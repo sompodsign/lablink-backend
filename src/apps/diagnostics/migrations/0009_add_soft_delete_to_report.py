@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('diagnostics', '0008_seed_report_templates'),
+        ("diagnostics", "0008_seed_report_templates"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='report',
-            name='deleted_at',
+            model_name="report",
+            name="deleted_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='report',
-            name='is_deleted',
+            model_name="report",
+            name="is_deleted",
             field=models.BooleanField(default=False),
         ),
     ]

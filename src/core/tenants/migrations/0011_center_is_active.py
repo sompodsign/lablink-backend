@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0010_backfill_available_permissions'),
+        ("tenants", "0010_backfill_available_permissions"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='is_active',
-            field=models.BooleanField(default=True, help_text='Inactive centers are blocked from all API access.'),
+            model_name="diagnosticcenter",
+            name="is_active",
+            field=models.BooleanField(
+                default=True,
+                help_text="Inactive centers are blocked from all API access.",
+            ),
         ),
     ]

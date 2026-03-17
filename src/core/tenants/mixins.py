@@ -1,4 +1,3 @@
-
 from django.db import models
 
 
@@ -10,9 +9,9 @@ class TenantQuerySetMixin:
 
     def for_tenant(self, tenant):
         """Filter queryset by tenant (DiagnosticCenter)."""
-        if hasattr(self.model, 'center'):
+        if hasattr(self.model, "center"):
             return self.filter(center=tenant)
-        elif hasattr(self.model, 'diagnostic_center'):
+        elif hasattr(self.model, "diagnostic_center"):
             return self.filter(diagnostic_center=tenant)
         return self
 
