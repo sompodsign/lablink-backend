@@ -13,6 +13,7 @@ from core.tenants.permissions import IsSuperAdmin
 
 from .models import DiagnosticCenter, Doctor, Staff
 from .superadmin_serializers import (
+    SuperadminCenterCreateSerializer,
     SuperadminCenterDetailSerializer,
     SuperadminCenterSerializer,
     SuperadminDoctorSerializer,
@@ -73,11 +74,11 @@ class SuperadminDashboardView(SuperadminBaseView):
 
 @extend_schema(
     tags=["Superadmin"],
-    summary="List all diagnostic centers",
+    summary="List or create diagnostic centers",
     responses=SuperadminCenterSerializer(many=True),
 )
 class SuperadminCenterListView(SuperadminBaseView):
-    """List all centers with staff/doctor/patient counts."""
+    """List all centers or create a new one."""
 
     def get(self, request):
         centers = DiagnosticCenter.objects.annotate(
@@ -96,6 +97,31 @@ class SuperadminCenterListView(SuperadminBaseView):
             context={"request": request},
         )
         return Response(serializer.data)
+
+    @extend_schema(
+        tags=["Superadmin"],
+        summary="Create a new diagnostic center",
+        request=SuperadminCenterCreateSerializer,
+        responses={201: SuperadminCenterDetailSerializer},
+    )
+    def post(self, request):
+        serializer = SuperadminCenterCreateSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        center = serializer.save()
+        logger.info(
+            "Superadmin %s created center %s",
+            request.user.username,
+            center.name,
+        )
+        # Return full detail representation
+        detail = SuperadminCenterDetailSerializer(
+            center,
+            context={"request": request},
+        )
+        return Response(detail.data, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(
@@ -151,6 +177,36 @@ class SuperadminCenterDetailView(SuperadminBaseView):
             center.name,
         )
         return Response(serializer.data)
+
+    def delete(self, request, center_id):
+        try:
+            center = DiagnosticCenter.objects.get(pk=center_id)
+        except DiagnosticCenter.DoesNotExist:
+            return Response(
+                {"detail": "Center not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Block deletion if center has staff or patients
+        if center.staff.exists():
+            return Response(
+                {"detail": "Cannot delete a center with active staff."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if center.registered_patients.exists():
+            return Response(
+                {"detail": "Cannot delete a center with registered patients."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        name = center.name
+        center.delete()
+        logger.info(
+            "Superadmin %s deleted center %s",
+            request.user.username,
+            name,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @extend_schema(

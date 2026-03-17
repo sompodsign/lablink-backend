@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from core.tenants.models import DiagnosticCenter
 from helpers.test_factories import (
     jwt_auth_header,
     make_center,
@@ -155,6 +156,109 @@ class SuperadminCenterViewTests(APITestCase):
     def test_non_superadmin_denied(self):
         self.client.credentials(**jwt_auth_header(self.regular))
         response = self.client.get("/api/tenants/superadmin/centers/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    # ── Create (POST) ─────────────────────────────────────────────
+
+    def test_create_center(self):
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/centers/",
+            {
+                "name": "New Center",
+                "domain": "new-center",
+                "address": "456 New St",
+                "contact_number": "01800000001",
+                "email": "info@newcenter.com",
+                "tagline": "Best diagnostics",
+                "primary_color": "#0d9488",
+                "opening_hours": "9:00 AM - 6:00 PM",
+                "years_of_experience": "10+",
+                "happy_patients_count": "5,000+",
+                "test_types_available_count": "50+",
+                "lab_support_availability": "24/7",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], "New Center")
+        self.assertEqual(response.data["domain"], "new-center")
+        self.assertTrue(
+            DiagnosticCenter.objects.filter(domain="new-center").exists(),
+        )
+
+    def test_create_center_duplicate_domain(self):
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/centers/",
+            {
+                "name": "Duplicate",
+                "domain": "test-center",  # already exists
+                "address": "789 Dup St",
+                "contact_number": "01900000001",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_center_missing_required_fields(self):
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/centers/",
+            {"name": "Incomplete"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_non_superadmin_cannot_create(self):
+        self.client.credentials(**jwt_auth_header(self.regular))
+        response = self.client.post(
+            "/api/tenants/superadmin/centers/",
+            {"name": "X", "domain": "x", "address": "A", "contact_number": "0"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    # ── Delete (DELETE) ────────────────────────────────────────────
+
+    def test_delete_empty_center(self):
+        self._auth()
+        empty = make_center("Empty Center", "empty-center")
+        response = self.client.delete(
+            f"/api/tenants/superadmin/centers/{empty.id}/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(
+            DiagnosticCenter.objects.filter(id=empty.id).exists(),
+        )
+
+    def test_delete_center_with_staff_blocked(self):
+        self._auth()
+        user = make_user("del_staff")
+        make_staff(user, self.center)
+        response = self.client.delete(
+            f"/api/tenants/superadmin/centers/{self.center.id}/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("staff", response.data["detail"].lower())
+
+    def test_delete_center_with_patients_blocked(self):
+        self._auth()
+        make_patient("del_pat", self.center)
+        response = self.client.delete(
+            f"/api/tenants/superadmin/centers/{self.center.id}/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("patients", response.data["detail"].lower())
+
+    def test_delete_center_not_found(self):
+        self._auth()
+        response = self.client.delete(
+            "/api/tenants/superadmin/centers/99999/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_superadmin_cannot_delete(self):
+        self.client.credentials(**jwt_auth_header(self.regular))
+        response = self.client.delete(
+            f"/api/tenants/superadmin/centers/{self.center.id}/",
+        )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 

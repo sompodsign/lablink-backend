@@ -179,6 +179,7 @@ jobs:
             --exclude '.mypy_cache' \
             --exclude '.pytest_cache' \
             --exclude 'deployment/.env' \
+            --exclude 'deployment/frontend_dist' \
             -e "$RSYNC_SSH" \
             ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/lablink-backend/
 

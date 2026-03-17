@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from core.users.models import PatientProfile
 
-from .models import DiagnosticCenter, Doctor, Staff
+from .models import DiagnosticCenter, Doctor, Permission, Staff
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -68,13 +68,51 @@ class SuperadminCenterSerializer(serializers.ModelSerializer):
 class SuperadminCenterDetailSerializer(SuperadminCenterSerializer):
     """Extended center serializer for detail/edit views."""
 
+    logo = serializers.ImageField(required=False, allow_null=True)
+
     class Meta(SuperadminCenterSerializer.Meta):
         fields = SuperadminCenterSerializer.Meta.fields + [
+            "logo",
             "years_of_experience",
             "happy_patients_count",
             "test_types_available_count",
             "lab_support_availability",
         ]
+
+
+class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
+    """Create a new diagnostic center with all core + design fields."""
+
+    class Meta:
+        model = DiagnosticCenter
+        fields = [
+            "name",
+            "domain",
+            "address",
+            "contact_number",
+            "email",
+            "logo",
+            "tagline",
+            "primary_color",
+            "opening_hours",
+            "years_of_experience",
+            "happy_patients_count",
+            "test_types_available_count",
+            "lab_support_availability",
+        ]
+
+    def validate_domain(self, value):
+        if DiagnosticCenter.objects.filter(domain=value).exists():
+            raise serializers.ValidationError(
+                'A center with this domain already exists.',
+            )
+        return value
+
+    def create(self, validated_data):
+        center = super().create(validated_data)
+        # Grant all existing permissions to the new center
+        center.available_permissions.set(Permission.objects.all())
+        return center
 
 
 class SuperadminUserSerializer(serializers.ModelSerializer):

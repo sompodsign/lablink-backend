@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 # Load .env file
 env = environ.Env()
-environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
+environ.Env.read_env(os.path.join(BASE_DIR, "env", ".env"))
 
 
 # Application definition

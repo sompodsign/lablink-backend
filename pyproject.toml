@@ -42,7 +42,7 @@ format = { cmd = "ruff format src/", help = "Format code with ruff" }
 format_check = { cmd = "ruff format --check src/", help = "Check formatting without changing files" }
 mypy = { cmd = "mypy src/ --ignore-missing-imports", help = "Type-check with mypy", env = { PYTHONPATH = "src" } }
 lint = { sequence = ["ruff_check", "format_check", "mypy"], help = "Run all linters" }
-test = { cmd = "coverage run manage.py test core.tenants.tests core.users.tests apps.appointments.tests apps.diagnostics.tests apps.diagnostics.management.commands.tests apps.notifications.tests apps.payments.tests --keepdb -v 2", help = "Run tests with coverage", envfile = ".env.test" }
+test = { cmd = "coverage run manage.py test core.tenants.tests core.users.tests apps.appointments.tests apps.diagnostics.tests apps.diagnostics.management.commands.tests apps.notifications.tests apps.payments.tests --keepdb -v 2", help = "Run tests with coverage", envfile = "env/.env.test" }
 coverage = { sequence = ["test", { cmd = "coverage report" }], help = "Run tests and show coverage report" }
 
 
