@@ -188,21 +188,20 @@ class PasswordResetRequestView(APIView):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
 
-        # Build frontend reset URL
-        frontend_base = getattr(
-            settings,
-            "FRONTEND_URL",
-            "http://localhost:5173",
-        )
-        reset_url = f"{frontend_base}/reset-password/{uid}/{token}"
+        # Build frontend reset URL from request origin (subdomain-aware)
+        origin = request.META.get('HTTP_ORIGIN', '')
+        if not origin:
+            host = request.get_host()
+            scheme = 'https' if request.is_secure() else 'http'
+            origin = f'{scheme}://{host}'
+        # Strip /api suffix if present (origin should be the frontend root)
+        frontend_base = origin.rstrip('/')
+        if frontend_base.startswith('https://api.'):
+            # Request came from api.lablink.bd — fallback to main domain
+            frontend_base = frontend_base.replace('https://api.', 'https://', 1)
+        reset_url = f'{frontend_base}/reset-password/{uid}/{token}'
 
-        # DEV: print clean URL — the console email backend mangles it
-        # with quoted-printable line wrapping that corrupts the token.
-        import sys
-
-        sys.stderr.write(
-            f"\n\033[92m[RESET URL]\033[0m {reset_url}\n\n",
-        )
+        logger.info('Password reset URL generated for %s', user.email)
 
         send_mail(
             subject="Password Reset — LabLink",
