@@ -5,4 +5,4 @@ class DiagnosticsConfig(AppConfig):
     name = 'apps.diagnostics'
 
     def ready(self):
-        pass
+        import apps.diagnostics.signals  # noqa: F401
