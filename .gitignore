@@ -12,6 +12,8 @@ media
 # Environment
 .env
 .env.*
+env/.env
+env/.env.*
 .venv
 venv/
 ENV/
