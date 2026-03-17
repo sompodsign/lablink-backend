@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .superadmin_views import (
     SuperadminCenterDetailView,
     SuperadminCenterListView,
+    SuperadminCenterRolesView,
     SuperadminCenterToggleView,
     SuperadminDashboardView,
     SuperadminDoctorListView,
@@ -51,6 +52,11 @@ superadmin_patterns = [
     path("patients/", SuperadminPatientListView.as_view(), name="sa-patients"),
     path("staff/", SuperadminStaffListView.as_view(), name="sa-staff"),
     path("doctors/", SuperadminDoctorListView.as_view(), name="sa-doctors"),
+    path(
+        "centers/<int:center_id>/roles/",
+        SuperadminCenterRolesView.as_view(),
+        name="sa-center-roles",
+    ),
 ]
 
 urlpatterns = [

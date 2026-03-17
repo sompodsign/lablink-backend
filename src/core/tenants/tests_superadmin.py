@@ -441,6 +441,132 @@ class SuperadminEntityListTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(len(response.data), 1)
 
+    # ── Staff Creation ─────────────────────────────────────────────
+
+    def _get_admin_role(self, center):
+        from core.tenants.models import Role
+
+        role, _ = Role.objects.get_or_create(
+            name="Admin",
+            center=center,
+            defaults={"is_system": True},
+        )
+        return role
+
+    def test_create_staff_for_center(self):
+        self._auth()
+        role = self._get_admin_role(self.center_b)
+        response = self.client.post(
+            "/api/tenants/superadmin/staff/",
+            {
+                "center_id": self.center_b.id,
+                "first_name": "New",
+                "last_name": "Staff",
+                "email": "newstaff@example.com",
+                "role_id": role.id,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["center_name"], "Entity B")
+        self.assertEqual(response.data["role_name"], "Admin")
+
+    def test_create_staff_returns_credentials(self):
+        self._auth()
+        role = self._get_admin_role(self.center_b)
+        response = self.client.post(
+            "/api/tenants/superadmin/staff/",
+            {
+                "center_id": self.center_b.id,
+                "first_name": "Cred",
+                "last_name": "Check",
+                "email": "credcheck@example.com",
+                "role_id": role.id,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("generated_username", response.data)
+        self.assertIn("generated_password", response.data)
+
+    def test_create_staff_invalid_center(self):
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/staff/",
+            {
+                "center_id": 99999,
+                "first_name": "Bad",
+                "last_name": "Center",
+                "email": "bad@example.com",
+                "role_id": 1,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_staff_role_mismatch(self):
+        self._auth()
+        role_a = self._get_admin_role(self.center_a)
+        response = self.client.post(
+            "/api/tenants/superadmin/staff/",
+            {
+                "center_id": self.center_b.id,
+                "first_name": "Mismatch",
+                "last_name": "Role",
+                "email": "mismatch@example.com",
+                "role_id": role_a.id,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("role_id", str(response.data))
+
+    def test_create_staff_regular_user_denied(self):
+        regular = make_user("reg_entity")
+        self.client.credentials(**jwt_auth_header(regular))
+        role = self._get_admin_role(self.center_b)
+        response = self.client.post(
+            "/api/tenants/superadmin/staff/",
+            {
+                "center_id": self.center_b.id,
+                "first_name": "Denied",
+                "last_name": "Staff",
+                "email": "denied@example.com",
+                "role_id": role.id,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    # ── Doctor Creation ────────────────────────────────────────────
+
+    def test_create_doctor_for_center(self):
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/doctors/",
+            {
+                "center_id": self.center_b.id,
+                "first_name": "New",
+                "last_name": "Doctor",
+                "email": "newdoc@example.com",
+                "specialization": "Cardiology",
+                "designation": "Consultant",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["center_name"], "Entity B")
+        self.assertEqual(response.data["specialization"], "Cardiology")
+
+    def test_create_doctor_regular_user_denied(self):
+        regular = make_user("reg_doc_entity")
+        self.client.credentials(**jwt_auth_header(regular))
+        response = self.client.post(
+            "/api/tenants/superadmin/doctors/",
+            {
+                "center_id": self.center_b.id,
+                "first_name": "Denied",
+                "last_name": "Doc",
+                "specialization": "Neurology",
+                "designation": "Senior",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
 
 # ---------------------------------------------------------------------------
 # Deactivated Center Login Block Tests

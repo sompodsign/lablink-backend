@@ -11,13 +11,15 @@ from apps.appointments.models import Appointment
 from apps.diagnostics.models import Report, TestOrder
 from core.tenants.permissions import IsSuperAdmin
 
-from .models import DiagnosticCenter, Doctor, Staff
+from .models import DiagnosticCenter, Doctor, Role, Staff
 from .superadmin_serializers import (
     SuperadminCenterCreateSerializer,
     SuperadminCenterDetailSerializer,
     SuperadminCenterSerializer,
+    SuperadminDoctorCreateSerializer,
     SuperadminDoctorSerializer,
     SuperadminPatientSerializer,
+    SuperadminStaffCreateSerializer,
     SuperadminStaffSerializer,
     SuperadminStatsSerializer,
     SuperadminUserSerializer,
@@ -421,6 +423,27 @@ class SuperadminStaffListView(SuperadminBaseView):
         serializer = SuperadminStaffSerializer(staff, many=True)
         return Response(serializer.data)
 
+    @extend_schema(
+        tags=["Superadmin"],
+        summary="Create staff member at a center",
+        request=SuperadminStaffCreateSerializer,
+        responses={201: SuperadminStaffSerializer},
+    )
+    def post(self, request):
+        serializer = SuperadminStaffCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        staff = serializer.save()
+        logger.info(
+            "Superadmin %s created staff %s at center %s",
+            request.user.username,
+            staff.user.username,
+            staff.center.name,
+        )
+        data = SuperadminStaffSerializer(staff).data
+        data["generated_username"] = staff.user.username
+        data["generated_password"] = serializer._generated_password
+        return Response(data, status=status.HTTP_201_CREATED)
+
 
 # ── Doctors ──────────────────────────────────────────────────────
 
@@ -444,3 +467,47 @@ class SuperadminDoctorListView(SuperadminBaseView):
 
         serializer = SuperadminDoctorSerializer(doctors, many=True)
         return Response(serializer.data)
+
+    @extend_schema(
+        tags=["Superadmin"],
+        summary="Create doctor at a center",
+        request=SuperadminDoctorCreateSerializer,
+        responses={201: SuperadminDoctorSerializer},
+    )
+    def post(self, request):
+        serializer = SuperadminDoctorCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        doctor = serializer.save()
+        logger.info(
+            "Superadmin %s created doctor %s at center %s",
+            request.user.username,
+            doctor.user.username,
+            doctor.user.center.name,
+        )
+        return Response(
+            SuperadminDoctorSerializer(doctor).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+# ── Center Roles ─────────────────────────────────────────────────
+
+
+@extend_schema(
+    tags=["Superadmin"],
+    summary="List roles for a specific center",
+)
+class SuperadminCenterRolesView(SuperadminBaseView):
+    """Get all roles for a given center (used in staff creation form)."""
+
+    def get(self, request, center_id):
+        try:
+            center = DiagnosticCenter.objects.get(pk=center_id)
+        except DiagnosticCenter.DoesNotExist:
+            return Response(
+                {"detail": "Center not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        roles = Role.objects.filter(center=center).order_by("name")
+        data = [{"id": r.id, "name": r.name} for r in roles]
+        return Response(data)

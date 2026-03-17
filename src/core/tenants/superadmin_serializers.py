@@ -1,6 +1,9 @@
 import logging
+import secrets
 
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+from django.db import transaction
 from rest_framework import serializers
 
 from core.users.models import PatientProfile
@@ -212,6 +215,182 @@ class SuperadminStaffSerializer(serializers.ModelSerializer):
             "role_name",
             "is_active",
         ]
+
+
+class SuperadminStaffCreateSerializer(serializers.Serializer):
+    """Superadmin creates a user + staff record at any center."""
+
+    center_id = serializers.PrimaryKeyRelatedField(
+        queryset=DiagnosticCenter.objects.all(),
+        source="center",
+    )
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField(required=True)
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    role_id = serializers.IntegerField()
+
+    def validate_center_id(self, value):
+        if not value.is_active:
+            raise serializers.ValidationError(
+                "Cannot add staff to an inactive center.",
+            )
+        return value
+
+    def validate_email(self, value):
+        if value and User.objects.filter(email=value).exists():
+            raise serializers.ValidationError(
+                "A user with this email already exists.",
+            )
+        return value
+
+    def validate(self, data):
+        from .models import Role
+
+        center = data["center"]
+        role_id = data.get("role_id")
+        try:
+            role = Role.objects.get(pk=role_id, center=center)
+        except Role.DoesNotExist:
+            raise serializers.ValidationError(
+                {"role_id": "Role does not belong to this center."},
+            ) from None
+        data["role"] = role
+        return data
+
+    def create(self, validated_data):
+        center = validated_data["center"]
+        role = validated_data["role"]
+
+        with transaction.atomic():
+            base_username = (
+                f"{validated_data['first_name'].lower()}"
+                f"_{validated_data['last_name'].lower()}"
+            )
+            username = base_username
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}_{counter}"
+                counter += 1
+
+            password = secrets.token_urlsafe(10)
+            self._generated_password = password
+            user = User.objects.create_user(
+                username=username,
+                email=validated_data["email"],
+                first_name=validated_data["first_name"],
+                last_name=validated_data["last_name"],
+                phone_number=validated_data.get("phone_number", ""),
+                password=password,
+                center=center,
+                is_active=True,
+            )
+
+            staff = Staff.objects.create(
+                user=user,
+                center=center,
+                role=role,
+            )
+
+        # Send credentials email (outside transaction)
+        send_mail(
+            subject=f"Welcome to {center.name} — Your Account Credentials",
+            message=(
+                f"Hi {user.first_name},\n\n"
+                f"You have been added as a {role.name} "
+                f"at {center.name}.\n\n"
+                f"Your login credentials:\n"
+                f"  Username: {username}\n"
+                f"  Password: {password}\n\n"
+                f"Please change your password after first login.\n\n"
+                f"— {center.name} Team"
+            ),
+            from_email=None,
+            recipient_list=[user.email],
+            fail_silently=True,
+        )
+
+        return staff
+
+
+class SuperadminDoctorCreateSerializer(serializers.Serializer):
+    """Superadmin creates a user + doctor record at any center."""
+
+    center_id = serializers.PrimaryKeyRelatedField(
+        queryset=DiagnosticCenter.objects.all(),
+        source="center",
+    )
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    email = serializers.EmailField(
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    specialization = serializers.CharField(max_length=255)
+    designation = serializers.CharField(max_length=255)
+    bio = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+
+    def validate_center_id(self, value):
+        if not value.is_active:
+            raise serializers.ValidationError(
+                "Cannot add doctor to an inactive center.",
+            )
+        return value
+
+    def validate_email(self, value):
+        if value and User.objects.filter(email=value).exists():
+            raise serializers.ValidationError(
+                "A user with this email already exists.",
+            )
+        return value
+
+    def create(self, validated_data):
+        center = validated_data["center"]
+
+        with transaction.atomic():
+            base_username = (
+                f"dr_{validated_data['first_name'].lower()}"
+                f"_{validated_data['last_name'].lower()}"
+            )
+            username = base_username
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}_{counter}"
+                counter += 1
+
+            user = User.objects.create_user(
+                username=username,
+                email=validated_data.get("email", ""),
+                first_name=validated_data["first_name"],
+                last_name=validated_data["last_name"],
+                phone_number=validated_data.get("phone_number", ""),
+                center=center,
+            )
+
+            doctor = Doctor.objects.create(
+                user=user,
+                specialization=validated_data["specialization"],
+                designation=validated_data["designation"],
+                bio=validated_data.get("bio", ""),
+            )
+
+        return doctor
 
 
 class SuperadminDoctorSerializer(serializers.ModelSerializer):
