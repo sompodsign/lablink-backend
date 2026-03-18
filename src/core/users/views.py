@@ -82,23 +82,33 @@ class CustomTokenObtainView(APIView):
         # Resolve center from request origin (subdomain)
         center = _resolve_center_from_request(request)
 
-        # Build user lookup scoped to center
+        # Build user lookup scoped to center (supports username, email, or phone)
+        identifier_q = Q(email=email) | Q(username=email) | Q(phone_number=email)
         if center:
-            lookup_qs = User.objects.filter(
-                Q(email=email) | Q(username=email),
-                center=center,
-            )
+            lookup_qs = User.objects.filter(identifier_q, center=center)
         else:
             # Main domain — only superadmins (center=NULL)
             lookup_qs = User.objects.filter(
-                Q(email=email) | Q(username=email),
+                identifier_q,
                 center__isnull=True,
                 is_superuser=True,
             )
 
-        try:
-            user_record = lookup_qs.get()
-        except User.DoesNotExist:
+        # Phone numbers may be shared by family — try password against each
+        users = list(lookup_qs)
+        if not users:
+            return Response(
+                {"detail": "Invalid credentials."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        user_record = None
+        for candidate in users:
+            if candidate.check_password(password):
+                user_record = candidate
+                break
+
+        if user_record is None:
             return Response(
                 {"detail": "Invalid credentials."},
                 status=status.HTTP_401_UNAUTHORIZED,
@@ -127,12 +137,7 @@ class CustomTokenObtainView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Verify password
-        if not user_record.check_password(password):
-            return Response(
-                {"detail": "Invalid credentials."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+        # (Password already verified during lookup above)
 
         # Check if center is deactivated (superadmins bypass)
         if center and not center.is_active and not user_record.is_superuser:

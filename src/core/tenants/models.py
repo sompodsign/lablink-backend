@@ -48,6 +48,10 @@ class DiagnosticCenter(models.Model):
         default=True,
         help_text=_("Inactive centers are blocked from all API access."),
     )
+    allow_online_appointments = models.BooleanField(
+        default=False,
+        help_text=_("Whether patients can self-book appointments online."),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

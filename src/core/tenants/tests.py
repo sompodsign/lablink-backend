@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from core.tenants.middleware import TenantMiddleware
-from core.tenants.models import Doctor, Service, Staff
+from core.tenants.models import DiagnosticCenter, Doctor, Service, Staff
 from core.tenants.permissions import (
     IsCenterAdmin,
     IsCenterDoctor,
@@ -1017,3 +1017,329 @@ class RolePermissionValidationTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("permission_ids", str(response.data))
+
+
+# ---------------------------------------------------------------------------
+# Signal: Default Roles Created on Center Creation
+# ---------------------------------------------------------------------------
+
+
+class DefaultRoleSignalTests(TestCase):
+    """Signal should create 4 default roles when a new center is saved."""
+
+    def test_default_roles_created_on_center_save(self):
+        from core.tenants.models import Role
+
+        center = DiagnosticCenter.objects.create(
+            name="Signal Test Lab",
+            domain="signal-test",
+            address="123 Test St",
+            contact_number="01700000001",
+        )
+        roles = Role.objects.filter(center=center).order_by("name")
+        role_names = list(roles.values_list("name", flat=True))
+        self.assertEqual(
+            role_names,
+            ["Admin", "Doctor", "Lab Technician", "Receptionist"],
+        )
+
+    def test_admin_role_gets_all_permissions(self):
+        from core.tenants.models import Permission, Role
+
+        center = DiagnosticCenter.objects.create(
+            name="Admin Perm Lab",
+            domain="admin-perm",
+            address="123 Test St",
+            contact_number="01700000002",
+        )
+        admin_role = Role.objects.get(center=center, name="Admin")
+        all_perm_count = Permission.objects.count()
+        self.assertEqual(admin_role.permissions.count(), all_perm_count)
+
+    def test_doctor_role_permissions(self):
+        from core.tenants.models import Role
+
+        center = DiagnosticCenter.objects.create(
+            name="Doc Perm Lab",
+            domain="doc-perm",
+            address="123 Test St",
+            contact_number="01700000003",
+        )
+        doctor_role = Role.objects.get(center=center, name="Doctor")
+        expected = {
+            "view_patients",
+            "view_appointments",
+            "manage_appointments",
+            "view_test_orders",
+            "view_reports",
+            "create_reports",
+        }
+        actual = set(doctor_role.permissions.values_list("codename", flat=True))
+        self.assertEqual(actual, expected)
+
+    def test_receptionist_role_permissions(self):
+        from core.tenants.models import Role
+
+        center = DiagnosticCenter.objects.create(
+            name="Recep Perm Lab",
+            domain="recep-perm",
+            address="123 Test St",
+            contact_number="01700000004",
+        )
+        recep_role = Role.objects.get(center=center, name="Receptionist")
+        expected = {
+            "view_patients",
+            "manage_patients",
+            "view_appointments",
+            "manage_appointments",
+            "view_reports",
+            "view_payments",
+            "manage_payments",
+        }
+        actual = set(recep_role.permissions.values_list("codename", flat=True))
+        self.assertEqual(actual, expected)
+
+    def test_lab_technician_role_permissions(self):
+        from core.tenants.models import Role
+
+        center = DiagnosticCenter.objects.create(
+            name="Tech Perm Lab",
+            domain="tech-perm",
+            address="123 Test St",
+            contact_number="01700000005",
+        )
+        tech_role = Role.objects.get(center=center, name="Lab Technician")
+        expected = {
+            "view_patients",
+            "view_reports",
+            "create_reports",
+            "manage_reports",
+            "view_test_orders",
+            "manage_test_orders",
+        }
+        actual = set(tech_role.permissions.values_list("codename", flat=True))
+        self.assertEqual(actual, expected)
+
+    def test_all_roles_are_system_roles(self):
+        from core.tenants.models import Role
+
+        center = DiagnosticCenter.objects.create(
+            name="System Role Lab",
+            domain="sys-role",
+            address="123 Test St",
+            contact_number="01700000006",
+        )
+        roles = Role.objects.filter(center=center)
+        self.assertTrue(all(r.is_system for r in roles))
+
+    def test_signal_sets_available_permissions(self):
+        from core.tenants.models import Permission
+
+        center = DiagnosticCenter.objects.create(
+            name="Avail Perm Lab",
+            domain="avail-perm",
+            address="123 Test St",
+            contact_number="01700000007",
+        )
+        all_perm_count = Permission.objects.count()
+        self.assertEqual(
+            center.available_permissions.count(),
+            all_perm_count,
+        )
+
+    def test_signal_does_not_fire_on_update(self):
+        from core.tenants.models import Role
+
+        center = DiagnosticCenter.objects.create(
+            name="No Dup Lab",
+            domain="no-dup",
+            address="123 Test St",
+            contact_number="01700000008",
+        )
+        initial_count = Role.objects.filter(center=center).count()
+        center.name = "No Dup Lab Updated"
+        center.save()
+        self.assertEqual(
+            Role.objects.filter(center=center).count(),
+            initial_count,
+        )
+
+
+# ---------------------------------------------------------------------------
+# RoleSerializer: staff_count for Doctor role
+# ---------------------------------------------------------------------------
+
+
+class RoleStaffCountTests(TestCase):
+    """RoleSerializer.get_staff_count should count doctors for Doctor role."""
+
+    def setUp(self):
+        self.center = make_center("Count Lab", "count-lab")
+
+    def test_doctor_role_counts_doctors(self):
+        from core.tenants.models import Role
+        from core.tenants.serializers import RoleSerializer
+
+        doctor_role = Role.objects.get(center=self.center, name="Doctor")
+        # Create 2 doctors at this center
+        doc_user1 = make_user("doc_count_1")
+        doc_user1.center = self.center
+        doc_user1.save()
+        Doctor.objects.create(
+            user=doc_user1,
+            specialization="Cardiology",
+            designation="Consultant",
+        )
+        doc_user2 = make_user("doc_count_2")
+        doc_user2.center = self.center
+        doc_user2.save()
+        Doctor.objects.create(
+            user=doc_user2,
+            specialization="Neurology",
+            designation="Senior",
+        )
+
+        serializer = RoleSerializer(doctor_role)
+        self.assertEqual(serializer.data["staff_count"], 2)
+
+    def test_admin_role_counts_staff_members(self):
+        from core.tenants.models import Role
+        from core.tenants.serializers import RoleSerializer
+
+        admin_role = Role.objects.get(center=self.center, name="Admin")
+        staff_user = make_user("staff_count_1")
+        make_staff(staff_user, self.center, "Admin")
+
+        serializer = RoleSerializer(admin_role)
+        self.assertEqual(serializer.data["staff_count"], 1)
+
+
+# ---------------------------------------------------------------------------
+# CenterSettingsView Tests
+# ---------------------------------------------------------------------------
+
+
+class CenterSettingsViewTests(APITestCase):
+    """Admin GET/PATCH for center settings."""
+
+    def setUp(self):
+        self.center = make_center("Settings Lab", "settings-lab")
+        self.admin_user = make_user("settings_admin")
+        make_staff(self.admin_user, self.center, "Admin")
+        self.non_admin = make_user("settings_tech")
+        make_staff(self.non_admin, self.center, "Lab Technician")
+
+    def _auth_admin(self):
+        self.client.credentials(**jwt_auth_header(self.admin_user))
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+
+    def _auth_non_admin(self):
+        self.client.credentials(**jwt_auth_header(self.non_admin))
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+
+    def test_admin_can_get_settings(self):
+        self._auth_admin()
+        response = self.client.get("/api/tenants/settings/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Settings Lab")
+        self.assertIn("primary_color", response.data)
+        self.assertIn("tagline", response.data)
+        self.assertIn("opening_hours", response.data)
+
+    def test_admin_can_patch_name(self):
+        self._auth_admin()
+        response = self.client.patch(
+            "/api/tenants/settings/",
+            {"name": "Updated Lab Name"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Updated Lab Name")
+        self.center.refresh_from_db()
+        self.assertEqual(self.center.name, "Updated Lab Name")
+
+    def test_admin_can_patch_primary_color(self):
+        self._auth_admin()
+        response = self.client.patch(
+            "/api/tenants/settings/",
+            {"primary_color": "#ff5733"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["primary_color"], "#ff5733")
+
+    def test_admin_can_patch_multiple_fields(self):
+        self._auth_admin()
+        payload = {
+            "tagline": "Best lab ever",
+            "contact_number": "01900000001",
+            "opening_hours": "24/7",
+            "years_of_experience": "15+",
+        }
+        response = self.client.patch(
+            "/api/tenants/settings/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["tagline"], "Best lab ever")
+        self.assertEqual(response.data["contact_number"], "01900000001")
+        self.assertEqual(response.data["opening_hours"], "24/7")
+        self.assertEqual(response.data["years_of_experience"], "15+")
+
+    def test_non_admin_cannot_get_settings(self):
+        self._auth_non_admin()
+        response = self.client.get("/api/tenants/settings/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_non_admin_cannot_patch_settings(self):
+        self._auth_non_admin()
+        response = self.client.patch(
+            "/api/tenants/settings/",
+            {"name": "Hacked"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_access_denied(self):
+        response = self.client.get("/api/tenants/settings/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_partial_update_does_not_clear_other_fields(self):
+        self._auth_admin()
+        # First set tagline
+        self.client.patch(
+            "/api/tenants/settings/",
+            {"tagline": "Original Tagline"},
+            format="json",
+        )
+        # Now update only name
+        response = self.client.patch(
+            "/api/tenants/settings/",
+            {"name": "Name Only Update"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Name Only Update")
+        self.assertEqual(response.data["tagline"], "Original Tagline")
+
+    def test_settings_response_includes_all_fields(self):
+        self._auth_admin()
+        response = self.client.get("/api/tenants/settings/")
+        expected_fields = {
+            "id",
+            "name",
+            "tagline",
+            "address",
+            "contact_number",
+            "email",
+            "logo",
+            "logo_url",
+            "primary_color",
+            "opening_hours",
+            "years_of_experience",
+            "happy_patients_count",
+            "test_types_available_count",
+            "lab_support_availability",
+        }
+        self.assertEqual(set(response.data.keys()), expected_fields)

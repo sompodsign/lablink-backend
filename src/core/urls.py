@@ -17,6 +17,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     # App APIs
     path("api/tenants/", include("core.tenants.urls")),
+    path("api/public/", include("core.tenants.public_urls")),
     path("api/diagnostics/", include("apps.diagnostics.urls")),
     path("api/appointments/", include("apps.appointments.urls")),
     path("api/payments/", include("apps.payments.urls")),

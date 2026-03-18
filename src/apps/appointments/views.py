@@ -2,14 +2,18 @@ import logging
 from datetime import date
 
 from drf_spectacular.utils import OpenApiExample, extend_schema, extend_schema_view
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from core.tenants.permissions import IsCenterDoctor, IsCenterStaffOrDoctor
 
 from .models import Appointment
-from .serializers import AppointmentSerializer, ConsultationUpdateSerializer
+from .serializers import (
+    AppointmentSerializer,
+    ConsultationUpdateSerializer,
+    PatientBookingSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +94,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if date_val := params.get("date"):
             qs = qs.filter(date=date_val)
 
-        ordering = params.get("ordering", "-date")
+        ordering = params.get("ordering", "-created_at")
         allowed = {
             "date",
             "-date",
@@ -98,6 +102,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             "-time",
             "status",
             "-status",
+            "created_at",
+            "-created_at",
         }
         if ordering in allowed:
             qs = qs.order_by(ordering)
@@ -164,3 +170,55 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             extra={"appointment_id": appointment.id, "doctor_id": request.user.id},
         )
         return Response(AppointmentSerializer(appointment).data)
+
+    @extend_schema(
+        tags=["Appointments"],
+        summary="Patient books an appointment online",
+        description=(
+            "Authenticated patient self-books an appointment at the current center. "
+            "Requires `allow_online_appointments` to be enabled on the center. "
+            "Booking is created with status PENDING until confirmed by staff."
+        ),
+        request=PatientBookingSerializer,
+        responses={
+            201: AppointmentSerializer,
+            403: {"description": "Online appointments not enabled"},
+        },
+    )
+    @action(detail=False, methods=["post"], url_path="book")
+    def book(self, request):
+        tenant = request.tenant
+        if not tenant.allow_online_appointments:
+            return Response(
+                {
+                    "detail": "Online appointment booking is not enabled for this center."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Auto-create PatientProfile if user doesn't have one
+        from core.users.models import PatientProfile
+
+        PatientProfile.objects.get_or_create(
+            user=request.user,
+            defaults={"registered_at_center": tenant},
+        )
+
+        serializer = PatientBookingSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        appointment = serializer.save()
+        logger.info(
+            "Patient booked appointment online",
+            extra={
+                "appointment_id": appointment.id,
+                "patient_id": request.user.id,
+                "center_id": tenant.id,
+            },
+        )
+        return Response(
+            AppointmentSerializer(appointment).data,
+            status=status.HTTP_201_CREATED,
+        )

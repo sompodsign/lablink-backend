@@ -11,11 +11,41 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
-from core.tenants.models import DiagnosticCenter, Doctor, Staff
+from core.tenants.models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from core.users.models import PatientProfile
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+# Permissions each role should have (None = all permissions)
+DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
+    "Admin": None,
+    "Lab Technician": [
+        "view_patients",
+        "view_reports",
+        "create_reports",
+        "manage_reports",
+        "view_test_orders",
+        "manage_test_orders",
+    ],
+    "Receptionist": [
+        "view_patients",
+        "manage_patients",
+        "view_appointments",
+        "manage_appointments",
+        "view_reports",
+        "view_payments",
+        "manage_payments",
+    ],
+    "Doctor": [
+        "view_patients",
+        "view_appointments",
+        "manage_appointments",
+        "view_test_orders",
+        "view_reports",
+        "create_reports",
+    ],
+}
 
 PASSWORD = "TestPass123!"
 
@@ -176,6 +206,7 @@ class Command(BaseCommand):
             raise CommandError("seed_e2e can only run with DEBUG=True.")
 
         centers = self._create_centers()
+        self._create_roles(centers)
         self._create_users(centers)
 
         self.stdout.write(
@@ -194,6 +225,27 @@ class Command(BaseCommand):
             self.stdout.write(f"  [{tag}] {center.name}")
             centers[cfg["domain"]] = center
         return centers
+
+    def _create_roles(self, centers):
+        """Ensure every center has all default roles with correct permissions."""
+        self.stdout.write("--- Roles ---")
+        all_perms = {p.codename: p for p in Permission.objects.all()}
+        for center in centers.values():
+            for role_name, perm_codenames in DEFAULT_ROLE_PERMS.items():
+                role, created = Role.objects.get_or_create(
+                    name=role_name,
+                    center=center,
+                    defaults={"is_system": True},
+                )
+                # Always sync permissions
+                if perm_codenames is None:
+                    role.permissions.set(all_perms.values())
+                else:
+                    role.permissions.set(
+                        [all_perms[c] for c in perm_codenames if c in all_perms]
+                    )
+                tag = "CREATED" if created else "SYNCED"
+                self.stdout.write(f"  [{tag}] {role_name} → {center.name}")
 
     def _create_users(self, centers):
         self.stdout.write("--- Users ---")
@@ -228,11 +280,31 @@ class Command(BaseCommand):
                 continue
 
             # Staff role
-            role = cfg.get("role")
-            if role:
+            role_name = cfg.get("role")
+            if role_name:
+                role_map = {
+                    "ADMIN": "Admin",
+                    "RECEPTIONIST": "Receptionist",
+                    "LAB_TECHNICIAN": "Lab Technician",
+                }
+                mapped_name = role_map.get(role_name, role_name)
+                role_obj, role_created = Role.objects.get_or_create(
+                    name=mapped_name,
+                    center=center,
+                    defaults={"is_system": True},
+                )
+                # Assign permissions (always sync to match DEFAULT_ROLE_PERMS)
+                perm_codenames = DEFAULT_ROLE_PERMS.get(mapped_name)
+                if perm_codenames is None:
+                    # Admin → all permissions
+                    role_obj.permissions.set(Permission.objects.all())
+                elif perm_codenames:
+                    role_obj.permissions.set(
+                        Permission.objects.filter(codename__in=perm_codenames)
+                    )
                 Staff.objects.get_or_create(
                     user=user,
-                    defaults={"center": center, "role": role},
+                    defaults={"center": center, "role": role_obj},
                 )
 
             # Doctor

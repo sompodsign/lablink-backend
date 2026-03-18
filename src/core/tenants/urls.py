@@ -16,6 +16,7 @@ from .superadmin_views import (
 from .views import (
     CenterListView,
     CenterPermissionView,
+    CenterSettingsView,
     CurrentTenantView,
     DoctorManagementViewSet,
     PermissionViewSet,
@@ -61,6 +62,7 @@ superadmin_patterns = [
 
 urlpatterns = [
     path("current/", CurrentTenantView.as_view(), name="current-tenant"),
+    path("settings/", CenterSettingsView.as_view(), name="center-settings"),
     path("by-domain/", TenantByDomainView.as_view(), name="tenant-by-domain"),
     path("centers/", CenterListView.as_view(), name="center-list"),
     path(

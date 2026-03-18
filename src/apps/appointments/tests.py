@@ -193,3 +193,131 @@ class AppointmentViewTests(APITestCase):
     def test_unauthenticated_denied(self):
         response = self.client.get("/api/appointments/appointments/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ---------------------------------------------------------------------------
+# Patient Online Booking Tests
+# ---------------------------------------------------------------------------
+
+
+class PatientBookingTests(APITestCase):
+    """Tests for the patient self-booking endpoint (POST /book/)."""
+
+    def setUp(self):
+        self.center = make_center(allow_online_appointments=True)
+
+        # Staff user (admin) — for verifying staff create still works
+        self.staff_user = make_user("booking_staff")
+        make_staff(self.staff_user, self.center, "Admin")
+
+        # Doctor at this center
+        self.doc_user = make_user("booking_doc", "Dr", "Book")
+        self.doctor = make_doctor(self.doc_user, self.center)
+
+        # Patient user
+        self.patient_user = make_patient("booking_pat", self.center)
+
+    def _auth(self, user):
+        self.client.credentials(**jwt_auth_header(user))
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+
+    def test_patient_can_book_when_enabled(self):
+        self._auth(self.patient_user)
+        payload = {
+            "doctor": self.doctor.id,
+            "date": "2026-06-15",
+            "time": "10:00",
+            "symptoms": "Headache",
+        }
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], "PENDING")
+        self.assertEqual(response.data["patient"], self.patient_user.id)
+
+    def test_patient_cannot_book_when_disabled(self):
+        self.center.allow_online_appointments = False
+        self.center.save()
+        self._auth(self.patient_user)
+        payload = {"date": "2026-06-15", "time": "10:00"}
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_booking_creates_pending_status(self):
+        self._auth(self.patient_user)
+        payload = {"date": "2026-06-15", "time": "14:30"}
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        appt = Appointment.objects.get(pk=response.data["id"])
+        self.assertEqual(appt.status, "PENDING")
+
+    def test_booking_rejects_past_date(self):
+        self._auth(self.patient_user)
+        payload = {"date": "2020-01-01", "time": "10:00"}
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date", response.data)
+
+    def test_booking_doctor_must_belong_to_center(self):
+        other_center = make_center(
+            name="Other Center",
+            domain="other",
+            allow_online_appointments=True,
+        )
+        other_doc_user = make_user("other_doc", "Other", "Doc")
+        other_doctor = make_doctor(other_doc_user, other_center)
+
+        self._auth(self.patient_user)
+        payload = {
+            "doctor": other_doctor.id,
+            "date": "2026-06-15",
+            "time": "10:00",
+        }
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("doctor", response.data)
+
+    def test_booking_without_doctor_succeeds(self):
+        self._auth(self.patient_user)
+        payload = {"date": "2026-06-15", "time": "09:00", "symptoms": "General checkup"}
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(response.data["doctor"])
+
+    def test_booking_auto_creates_patient_profile(self):
+        """Staff user without a PatientProfile gets one auto-created on booking."""
+        from core.users.models import PatientProfile
+
+        # Create a user with no patient profile
+        plain_user = make_user("no_profile", center=self.center)
+        self.assertFalse(PatientProfile.objects.filter(user=plain_user).exists())
+
+        self._auth(plain_user)
+        payload = {"date": "2026-06-15", "time": "11:00"}
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # PatientProfile should now exist
+        self.assertTrue(PatientProfile.objects.filter(user=plain_user).exists())
+        profile = PatientProfile.objects.get(user=plain_user)
+        self.assertEqual(profile.registered_at_center, self.center)
+
+    def test_staff_create_still_works(self):
+        """Regular staff appointment creation (POST) is unaffected."""
+        self._auth(self.staff_user)
+        payload = {
+            "patient": self.patient_user.id,
+            "center": self.center.id,
+            "doctor": self.doctor.id,
+            "date": "2026-06-20",
+            "time": "15:00",
+            "symptoms": "Staff-created",
+        }
+        response = self.client.post("/api/appointments/appointments/", payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], "CONFIRMED")
+
+    def test_unauthenticated_cannot_book(self):
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+        payload = {"date": "2026-06-15", "time": "10:00"}
+        response = self.client.post("/api/appointments/appointments/book/", payload)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

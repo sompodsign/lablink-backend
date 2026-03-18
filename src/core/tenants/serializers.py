@@ -39,6 +39,7 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
             "happy_patients_count",
             "test_types_available_count",
             "lab_support_availability",
+            "allow_online_appointments",
             "services",
         ]
 
@@ -52,6 +53,40 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
     def get_services(self, obj) -> list:
         active_services = obj.services.filter(is_active=True)
         return ServiceSerializer(active_services, many=True).data
+
+
+class CenterSettingsSerializer(serializers.ModelSerializer):
+    """Admin-editable center settings."""
+
+    logo_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = DiagnosticCenter
+        fields = [
+            "id",
+            "name",
+            "tagline",
+            "address",
+            "contact_number",
+            "email",
+            "logo",
+            "logo_url",
+            "primary_color",
+            "opening_hours",
+            "years_of_experience",
+            "happy_patients_count",
+            "test_types_available_count",
+            "lab_support_availability",
+            "allow_online_appointments",
+        ]
+        read_only_fields = ["id", "logo_url"]
+
+    def get_logo_url(self, obj) -> str | None:
+        if obj.logo:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.logo.url)
+        return None
 
 
 class DoctorSerializer(serializers.ModelSerializer):
@@ -180,6 +215,8 @@ class RoleSerializer(serializers.ModelSerializer):
         read_only_fields = ["is_system"]
 
     def get_staff_count(self, obj) -> int:
+        if obj.name == "Doctor":
+            return Doctor.objects.filter(user__center=obj.center).count()
         return obj.staff_members.count()
 
     def create(self, validated_data):

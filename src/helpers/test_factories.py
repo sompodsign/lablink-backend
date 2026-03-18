@@ -36,7 +36,18 @@ RECEPTIONIST_PERMISSIONS = [
     "manage_patients",
     "view_appointments",
     "manage_appointments",
+    "view_reports",
     "view_payments",
+    "manage_payments",
+]
+
+DOCTOR_PERMISSIONS = [
+    "view_patients",
+    "view_appointments",
+    "manage_appointments",
+    "view_test_orders",
+    "view_reports",
+    "create_reports",
 ]
 
 
@@ -107,6 +118,7 @@ def make_staff(user, center, role_name="Receptionist", permissions=None, role=No
             "Admin": ALL_PERMISSIONS,
             "Lab Technician": LAB_TECH_PERMISSIONS,
             "Receptionist": RECEPTIONIST_PERMISSIONS,
+            "Doctor": DOCTOR_PERMISSIONS,
         }
         permissions = perm_map.get(role_name, [])
 

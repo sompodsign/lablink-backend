@@ -214,10 +214,23 @@ class UserSerializer(serializers.ModelSerializer):
                 )
             )
         if hasattr(obj, "doctor_profile"):
+            from core.tenants.models import Role
+
+            center = obj.center
+            if center:
+                try:
+                    doctor_role = Role.objects.get(name="Doctor", center=center)
+                    return list(
+                        doctor_role.permissions.values_list("codename", flat=True)
+                    )
+                except Role.DoesNotExist:
+                    pass
+            # Fallback if no Doctor role exists for this center
             return [
                 "view_patients",
                 "view_appointments",
                 "manage_appointments",
+                "view_test_orders",
                 "view_reports",
                 "create_reports",
             ]
@@ -241,6 +254,7 @@ class UserSerializer(serializers.ModelSerializer):
                 "primary_color": center.primary_color,
                 "logo_url": center.logo.url if center.logo else None,
                 "tagline": center.tagline,
+                "allow_online_appointments": center.allow_online_appointments,
             }
         return None
 
@@ -279,5 +293,28 @@ class UserSerializer(serializers.ModelSerializer):
             registered_at_center=center,
             phone_number=validated_data.get("phone_number", ""),
         )
+
+        # Auto-link: claim guest bookings that match both phone AND name.
+        # This avoids claiming a family member's booking when phones are shared.
+        phone = validated_data.get("phone_number", "").strip()
+        full_name = (
+            f"{validated_data.get('first_name', '')} "
+            f"{validated_data.get('last_name', '')}"
+        ).strip()
+        if phone and center and full_name:
+            from apps.appointments.models import Appointment
+
+            linked = Appointment.objects.filter(
+                center=center,
+                patient__isnull=True,
+                guest_phone=phone,
+                guest_name__iexact=full_name,
+            ).update(patient=user)
+            if linked:
+                logger.info(
+                    "Auto-linked %d guest booking(s) to new user %s",
+                    linked,
+                    user.id,
+                )
 
         return user

@@ -8,12 +8,12 @@ from rest_framework.views import APIView
 
 from core.tenants.permissions import (
     IsCenterAdmin,
-    IsCenterStaffOrDoctor,
     IsSuperAdmin,
 )
 
 from .models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from .serializers import (
+    CenterSettingsSerializer,
     DiagnosticCenterSerializer,
     DoctorActivitySerializer,
     DoctorCreateSerializer,
@@ -100,6 +100,52 @@ class TenantByDomainView(APIView):
         return Response(
             DiagnosticCenterSerializer(center, context={"request": request}).data
         )
+
+
+# ── Center Settings ──────────────────────────────────────────────
+
+
+@extend_schema(
+    tags=["Settings"],
+    summary="Get or update center settings",
+    description=(
+        "Admin retrieves or updates customisation fields for "
+        "the current diagnostic center (name, logo, theme, etc.)."
+    ),
+)
+class CenterSettingsView(APIView):
+    """Admin reads/updates their center's branding & info."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    @extend_schema(responses={200: CenterSettingsSerializer})
+    def get(self, request):
+        tenant = request.tenant
+        serializer = CenterSettingsSerializer(tenant, context={"request": request})
+        return Response(serializer.data)
+
+    @extend_schema(
+        request=CenterSettingsSerializer,
+        responses={200: CenterSettingsSerializer},
+    )
+    def patch(self, request):
+        tenant = request.tenant
+        serializer = CenterSettingsSerializer(
+            tenant,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info(
+            "Center settings updated",
+            extra={
+                "center_id": tenant.id,
+                "fields": list(request.data.keys()),
+            },
+        )
+        return Response(serializer.data)
 
 
 # ── Role & Permission Views ──────────────────────────────────────
@@ -313,7 +359,7 @@ class DoctorManagementViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ("list", "retrieve", "activity"):
-            return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
+            return [permissions.IsAuthenticated()]
         return [permissions.IsAuthenticated(), IsCenterAdmin()]
 
     def create(self, request, *args, **kwargs):

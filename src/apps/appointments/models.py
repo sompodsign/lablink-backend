@@ -6,13 +6,18 @@ from core.tenants.models import DiagnosticCenter, Doctor
 
 class Appointment(models.Model):
     STATUS_CHOICES = [
+        ("PENDING", "Pending"),
         ("CONFIRMED", "Confirmed"),
         ("COMPLETED", "Completed"),
         ("CANCELLED", "Cancelled"),
     ]
 
     patient = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="appointments"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="appointments",
     )
     center = models.ForeignKey(
         DiagnosticCenter, on_delete=models.CASCADE, related_name="appointments"
@@ -30,6 +35,8 @@ class Appointment(models.Model):
         max_length=20, choices=STATUS_CHOICES, default="CONFIRMED"
     )
     symptoms = models.TextField(blank=True)
+    guest_name = models.CharField(max_length=255, blank=True, default="")
+    guest_phone = models.CharField(max_length=20, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
