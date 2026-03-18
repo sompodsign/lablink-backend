@@ -14,6 +14,21 @@ _RESERVED_SUBDOMAINS = {"api", "www", "lablink", ""}
 _BASE_DOMAIN = "lablink.bd"
 _SUBDOMAIN_CACHE_TTL = 1200  # 20 minutes
 
+# URLs exempt from soft-block (always allowed even when expired)
+_SOFT_BLOCK_EXEMPT_PREFIXES = (
+    "/api/token/",
+    "/api/auth/",
+    "/api/public/",
+    "/api/subscriptions/",
+    "/admin/",
+)
+
+# HTTP methods considered "write" operations
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+# Subscription statuses that trigger soft-block
+_BLOCKED_STATUSES = {"EXPIRED", "CANCELLED"}
+
 
 def _extract_subdomain(host: str) -> str | None:
     """
@@ -50,6 +65,28 @@ def _is_registered_subdomain(subdomain: str) -> bool:
     return exists
 
 
+def _get_subscription_status(center) -> str | None:
+    """
+    Get the subscription status for a center, cached for 5 minutes.
+    Returns the status string or None if no subscription exists.
+    """
+    cache_key = f"sub_status:{center.id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from apps.subscriptions.models import Subscription
+
+    try:
+        sub = Subscription.objects.filter(center=center).latest('started_at')
+        status = sub.status
+    except Subscription.DoesNotExist:
+        status = 'NONE'
+
+    cache.set(cache_key, status, 300)  # 5 minutes
+    return status
+
+
 class TenantMiddleware:
     """
     Middleware to identify the current tenant from the authenticated user.
@@ -58,6 +95,9 @@ class TenantMiddleware:
 
     Also validates subdomain-based access: requests to unregistered subdomains
     (e.g. unknown.lablink.bd) are rejected with HTTP 404.
+
+    Soft-blocks centers with expired subscriptions: allows login and read
+    operations but blocks write operations (POST, PUT, PATCH, DELETE).
     """
 
     def __init__(self, get_response):
@@ -66,6 +106,7 @@ class TenantMiddleware:
 
     def __call__(self, request):
         request.tenant = None
+        request.subscription_status = None
 
         # ── Subdomain validation (cached — 1 DB hit per 5 min per subdomain) ─
         subdomain = _extract_subdomain(request.get_host())
@@ -102,6 +143,33 @@ class TenantMiddleware:
                 status=403,
             )
 
+        # ── Subscription soft-block ──────────────────────────────────────
+        if request.tenant and user and not user.is_superuser:
+            sub_status = _get_subscription_status(request.tenant)
+            request.subscription_status = sub_status
+
+            if (
+                sub_status in _BLOCKED_STATUSES
+                and request.method in _WRITE_METHODS
+                and not any(
+                    request.path.startswith(prefix)
+                    for prefix in _SOFT_BLOCK_EXEMPT_PREFIXES
+                )
+            ):
+                from django.http import JsonResponse
+
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "Your subscription has expired. "
+                            "Please upgrade your plan to continue using this feature."
+                        ),
+                        "subscription_status": sub_status,
+                        "code": "subscription_expired",
+                    },
+                    status=402,
+                )
+
         response = self.get_response(request)
         return response
 
@@ -124,3 +192,4 @@ class TenantMiddleware:
             return DiagnosticCenter.objects.first()
 
         return None
+

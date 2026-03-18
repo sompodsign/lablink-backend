@@ -21,6 +21,7 @@ urlpatterns = [
     path("api/diagnostics/", include("apps.diagnostics.urls")),
     path("api/appointments/", include("apps.appointments.urls")),
     path("api/payments/", include("apps.payments.urls")),
+    path("api/subscriptions/", include("apps.subscriptions.urls")),
     # Auth
     path("api/auth/", include("core.users.urls")),
     path("api/token/", CustomTokenObtainView.as_view(), name="token_obtain_pair"),

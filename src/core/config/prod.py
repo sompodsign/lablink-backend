@@ -31,6 +31,26 @@ DATABASES = {
 CELERY_BROKER_URL = env("CELERY_BROKER_URL")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND")
 
+# Celery Beat Schedule — daily subscription/billing tasks
+CELERY_BEAT_SCHEDULE = {
+    "check-trial-expirations": {
+        "task": "subscriptions.check_trial_expirations",
+        "schedule": 86400,  # every 24 hours
+    },
+    "send-trial-expiry-warning": {
+        "task": "subscriptions.send_trial_expiry_warning",
+        "schedule": 86400,
+    },
+    "generate-monthly-invoices": {
+        "task": "subscriptions.generate_monthly_invoices",
+        "schedule": 86400,
+    },
+    "mark-overdue-invoices": {
+        "task": "subscriptions.mark_overdue_invoices",
+        "schedule": 86400,
+    },
+}
+
 # CORS Configuration - Strict in production
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
