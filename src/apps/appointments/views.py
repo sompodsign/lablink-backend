@@ -269,9 +269,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 'time': str(appointment.time),
             }
 
-            if new_status == Appointment.Status.CONFIRMED:
+            if new_status == 'CONFIRMED':
                 send_email_async(EmailType.APPOINTMENT_CONFIRMED, patient_email, ctx)
-            elif new_status == Appointment.Status.CANCELLED:
+            elif new_status == 'CANCELLED':
                 send_email_async(EmailType.APPOINTMENT_CANCELLED, patient_email, ctx)
 
         return response
