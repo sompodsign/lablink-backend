@@ -20,7 +20,7 @@ User = get_user_model()
 # Permissions each role should have (None = all permissions)
 DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
     "Admin": None,
-    "Lab Technician": [
+    "Medical Technologist": [
         "view_patients",
         "view_reports",
         "create_reports",
@@ -94,7 +94,7 @@ USERS_CONFIG = [
         "last_name": "Hossain",
         "phone": "01711000003",
         "center": "alpha-lab",
-        "role": "LAB_TECHNICIAN",
+        "role": "MEDICAL_TECHNOLOGIST",
     },
     {
         "username": "e2e_alpha_doctor",
@@ -160,7 +160,7 @@ USERS_CONFIG = [
         "last_name": "Hasan",
         "phone": "01722000003",
         "center": "beta-lab",
-        "role": "LAB_TECHNICIAN",
+        "role": "MEDICAL_TECHNOLOGIST",
     },
     {
         "username": "e2e_beta_doctor",
@@ -285,7 +285,7 @@ class Command(BaseCommand):
                 role_map = {
                     "ADMIN": "Admin",
                     "RECEPTIONIST": "Receptionist",
-                    "LAB_TECHNICIAN": "Lab Technician",
+                    "MEDICAL_TECHNOLOGIST": "Medical Technologist",
                 }
                 mapped_name = role_map.get(role_name, role_name)
                 role_obj, role_created = Role.objects.get_or_create(

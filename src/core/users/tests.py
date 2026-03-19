@@ -137,9 +137,9 @@ class UserSerializerTests(TestCase):
 
     def test_role_display_lab_technician(self):
         user = make_user("rd_labtech")
-        make_staff(user, self.center, "Lab Technician")
+        make_staff(user, self.center, "Medical Technologist")
         serializer = UserSerializer(user)
-        self.assertEqual(serializer.data["role_display"], "Lab Technician")
+        self.assertEqual(serializer.data["role_display"], "Medical Technologist")
 
     def test_role_display_receptionist(self):
         user = make_user("rd_recep")

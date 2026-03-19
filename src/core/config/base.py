@@ -183,7 +183,7 @@ SPECTACULAR_SETTINGS = {
         "|------|-------------|\n"
         "| **Admin** | Center administrator — full access |\n"
         "| **Receptionist** | Front desk staff — patient registration, appointments |\n"
-        "| **Lab Technician** | Lab staff — test orders, report creation |\n"
+        "| **Medical Technologist** | Lab staff — test orders, report creation |\n"
         "| **Doctor** | Consultations, test prescriptions |\n"
         "| **Patient** | View own appointments and reports |\n"
     ),

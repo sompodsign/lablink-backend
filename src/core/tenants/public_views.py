@@ -6,8 +6,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.appointments.models import Appointment
-from core.tenants.models import DiagnosticCenter, Doctor
-from core.tenants.serializers import DiagnosticCenterSerializer, DoctorSerializer
+from core.tenants.models import DiagnosticCenter, Doctor, PlatformSettings
+from core.tenants.serializers import (
+    DiagnosticCenterSerializer,
+    DoctorSerializer,
+    PlatformSettingsSerializer,
+)
 from core.tenants.throttles import CenterBookingThrottle
 
 logger = logging.getLogger(__name__)
@@ -59,7 +63,24 @@ class PublicDoctorsView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         doctors = Doctor.objects.filter(user__center=center)
-        return Response(DoctorSerializer(doctors, many=True).data)
+        return Response(
+            DoctorSerializer(
+                doctors,
+                many=True,
+                context={'language': center.language},
+            ).data
+        )
+
+
+class PublicPlatformSettingsView(APIView):
+    """Public: returns platform language setting (no auth)."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        settings = PlatformSettings.load()
+        return Response(PlatformSettingsSerializer(settings).data)
 
 
 class PublicBookView(APIView):

@@ -8,6 +8,11 @@ if TYPE_CHECKING:
     from core.users.models import User
 
 
+class LanguageChoices(models.TextChoices):
+    ENGLISH = 'en', _('English')
+    BENGALI = 'bn', _('Bengali')
+
+
 class DiagnosticCenter(models.Model):
     name = models.CharField(max_length=255)
     domain = models.CharField(
@@ -16,10 +21,22 @@ class DiagnosticCenter(models.Model):
         default="demo",
         help_text=_("Subdomain identifier, e.g., 'popularhospital'"),
     )
+    language = models.CharField(
+        max_length=5,
+        choices=LanguageChoices.choices,
+        default=LanguageChoices.ENGLISH,
+        help_text=_('Language for this center\'s public pages and dashboard'),
+    )
     tagline = models.CharField(
         max_length=255,
         blank=True,
         default="Your trusted diagnostic partner",
+    )
+    tagline_bn = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text=_('Bengali translation of the tagline'),
     )
     address = models.TextField()
     contact_number = models.CharField(max_length=20)
@@ -71,7 +88,18 @@ class Service(models.Model):
         related_name="services",
     )
     title = models.CharField(max_length=100)
+    title_bn = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text=_('Bengali translation of the title'),
+    )
     description = models.TextField()
+    description_bn = models.TextField(
+        blank=True,
+        default='',
+        help_text=_('Bengali translation of the description'),
+    )
     icon = models.CharField(
         max_length=10,
         default="🩺",
@@ -100,8 +128,25 @@ class Doctor(models.Model):
         related_name="doctor_profile",
     )  # type: ignore[assignment]
     specialization = models.CharField(max_length=255)
+    specialization_bn = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text=_('Bengali translation of specialization'),
+    )
     designation = models.CharField(max_length=255)
+    designation_bn = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text=_('Bengali translation of designation'),
+    )
     bio = models.TextField(blank=True)
+    bio_bn = models.TextField(
+        blank=True,
+        default='',
+        help_text=_('Bengali translation of bio'),
+    )
 
     class Meta:
         db_table = "core_doctor"
@@ -214,3 +259,32 @@ class Staff(models.Model):
 
     def get_role_display(self) -> str:
         return self.role.name
+
+
+class PlatformSettings(models.Model):
+    """Singleton: platform-wide settings managed by SuperAdmin."""
+
+    language = models.CharField(
+        max_length=5,
+        choices=LanguageChoices.choices,
+        default=LanguageChoices.ENGLISH,
+        help_text=_('Default language for the main LabLink landing page'),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'core_platform_settings'
+        verbose_name = _('platform settings')
+        verbose_name_plural = _('platform settings')
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # Enforce singleton
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self) -> str:
+        return f'PlatformSettings (language={self.language})'

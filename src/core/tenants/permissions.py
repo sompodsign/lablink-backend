@@ -65,10 +65,10 @@ class IsCenterAdmin(permissions.BasePermission):
         )
 
 
-class IsCenterLabTechnician(permissions.BasePermission):
+class IsCenterMedicalTechnologist(permissions.BasePermission):
     """User must be staff with create_reports permission at the tenant center."""
 
-    message = "You must be a lab technician at this diagnostic center."
+    message = "You must be a medical technologist at this diagnostic center."
 
     def has_permission(self, request, view) -> bool:
         if not request.user.is_authenticated:

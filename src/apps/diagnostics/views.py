@@ -16,7 +16,7 @@ from rest_framework.views import APIView
 from core.tenants.permissions import (
     IsCenterAdmin,
     IsCenterDoctor,
-    IsCenterLabTechnician,
+    IsCenterMedicalTechnologist,
     IsCenterStaff,
     IsCenterStaffOrDoctor,
 )
@@ -125,7 +125,7 @@ class CenterTestPricingViewSet(viewsets.ModelViewSet):
 )
 class ReportTemplateViewSet(viewsets.ModelViewSet):
     serializer_class = ReportTemplateSerializer
-    permission_classes = [permissions.IsAuthenticated, IsCenterLabTechnician]
+    permission_classes = [permissions.IsAuthenticated, IsCenterMedicalTechnologist]
 
     def get_queryset(self):
         tenant = getattr(self.request, "tenant", None)
@@ -236,7 +236,7 @@ class ReferringDoctorViewSet(viewsets.ModelViewSet):
         tags=["Test Orders"],
         summary="Update test order status",
         description=(
-            "Lab technicians update the status of a test order "
+            "Medical technologists update the status of a test order "
             "(e.g., move from `PENDING` to `IN_PROGRESS`)."
         ),
         request=TestOrderStatusUpdateSerializer,
@@ -256,7 +256,7 @@ class ReferringDoctorViewSet(viewsets.ModelViewSet):
 )
 class TestOrderViewSet(viewsets.ModelViewSet):
     """
-    Doctors create test orders; lab technicians and staff manage them.
+    Doctors create test orders; medical technologists and staff manage them.
     Strictly scoped to the current tenant center.
     """
 
@@ -337,9 +337,9 @@ class TestOrderViewSet(viewsets.ModelViewSet):
     ),
     create=extend_schema(
         tags=["Reports"],
-        summary="Create a report (lab technician only)",
+        summary="Create a report (medical technologist only)",
         description=(
-            "Lab technician creates a report by selecting a test type and patient. "
+            "Medical technologist creates a report by selecting a test type and patient. "
             "A test order is auto-created in the background with COMPLETED status. "
             "If a report template exists for the test type, result fields are auto-populated."
         ),
@@ -368,13 +368,13 @@ class TestOrderViewSet(viewsets.ModelViewSet):
     ),
     partial_update=extend_schema(
         tags=["Reports"],
-        summary="Update a report (lab technician only)",
+        summary="Update a report (medical technologist only)",
         description="Update report result text, data, or upload file attachment.",
     ),
 )
 class ReportViewSet(viewsets.ModelViewSet):
     """
-    Lab technicians create and update reports; staff verify them.
+    Medical technologists create and update reports; staff verify them.
     Strictly scoped to the current tenant center.
     """
 
@@ -433,11 +433,11 @@ class ReportViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == "create":
-            return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
+            return [permissions.IsAuthenticated(), IsCenterMedicalTechnologist()]
         if self.action in ("partial_update", "update"):
-            return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
+            return [permissions.IsAuthenticated(), IsCenterMedicalTechnologist()]
         if self.action == "destroy":
-            return [permissions.IsAuthenticated(), IsCenterLabTechnician()]
+            return [permissions.IsAuthenticated(), IsCenterMedicalTechnologist()]
         if self.action == "verify":
             return [permissions.IsAuthenticated(), IsCenterAdmin()]
         if self.action == "mark_delivered":
@@ -512,7 +512,7 @@ class ReportViewSet(viewsets.ModelViewSet):
         summary="Get report print data",
         description=(
             "Returns comprehensive report data for printing, including "
-            "center details, patient info, referring doctor, lab technician, "
+            "center details, patient info, referring doctor, medical technologist, "
             "and structured test results."
         ),
         responses={200: ReportPrintSerializer},

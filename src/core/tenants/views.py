@@ -11,7 +11,7 @@ from core.tenants.permissions import (
     IsSuperAdmin,
 )
 
-from .models import DiagnosticCenter, Doctor, Permission, Role, Staff
+from .models import DiagnosticCenter, Doctor, Permission, PlatformSettings, Role, Staff
 from .serializers import (
     CenterSettingsSerializer,
     DiagnosticCenterSerializer,
@@ -19,6 +19,7 @@ from .serializers import (
     DoctorCreateSerializer,
     DoctorManagementSerializer,
     PermissionSerializer,
+    PlatformSettingsSerializer,
     RoleSerializer,
     StaffCreateSerializer,
     StaffSerializer,
@@ -584,3 +585,44 @@ class StaffViewSet(viewsets.ModelViewSet):
             },
         )
         return Response(StaffSerializer(staff).data)
+
+
+# ── Platform Settings ────────────────────────────────────────────
+
+
+@extend_schema(
+    tags=['Settings'],
+    summary='Get or update platform-wide settings',
+    description=(
+        'SuperAdmin reads or updates global platform settings '
+        '(e.g. default language for the main landing page).'
+    ),
+)
+class PlatformSettingsView(APIView):
+    """SuperAdmin reads/updates platform-wide settings."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    @extend_schema(responses={200: PlatformSettingsSerializer})
+    def get(self, request):
+        settings = PlatformSettings.load()
+        return Response(PlatformSettingsSerializer(settings).data)
+
+    @extend_schema(
+        request=PlatformSettingsSerializer,
+        responses={200: PlatformSettingsSerializer},
+    )
+    def patch(self, request):
+        settings = PlatformSettings.load()
+        serializer = PlatformSettingsSerializer(
+            settings,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info(
+            'Platform settings updated',
+            extra={'fields': list(request.data.keys())},
+        )
+        return Response(serializer.data)

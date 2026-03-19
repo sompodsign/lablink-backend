@@ -168,7 +168,7 @@ class Report(models.Model):
         null=True,
         blank=True,
         related_name="created_reports",
-        help_text=_("Lab technician who created this report"),
+        help_text=_("Medical technologist who created this report"),
     )
     is_delivered_online = models.BooleanField(default=False)
     access_token = models.UUIDField(

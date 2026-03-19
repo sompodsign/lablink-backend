@@ -6,11 +6,11 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from core.tenants.middleware import TenantMiddleware
-from core.tenants.models import DiagnosticCenter, Doctor, Service, Staff
+from core.tenants.models import DiagnosticCenter, Doctor, PlatformSettings, Service, Staff
 from core.tenants.permissions import (
     IsCenterAdmin,
     IsCenterDoctor,
-    IsCenterLabTechnician,
+    IsCenterMedicalTechnologist,
     IsCenterStaff,
     IsCenterStaffOrDoctor,
     IsPatientOwner,
@@ -93,7 +93,7 @@ class PermissionClassTests(TestCase):
         make_staff(self.admin_user, self.center_a, "Admin")
 
         self.lab_tech_user = make_user("labtech_a")
-        make_staff(self.lab_tech_user, self.center_a, "Lab Technician")
+        make_staff(self.lab_tech_user, self.center_a, "Medical Technologist")
 
         self.doctor_user = make_user("doctor_a")
         make_doctor(self.doctor_user, self.center_a)
@@ -142,14 +142,14 @@ class PermissionClassTests(TestCase):
         req = self._req(self.staff_user, self.center_a)
         self.assertFalse(IsCenterAdmin().has_permission(req, None))
 
-    # IsCenterLabTechnician
+    # IsCenterMedicalTechnologist
     def test_is_center_lab_technician_allows_lab_tech(self):
         req = self._req(self.lab_tech_user, self.center_a)
-        self.assertTrue(IsCenterLabTechnician().has_permission(req, None))
+        self.assertTrue(IsCenterMedicalTechnologist().has_permission(req, None))
 
     def test_is_center_lab_technician_denies_receptionist(self):
         req = self._req(self.staff_user, self.center_a)
-        self.assertFalse(IsCenterLabTechnician().has_permission(req, None))
+        self.assertFalse(IsCenterMedicalTechnologist().has_permission(req, None))
 
     # IsCenterStaffOrDoctor
     def test_staff_or_doctor_allows_staff(self):
@@ -681,7 +681,7 @@ class StaffViewTests(APITestCase):
         self._auth(self.admin_user)
         from helpers.test_factories import _get_or_create_role
 
-        lab_tech_role = _get_or_create_role(self.center, "Lab Technician")
+        lab_tech_role = _get_or_create_role(self.center, "Medical Technologist")
         payload = {
             "first_name": "Kamal",
             "last_name": "Hossain",
@@ -690,21 +690,21 @@ class StaffViewTests(APITestCase):
         }
         response = self.client.post("/api/tenants/staff/", payload)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["role_name"], "Lab Technician")
+        self.assertEqual(response.data["role_name"], "Medical Technologist")
         self.assertIn("Kamal", response.data["name"])
 
     def test_admin_can_update_staff_role(self):
         self._auth(self.admin_user)
         from helpers.test_factories import _get_or_create_role
 
-        lab_tech_role = _get_or_create_role(self.center, "Lab Technician")
+        lab_tech_role = _get_or_create_role(self.center, "Medical Technologist")
         staff_id = Staff.objects.get(user=self.receptionist_user).id
         response = self.client.patch(
             f"/api/tenants/staff/{staff_id}/",
             {"role_id": lab_tech_role.id},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["role_name"], "Lab Technician")
+        self.assertEqual(response.data["role_name"], "Medical Technologist")
 
     def test_admin_can_delete_staff(self):
         self._auth(self.admin_user)
@@ -1040,7 +1040,7 @@ class DefaultRoleSignalTests(TestCase):
         role_names = list(roles.values_list("name", flat=True))
         self.assertEqual(
             role_names,
-            ["Admin", "Doctor", "Lab Technician", "Receptionist"],
+            ["Admin", "Doctor", "Medical Technologist", "Receptionist"],
         )
 
     def test_admin_role_gets_all_permissions(self):
@@ -1108,7 +1108,7 @@ class DefaultRoleSignalTests(TestCase):
             address="123 Test St",
             contact_number="01700000005",
         )
-        tech_role = Role.objects.get(center=center, name="Lab Technician")
+        tech_role = Role.objects.get(center=center, name="Medical Technologist")
         expected = {
             "view_patients",
             "view_reports",
@@ -1227,7 +1227,7 @@ class CenterSettingsViewTests(APITestCase):
         self.admin_user = make_user("settings_admin")
         make_staff(self.admin_user, self.center, "Admin")
         self.non_admin = make_user("settings_tech")
-        make_staff(self.non_admin, self.center, "Lab Technician")
+        make_staff(self.non_admin, self.center, "Medical Technologist")
 
     def _auth_admin(self):
         self.client.credentials(**jwt_auth_header(self.admin_user))
@@ -1329,7 +1329,9 @@ class CenterSettingsViewTests(APITestCase):
         expected_fields = {
             "id",
             "name",
+            "language",
             "tagline",
+            "tagline_bn",
             "address",
             "contact_number",
             "email",
@@ -1341,5 +1343,189 @@ class CenterSettingsViewTests(APITestCase):
             "happy_patients_count",
             "test_types_available_count",
             "lab_support_availability",
+            "allow_online_appointments",
         }
         self.assertEqual(set(response.data.keys()), expected_fields)
+
+
+# ---------------------------------------------------------------------------
+# PlatformSettings Model Tests
+# ---------------------------------------------------------------------------
+
+
+class PlatformSettingsModelTests(TestCase):
+    def test_singleton_enforcement(self):
+        settings1 = PlatformSettings.load()
+        settings2 = PlatformSettings.load()
+        self.assertEqual(settings1.pk, settings2.pk)
+        self.assertEqual(PlatformSettings.objects.count(), 1)
+
+    def test_default_language_is_english(self):
+        settings = PlatformSettings.load()
+        self.assertEqual(settings.language, 'en')
+
+    def test_save_always_uses_pk_1(self):
+        settings = PlatformSettings(language='bn')
+        settings.save()
+        self.assertEqual(settings.pk, 1)
+
+    def test_str(self):
+        settings = PlatformSettings.load()
+        self.assertEqual(str(settings), 'PlatformSettings (language=en)')
+
+
+# ---------------------------------------------------------------------------
+# PlatformSettings API Tests
+# ---------------------------------------------------------------------------
+
+
+class PlatformSettingsViewTests(APITestCase):
+    def setUp(self):
+        self.center = make_center()
+        self.superuser = make_user('super_platform', is_superuser=True)
+        self.admin_user = make_user('admin_platform')
+        make_staff(self.admin_user, self.center, 'Admin')
+
+    def _auth(self, user):
+        self.client.credentials(**jwt_auth_header(user))
+
+    def test_superadmin_can_get_settings(self):
+        self._auth(self.superuser)
+        response = self.client.get('/api/tenants/platform-settings/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['language'], 'en')
+
+    def test_superadmin_can_update_language(self):
+        self._auth(self.superuser)
+        response = self.client.patch(
+            '/api/tenants/platform-settings/',
+            {'language': 'bn'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['language'], 'bn')
+
+    def test_center_admin_denied(self):
+        self._auth(self.admin_user)
+        response = self.client.get('/api/tenants/platform-settings/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_denied(self):
+        response = self.client.get('/api/tenants/platform-settings/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ---------------------------------------------------------------------------
+# Public Platform Settings Tests
+# ---------------------------------------------------------------------------
+
+
+class PublicPlatformSettingsTests(APITestCase):
+    def test_public_returns_language(self):
+        PlatformSettings.load()  # ensure exists
+        response = self.client.get('/api/public/platform-settings/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('language', response.data)
+
+    def test_public_reflects_changes(self):
+        settings = PlatformSettings.load()
+        settings.language = 'bn'
+        settings.save()
+        response = self.client.get('/api/public/platform-settings/')
+        self.assertEqual(response.data['language'], 'bn')
+
+
+# ---------------------------------------------------------------------------
+# Center Language Field Tests
+# ---------------------------------------------------------------------------
+
+
+class CenterLanguageTests(TestCase):
+    def test_center_default_language_is_english(self):
+        center = make_center()
+        self.assertEqual(center.language, 'en')
+
+    def test_center_language_can_be_set_to_bengali(self):
+        center = make_center()
+        center.language = 'bn'
+        center.save()
+        center.refresh_from_db()
+        self.assertEqual(center.language, 'bn')
+
+
+# ---------------------------------------------------------------------------
+# Language-Aware Serializer Tests
+# ---------------------------------------------------------------------------
+
+
+class LanguageAwareSerializerTests(TestCase):
+    def setUp(self):
+        self.center = make_center()
+        self.center.tagline = 'English tagline'
+        self.center.tagline_bn = 'বাংলা ট্যাগলাইন'
+        self.center.language = 'bn'
+        self.center.save()
+        self.service = Service.objects.create(
+            center=self.center,
+            title='Blood Test',
+            title_bn='রক্ত পরীক্ষা',
+            description='Complete blood count',
+            description_bn='সম্পূর্ণ রক্ত গণনা',
+            is_active=True,
+        )
+
+    def test_center_serializer_returns_bengali_tagline(self):
+        from core.tenants.serializers import DiagnosticCenterSerializer
+
+        data = DiagnosticCenterSerializer(self.center).data
+        self.assertEqual(data['tagline'], 'বাংলা ট্যাগলাইন')
+
+    def test_center_serializer_returns_english_when_lang_en(self):
+        from core.tenants.serializers import DiagnosticCenterSerializer
+
+        self.center.language = 'en'
+        self.center.save()
+        data = DiagnosticCenterSerializer(self.center).data
+        self.assertEqual(data['tagline'], 'English tagline')
+
+    def test_service_serializer_returns_bengali_when_bn(self):
+        from core.tenants.serializers import ServiceSerializer
+
+        data = ServiceSerializer(
+            self.service, context={'language': 'bn'}
+        ).data
+        self.assertEqual(data['title'], 'রক্ত পরীক্ষা')
+        self.assertEqual(data['description'], 'সম্পূর্ণ রক্ত গণনা')
+
+    def test_service_serializer_returns_english_when_en(self):
+        from core.tenants.serializers import ServiceSerializer
+
+        data = ServiceSerializer(
+            self.service, context={'language': 'en'}
+        ).data
+        self.assertEqual(data['title'], 'Blood Test')
+        self.assertEqual(data['description'], 'Complete blood count')
+
+    def test_service_falls_back_to_english_when_bn_empty(self):
+        from core.tenants.serializers import ServiceSerializer
+
+        self.service.title_bn = ''
+        self.service.save()
+        data = ServiceSerializer(
+            self.service, context={'language': 'bn'}
+        ).data
+        self.assertEqual(data['title'], 'Blood Test')
+
+    def test_doctor_serializer_returns_bengali(self):
+        from core.tenants.serializers import DoctorSerializer
+
+        user = make_user('doc_lang', 'ডক্টর', 'নাম')
+        doc = make_doctor(user, self.center)
+        doc.specialization = 'Cardiology'
+        doc.specialization_bn = 'হৃদরোগ বিদ্যা'
+        doc.designation = 'Consultant'
+        doc.designation_bn = 'পরামর্শদাতা'
+        doc.save()
+        data = DoctorSerializer(doc, context={'language': 'bn'}).data
+        self.assertEqual(data['specialization'], 'হৃদরোগ বিদ্যা')
+        self.assertEqual(data['designation'], 'পরামর্শদাতা')

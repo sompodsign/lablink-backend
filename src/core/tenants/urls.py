@@ -20,6 +20,7 @@ from .views import (
     CurrentTenantView,
     DoctorManagementViewSet,
     PermissionViewSet,
+    PlatformSettingsView,
     RoleViewSet,
     StaffViewSet,
     TenantByDomainView,
@@ -65,6 +66,11 @@ urlpatterns = [
     path("settings/", CenterSettingsView.as_view(), name="center-settings"),
     path("by-domain/", TenantByDomainView.as_view(), name="tenant-by-domain"),
     path("centers/", CenterListView.as_view(), name="center-list"),
+    path(
+        "platform-settings/",
+        PlatformSettingsView.as_view(),
+        name="platform-settings",
+    ),
     path(
         "centers/<int:center_id>/permissions/",
         CenterPermissionView.as_view(),

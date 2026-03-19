@@ -80,7 +80,7 @@ def _get_or_create_role(center, role_name, permissions=None):
         name=role_name,
         center=center,
         defaults={
-            "is_system": role_name in ("Admin", "Lab Technician", "Receptionist")
+            "is_system": role_name in ("Admin", "Medical Technologist", "Receptionist")
         },
     )
     if created or permissions is not None:
@@ -98,7 +98,7 @@ def make_staff(user, center, role_name="Receptionist", permissions=None, role=No
     Args:
         user: The User instance.
         center: The DiagnosticCenter instance.
-        role_name: Human-readable role name (e.g. 'Admin', 'Lab Technician').
+        role_name: Human-readable role name (e.g. 'Admin', 'Medical Technologist').
         permissions: List of permission codenames, or None for default.
             Use ALL_PERMISSIONS sentinel for all permissions.
     """
@@ -108,7 +108,8 @@ def make_staff(user, center, role_name="Receptionist", permissions=None, role=No
     # Map legacy Staff.Role values to new names
     role_name_map = {
         "ADMIN": "Admin",
-        "LAB_TECHNICIAN": "Lab Technician",
+        "LAB_TECHNICIAN": "Medical Technologist",
+        "MEDICAL_TECHNOLOGIST": "Medical Technologist",
         "RECEPTIONIST": "Receptionist",
     }
     role_name = role_name_map.get(role_name, role_name)
@@ -116,7 +117,7 @@ def make_staff(user, center, role_name="Receptionist", permissions=None, role=No
     if permissions is None:
         perm_map = {
             "Admin": ALL_PERMISSIONS,
-            "Lab Technician": LAB_TECH_PERMISSIONS,
+            "Medical Technologist": LAB_TECH_PERMISSIONS,
             "Receptionist": RECEPTIONIST_PERMISSIONS,
             "Doctor": DOCTOR_PERMISSIONS,
         }

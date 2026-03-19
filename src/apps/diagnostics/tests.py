@@ -124,7 +124,7 @@ class DiagnosticSerializerTests(TestCase):
         make_pricing(self.center, self.test_type)
         self.patient = make_patient("ds_pat", self.center)
         self.staff_user = make_user("ds_staff")
-        make_staff(self.staff_user, self.center, "Lab Technician")
+        make_staff(self.staff_user, self.center, "Medical Technologist")
 
     def _mock_request(self):
         from unittest.mock import MagicMock
@@ -289,7 +289,7 @@ class DiagnosticSerializerTests(TestCase):
         data = serializer.data
         self.assertIn("center", data)
         self.assertIn("patient", data)
-        self.assertIn("lab_technician", data)
+        self.assertIn("medical_technologist", data)
         self.assertIn("referring_doctor", data)
         self.assertEqual(data["center"]["name"], "Center A")
 
@@ -419,7 +419,7 @@ class TestOrderViewTests(APITestCase):
         self.doctor = make_doctor(self.doc_user, self.center)
 
         self.lab_tech_user = make_user("tov_tech")
-        make_staff(self.lab_tech_user, self.center, "Lab Technician")
+        make_staff(self.lab_tech_user, self.center, "Medical Technologist")
 
         self.patient = make_patient("tov_pat", self.center)
         self.appt = make_appointment(self.patient, self.center, doctor=self.doctor)
@@ -486,7 +486,7 @@ class ReportViewTests(APITestCase):
         make_pricing(self.center, self.test_type)
 
         self.lab_tech_user = make_user("rv_tech")
-        make_staff(self.lab_tech_user, self.center, "Lab Technician")
+        make_staff(self.lab_tech_user, self.center, "Medical Technologist")
 
         self.staff_user = make_user("rv_staff")
         make_staff(self.staff_user, self.center, "Admin")

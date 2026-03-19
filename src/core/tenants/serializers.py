@@ -6,7 +6,7 @@ from django.core.mail import send_mail
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import DiagnosticCenter, Doctor, Permission, Role, Service, Staff
+from .models import DiagnosticCenter, Doctor, Permission, PlatformSettings, Role, Service, Staff
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -15,7 +15,15 @@ logger = logging.getLogger(__name__)
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
-        fields = ["id", "title", "description", "icon", "order"]
+        fields = ['id', 'title', 'description', 'icon', 'order']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        lang = self.context.get('language', 'en')
+        if lang == 'bn':
+            data['title'] = instance.title_bn or data['title']
+            data['description'] = instance.description_bn or data['description']
+        return data
 
 
 class DiagnosticCenterSerializer(serializers.ModelSerializer):
@@ -25,34 +33,46 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
     class Meta:
         model = DiagnosticCenter
         fields = [
-            "id",
-            "name",
-            "domain",
-            "tagline",
-            "address",
-            "contact_number",
-            "email",
-            "logo_url",
-            "primary_color",
-            "opening_hours",
-            "years_of_experience",
-            "happy_patients_count",
-            "test_types_available_count",
-            "lab_support_availability",
-            "allow_online_appointments",
-            "services",
+            'id',
+            'name',
+            'domain',
+            'language',
+            'tagline',
+            'address',
+            'contact_number',
+            'email',
+            'logo_url',
+            'primary_color',
+            'opening_hours',
+            'years_of_experience',
+            'happy_patients_count',
+            'test_types_available_count',
+            'lab_support_availability',
+            'allow_online_appointments',
+            'services',
         ]
 
     def get_logo_url(self, obj) -> str | None:
         if obj.logo:
-            request = self.context.get("request")
+            request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(obj.logo.url)
         return None
 
     def get_services(self, obj) -> list:
         active_services = obj.services.filter(is_active=True)
-        return ServiceSerializer(active_services, many=True).data
+        return ServiceSerializer(
+            active_services,
+            many=True,
+            context={'language': obj.language},
+        ).data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        lang = instance.language
+        if lang == 'bn':
+            data['tagline'] = instance.tagline_bn or data['tagline']
+        return data
 
 
 class CenterSettingsSerializer(serializers.ModelSerializer):
@@ -63,39 +83,54 @@ class CenterSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = DiagnosticCenter
         fields = [
-            "id",
-            "name",
-            "tagline",
-            "address",
-            "contact_number",
-            "email",
-            "logo",
-            "logo_url",
-            "primary_color",
-            "opening_hours",
-            "years_of_experience",
-            "happy_patients_count",
-            "test_types_available_count",
-            "lab_support_availability",
-            "allow_online_appointments",
+            'id',
+            'name',
+            'language',
+            'tagline',
+            'tagline_bn',
+            'address',
+            'contact_number',
+            'email',
+            'logo',
+            'logo_url',
+            'primary_color',
+            'opening_hours',
+            'years_of_experience',
+            'happy_patients_count',
+            'test_types_available_count',
+            'lab_support_availability',
+            'allow_online_appointments',
         ]
-        read_only_fields = ["id", "logo_url"]
+        read_only_fields = ['id', 'logo_url']
 
     def get_logo_url(self, obj) -> str | None:
         if obj.logo:
-            request = self.context.get("request")
+            request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(obj.logo.url)
         return None
 
 
 class DoctorSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source="user.get_full_name")
-    email = serializers.EmailField(source="user.email", read_only=True)
+    name = serializers.CharField(source='user.get_full_name')
+    email = serializers.EmailField(source='user.email', read_only=True)
 
     class Meta:
         model = Doctor
-        fields = ["id", "name", "email", "specialization", "designation", "bio"]
+        fields = ['id', 'name', 'email', 'specialization', 'designation', 'bio']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        lang = self.context.get('language', 'en')
+        if lang == 'bn':
+            data['specialization'] = (
+                instance.specialization_bn or data['specialization']
+            )
+            data['designation'] = (
+                instance.designation_bn or data['designation']
+            )
+            data['bio'] = instance.bio_bn or data['bio']
+        return data
 
 
 class DoctorManagementSerializer(serializers.ModelSerializer):
@@ -409,3 +444,13 @@ class StaffUpdateSerializer(serializers.ModelSerializer):
             instance.role = new_role
             instance.save(update_fields=["role"])
         return instance
+
+
+class PlatformSettingsSerializer(serializers.ModelSerializer):
+    """SuperAdmin editable platform-wide settings."""
+
+    class Meta:
+        model = PlatformSettings
+        fields = ['language', 'updated_at']
+        read_only_fields = ['updated_at']
+

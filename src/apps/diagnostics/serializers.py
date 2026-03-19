@@ -160,7 +160,7 @@ class TestOrderCreateSerializer(serializers.ModelSerializer):
 
 
 class TestOrderStatusUpdateSerializer(serializers.ModelSerializer):
-    """Used by lab technicians to update test order status."""
+    """Used by medical technologists to update test order status."""
 
     class Meta:
         model = TestOrder
@@ -222,7 +222,7 @@ class ReportSerializer(serializers.ModelSerializer):
 
 
 class ReportCreateSerializer(serializers.Serializer):
-    """Lab technician creates a report by selecting a test type and patient directly.
+    """Medical technologist creates a report by selecting a test type and patient directly.
     A test order is auto-created behind the scenes — unless an existing one is given."""
 
     test_order = serializers.PrimaryKeyRelatedField(
@@ -360,7 +360,7 @@ class ReportPrintSerializer(serializers.ModelSerializer):
     center = serializers.SerializerMethodField()
     patient = serializers.SerializerMethodField()
     referring_doctor = serializers.SerializerMethodField()
-    lab_technician = serializers.SerializerMethodField()
+    medical_technologist = serializers.SerializerMethodField()
     previous_results = serializers.SerializerMethodField()
     test_type_name = serializers.CharField(source="test_type.name", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -379,7 +379,7 @@ class ReportPrintSerializer(serializers.ModelSerializer):
             "center",
             "patient",
             "referring_doctor",
-            "lab_technician",
+            "medical_technologist",
             "access_token",
             "previous_results",
         ]
@@ -425,8 +425,8 @@ class ReportPrintSerializer(serializers.ModelSerializer):
     def get_referring_doctor(self, obj):
         return obj.test_order.referring_doctor_name or ""
 
-    def get_lab_technician(self, obj):
-        # Use report.created_by (the lab tech who authored the report)
+    def get_medical_technologist(self, obj):
+        # Use report.created_by (the medical technologist who authored the report)
         tech_user = obj.created_by
         if not tech_user:
             return None

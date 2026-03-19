@@ -155,9 +155,9 @@ class CenterRegistrationSerializer(serializers.Serializer):
         )
         recep_role.permissions.set(view_perms)
 
-        # 5. Create lab technician role
+        # 5. Create medical technologist role
         lab_role, _created = Role.objects.get_or_create(
-            name='Lab Technician',
+            name='Medical Technologist',
             center=center,
             defaults={'is_system': True},
         )
