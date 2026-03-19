@@ -4,6 +4,8 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.notifications.emails import EmailType, send_email_async
+
 from core.tenants.permissions import IsCenterAdmin, IsSuperAdmin
 
 from .models import Invoice, Subscription, SubscriptionPlan
@@ -279,6 +281,19 @@ class SuperadminInvoiceMarkPaidView(APIView):
             invoice.id,
             request.user.username,
         )
+
+        # Send payment received email
+        center = sub.center
+        if center.email:
+            send_email_async(
+                EmailType.PAYMENT_RECEIVED,
+                recipient=center.email,
+                context={
+                    'center_name': center.name,
+                    'amount': str(invoice.amount),
+                    'plan_name': sub.plan.name,
+                },
+            )
 
         return Response({
             'detail': f'Invoice #{invoice.id} marked as paid. Subscription activated.',

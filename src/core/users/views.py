@@ -1,9 +1,7 @@
 import logging
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -12,6 +10,8 @@ from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.notifications.emails import EmailType, send_email
 
 from core.tenants.permissions import IsCenterStaff, IsCenterStaffOrDoctor
 from core.users.serializers import (
@@ -208,21 +208,14 @@ class PasswordResetRequestView(APIView):
 
         logger.info("Password reset URL generated for %s", user.email)
 
-        send_mail(
-            subject="Password Reset — LabLink",
-            message=(
-                f"Hi {user.get_full_name() or user.username},\n\n"
-                f"Click the link below to reset your password:\n"
-                f"{reset_url}\n\n"
-                f"This link expires after one use.\n\n"
-                f"If you did not request this, ignore this email."
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
+        send_email(
+            EmailType.PASSWORD_RESET,
+            recipient=user.email,
+            context={
+                'user_name': user.get_full_name() or user.username,
+                'reset_url': reset_url,
+            },
         )
-
-        logger.info("Password reset email sent to %s", user.email)
         return Response(
             {
                 "detail": "If an account with that email exists, a reset link has been sent."
@@ -283,6 +276,13 @@ class PasswordResetConfirmView(APIView):
         user.save()
         logger.info("Password reset completed for user %s", user.username)
 
+        if user.email:
+            send_email(
+                EmailType.PASSWORD_RESET_SUCCESS,
+                recipient=user.email,
+                context={'user_name': user.get_full_name() or user.username},
+            )
+
         return Response(
             {"detail": "Password has been reset successfully. You can now log in."},
         )
@@ -315,6 +315,30 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny]
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+        center = _resolve_center_from_request(self.request)
+        center_name = center.name if center else 'LabLink'
+
+        # Build login URL from request origin
+        origin = self.request.META.get('HTTP_ORIGIN', '')
+        if not origin:
+            host = self.request.get_host()
+            scheme = 'https' if self.request.is_secure() else 'http'
+            origin = f'{scheme}://{host}'
+        login_url = f'{origin.rstrip("/")}/login'
+
+        if user.email:
+            send_email(
+                EmailType.WELCOME_PATIENT,
+                recipient=user.email,
+                context={
+                    'patient_name': user.get_full_name() or user.username,
+                    'center_name': center_name,
+                    'login_url': login_url,
+                },
+            )
 
 
 @extend_schema(tags=["Authentication"])

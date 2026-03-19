@@ -7,6 +7,8 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.notifications.emails import EmailType, send_email_async
+
 from apps.appointments.models import Appointment
 from apps.diagnostics.models import Report, TestOrder
 from core.tenants.permissions import IsSuperAdmin
@@ -237,6 +239,15 @@ class SuperadminCenterToggleView(SuperadminBaseView):
             action,
             center.name,
         )
+
+        # Send deactivation email
+        if not center.is_active and center.email:
+            send_email_async(
+                EmailType.CENTER_DEACTIVATED,
+                recipient=center.email,
+                context={'center_name': center.name},
+            )
+
         return Response(
             {
                 "detail": f'Center "{center.name}" {action}.',
@@ -333,6 +344,8 @@ class SuperadminUserDetailView(SuperadminBaseView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        old_approval = user.approval_status
+
         serializer = SuperadminUserSerializer(
             user,
             data=request.data,
@@ -345,6 +358,33 @@ class SuperadminUserDetailView(SuperadminBaseView):
             request.user.username,
             user.username,
         )
+
+        # Send approval/decline email on status change
+        new_approval = user.approval_status
+        if old_approval != new_approval and user.email:
+            center_name = user.center.name if user.center else 'LabLink'
+            if new_approval == User.ApprovalStatus.APPROVED:
+                origin = request.META.get('HTTP_ORIGIN', '')
+                login_url = f'{origin.rstrip("/")}/login' if origin else ''
+                send_email_async(
+                    EmailType.ACCOUNT_APPROVED,
+                    recipient=user.email,
+                    context={
+                        'patient_name': user.get_full_name() or user.username,
+                        'center_name': center_name,
+                        'login_url': login_url,
+                    },
+                )
+            elif new_approval == User.ApprovalStatus.DECLINED:
+                send_email_async(
+                    EmailType.ACCOUNT_DECLINED,
+                    recipient=user.email,
+                    context={
+                        'patient_name': user.get_full_name() or user.username,
+                        'center_name': center_name,
+                    },
+                )
+
         return Response(serializer.data)
 
     def delete(self, request, user_id):

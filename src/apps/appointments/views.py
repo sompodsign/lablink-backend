@@ -6,6 +6,8 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.notifications.emails import EmailType, send_email_async
+
 from core.tenants.permissions import IsCenterDoctor, IsCenterStaffOrDoctor
 
 from .models import Appointment
@@ -218,7 +220,58 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 "center_id": tenant.id,
             },
         )
+
+        # Send booking confirmation email
+        patient_email = request.user.email
+        if patient_email:
+            doctor_name = (
+                appointment.doctor.user.get_full_name()
+                if appointment.doctor
+                else 'To be assigned'
+            )
+            send_email_async(
+                EmailType.APPOINTMENT_BOOKED,
+                recipient=patient_email,
+                context={
+                    'patient_name': request.user.get_full_name(),
+                    'center_name': tenant.name,
+                    'doctor_name': doctor_name,
+                    'date': str(appointment.date),
+                    'time': str(appointment.time),
+                },
+            )
+
         return Response(
             AppointmentSerializer(appointment).data,
             status=status.HTTP_201_CREATED,
         )
+
+    def partial_update(self, request, *args, **kwargs):
+        appointment = self.get_object()
+        old_status = appointment.status
+        response = super().partial_update(request, *args, **kwargs)
+        appointment.refresh_from_db()
+        new_status = appointment.status
+
+        # Send email on status change
+        if old_status != new_status and appointment.patient and appointment.patient.email:
+            patient_email = appointment.patient.email
+            doctor_name = (
+                appointment.doctor.user.get_full_name()
+                if appointment.doctor
+                else 'N/A'
+            )
+            ctx = {
+                'patient_name': appointment.patient.get_full_name(),
+                'center_name': appointment.center.name,
+                'doctor_name': doctor_name,
+                'date': str(appointment.date),
+                'time': str(appointment.time),
+            }
+
+            if new_status == Appointment.Status.CONFIRMED:
+                send_email_async(EmailType.APPOINTMENT_CONFIRMED, patient_email, ctx)
+            elif new_status == Appointment.Status.CANCELLED:
+                send_email_async(EmailType.APPOINTMENT_CANCELLED, patient_email, ctx)
+
+        return response

@@ -2,9 +2,10 @@ import logging
 import secrets
 
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
 from django.db import transaction
 from rest_framework import serializers
+
+from apps.notifications.emails import EmailType, send_email
 
 from core.users.models import PatientProfile
 
@@ -115,6 +116,15 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
         center = super().create(validated_data)
         # Grant all existing permissions to the new center
         center.available_permissions.set(Permission.objects.all())
+
+        # Send welcome email to newly created center
+        if center.email:
+            send_email(
+                EmailType.CENTER_CREATED,
+                recipient=center.email,
+                context={'center_name': center.name},
+            )
+
         return center
 
 
@@ -298,22 +308,18 @@ class SuperadminStaffCreateSerializer(serializers.Serializer):
             )
 
         # Send credentials email (outside transaction)
-        send_mail(
-            subject=f"Welcome to {center.name} — Your Account Credentials",
-            message=(
-                f"Hi {user.first_name},\n\n"
-                f"You have been added as a {role.name} "
-                f"at {center.name}.\n\n"
-                f"Your login credentials:\n"
-                f"  Username: {username}\n"
-                f"  Password: {password}\n\n"
-                f"Please change your password after first login.\n\n"
-                f"— {center.name} Team"
-            ),
-            from_email=None,
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        if user.email:
+            send_email(
+                EmailType.STAFF_CREDENTIALS,
+                recipient=user.email,
+                context={
+                    'first_name': user.first_name,
+                    'role_name': role.name,
+                    'center_name': center.name,
+                    'username': username,
+                    'password': password,
+                },
+            )
 
         return staff
 

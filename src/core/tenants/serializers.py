@@ -2,9 +2,10 @@ import logging
 import secrets
 
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
 from django.db import transaction
 from rest_framework import serializers
+
+from apps.notifications.emails import EmailType, send_email
 
 from .models import DiagnosticCenter, Doctor, Permission, PlatformSettings, Role, Service, Staff
 
@@ -185,12 +186,14 @@ class DoctorCreateSerializer(serializers.Serializer):
                 username = f"{base_username}_{counter}"
                 counter += 1
 
+            password = secrets.token_urlsafe(10)
             user = User.objects.create_user(
                 username=username,
                 email=validated_data.get("email", ""),
                 first_name=validated_data["first_name"],
                 last_name=validated_data["last_name"],
                 phone_number=validated_data.get("phone_number", ""),
+                password=password,
                 center=tenant,
             )
 
@@ -199,6 +202,19 @@ class DoctorCreateSerializer(serializers.Serializer):
                 specialization=validated_data["specialization"],
                 designation=validated_data["designation"],
                 bio=validated_data.get("bio", ""),
+            )
+
+        # Send credentials email (outside transaction)
+        if user.email:
+            send_email(
+                EmailType.DOCTOR_CREDENTIALS,
+                recipient=user.email,
+                context={
+                    'first_name': user.first_name,
+                    'center_name': tenant.name,
+                    'username': username,
+                    'password': password,
+                },
             )
 
         return doctor
@@ -399,22 +415,18 @@ class StaffCreateSerializer(serializers.Serializer):
             )
 
         # Send credentials email (outside transaction)
-        send_mail(
-            subject=f"Welcome to {tenant.name} — Your Account Credentials",
-            message=(
-                f"Hi {user.first_name},\n\n"
-                f"You have been added as a {role.name} "
-                f"at {tenant.name}.\n\n"
-                f"Your login credentials:\n"
-                f"  Username: {username}\n"
-                f"  Password: {password}\n\n"
-                f"Please change your password after first login.\n\n"
-                f"— {tenant.name} Team"
-            ),
-            from_email=None,
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        if user.email:
+            send_email(
+                EmailType.STAFF_CREDENTIALS,
+                recipient=user.email,
+                context={
+                    'first_name': user.first_name,
+                    'role_name': role.name,
+                    'center_name': tenant.name,
+                    'username': username,
+                    'password': password,
+                },
+            )
 
         return staff
 

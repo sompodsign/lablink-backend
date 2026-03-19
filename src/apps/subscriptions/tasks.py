@@ -3,7 +3,28 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
+from apps.notifications.emails import EmailType, send_email
+
 logger = logging.getLogger(__name__)
+
+
+def _get_center_admin_email(center):
+    """Get the best admin email for a center.
+
+    Prefers center.email, falls back to the first staff member's email.
+    """
+    if center.email:
+        return center.email
+
+    from core.tenants.models import Staff
+
+    staff = (
+        Staff.objects.filter(center=center)
+        .select_related('user')
+        .order_by('id')
+        .first()
+    )
+    return staff.user.email if staff and staff.user.email else None
 
 
 @shared_task(name='subscriptions.check_trial_expirations')
@@ -12,11 +33,25 @@ def check_trial_expirations():
     from .models import Subscription
 
     now = timezone.now()
-    expired = Subscription.objects.filter(
+    expiring = Subscription.objects.filter(
         status=Subscription.Status.TRIAL,
         trial_end__lt=now,
-    )
-    count = expired.update(status=Subscription.Status.EXPIRED)
+    ).select_related('center')
+
+    count = 0
+    for sub in expiring:
+        sub.status = Subscription.Status.EXPIRED
+        sub.save(update_fields=['status'])
+        count += 1
+
+        admin_email = _get_center_admin_email(sub.center)
+        if admin_email:
+            send_email(
+                EmailType.TRIAL_EXPIRED,
+                recipient=admin_email,
+                context={'center_name': sub.center.name},
+            )
+
     logger.info('Expired %d trial subscriptions.', count)
     return count
 
@@ -43,7 +78,17 @@ def send_trial_expiry_warning():
             sub.center.domain,
             days_left,
         )
-        # TODO: send email notification to center admin
+
+        admin_email = _get_center_admin_email(sub.center)
+        if admin_email:
+            send_email(
+                EmailType.TRIAL_EXPIRY_WARNING,
+                recipient=admin_email,
+                context={
+                    'center_name': sub.center.name,
+                    'days_left': days_left,
+                },
+            )
 
     return expiring_soon.count()
 
@@ -86,6 +131,18 @@ def generate_monthly_invoices():
                 sub.billing_date,
             )
 
+            admin_email = _get_center_admin_email(sub.center)
+            if admin_email:
+                send_email(
+                    EmailType.INVOICE_GENERATED,
+                    recipient=admin_email,
+                    context={
+                        'center_name': sub.center.name,
+                        'amount': str(sub.plan.price),
+                        'due_date': str(sub.billing_date),
+                    },
+                )
+
         # Advance billing_date to next month
         sub.billing_date = sub.billing_date + timedelta(days=30)
         sub.save(update_fields=['billing_date'])
@@ -101,10 +158,29 @@ def mark_overdue_invoices():
 
     today = timezone.now().date()
 
-    overdue = Invoice.objects.filter(
+    overdue_invoices = Invoice.objects.filter(
         status=Invoice.Status.PENDING,
         due_date__lt=today,
-    )
-    count = overdue.update(status=Invoice.Status.OVERDUE)
+    ).select_related('subscription__center')
+
+    count = 0
+    for invoice in overdue_invoices:
+        invoice.status = Invoice.Status.OVERDUE
+        invoice.save(update_fields=['status'])
+        count += 1
+
+        center = invoice.subscription.center
+        admin_email = _get_center_admin_email(center)
+        if admin_email:
+            send_email(
+                EmailType.INVOICE_OVERDUE,
+                recipient=admin_email,
+                context={
+                    'center_name': center.name,
+                    'amount': str(invoice.amount),
+                    'due_date': str(invoice.due_date),
+                },
+            )
+
     logger.info('Marked %d invoices as overdue.', count)
     return count
