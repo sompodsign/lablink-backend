@@ -790,6 +790,65 @@ class StaffViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("email", response.data)
 
+    def test_create_staff_blocked_when_limit_reached(self):
+        """POST /staff/ returns 400 when max_staff limit is reached."""
+        from apps.subscriptions.models import Subscription, SubscriptionPlan
+        from core.tenants.models import Role
+
+        plan = SubscriptionPlan.objects.create(
+            name="Tiny", slug="tiny-plan", price=0, max_staff=2,
+        )
+        Subscription.objects.create(
+            center=self.center, plan=plan, status=Subscription.Status.ACTIVE,
+        )
+        # center already has 2 staff (admin + receptionist from setUp)
+        self._auth(self.admin_user)
+        role = Role.objects.get(name="Receptionist", center=self.center)
+        response = self.client.post("/api/tenants/staff/", {
+            "first_name": "Blocked", "last_name": "User",
+            "email": "blocked@example.com", "role_id": role.id,
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Staff limit reached", str(response.data))
+
+    def test_create_staff_allowed_when_unlimited(self):
+        """POST /staff/ succeeds when plan has max_staff=-1 (unlimited)."""
+        from apps.subscriptions.models import Subscription, SubscriptionPlan
+        from core.tenants.models import Role
+
+        plan = SubscriptionPlan.objects.create(
+            name="Unlimited", slug="unlimited-plan", price=0, max_staff=-1,
+        )
+        Subscription.objects.create(
+            center=self.center, plan=plan, status=Subscription.Status.ACTIVE,
+        )
+        self._auth(self.admin_user)
+        role = Role.objects.get(name="Receptionist", center=self.center)
+        response = self.client.post("/api/tenants/staff/", {
+            "first_name": "Allowed", "last_name": "User",
+            "email": "allowed@example.com", "role_id": role.id,
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_create_staff_allowed_under_limit(self):
+        """POST /staff/ succeeds when staff count is under max_staff."""
+        from apps.subscriptions.models import Subscription, SubscriptionPlan
+        from core.tenants.models import Role
+
+        plan = SubscriptionPlan.objects.create(
+            name="Room", slug="room-plan", price=0, max_staff=5,
+        )
+        Subscription.objects.create(
+            center=self.center, plan=plan, status=Subscription.Status.ACTIVE,
+        )
+        self._auth(self.admin_user)
+        role = Role.objects.get(name="Receptionist", center=self.center)
+        response = self.client.post("/api/tenants/staff/", {
+            "first_name": "Under", "last_name": "Limit",
+            "email": "under@example.com", "role_id": role.id,
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
 
 # ---------------------------------------------------------------------------
 # Patient Registration Tests (kept from original)

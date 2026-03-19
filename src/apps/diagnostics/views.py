@@ -453,6 +453,39 @@ class ReportViewSet(viewsets.ModelViewSet):
         instance.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
 
     def create(self, request, *args, **kwargs):
+        # ── Report limit enforcement ──
+        tenant = request.tenant
+        if tenant:
+            from apps.subscriptions.models import Subscription
+
+            try:
+                sub = Subscription.objects.select_related('plan').filter(
+                    center=tenant,
+                ).latest('started_at')
+                max_reports = sub.plan.max_reports
+                if max_reports != -1:
+                    now = timezone.now()
+                    current_count = Report.objects.filter(
+                        test_order__center=tenant,
+                        created_at__year=now.year,
+                        created_at__month=now.month,
+                        is_deleted=False,
+                    ).count()
+                    if current_count >= max_reports:
+                        return Response(
+                            {
+                                'detail': (
+                                    f'Monthly report limit ({max_reports}) reached. '
+                                    f'Upgrade your plan for more reports.'
+                                ),
+                                'current_count': current_count,
+                                'max_reports': max_reports,
+                            },
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+            except Subscription.DoesNotExist:
+                pass
+
         serializer = ReportCreateSerializer(
             data=request.data, context={"request": request}
         )

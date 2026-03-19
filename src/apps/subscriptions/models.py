@@ -21,6 +21,10 @@ class SubscriptionPlan(models.Model):
         default=-1,
         help_text=_('-1 means unlimited'),
     )
+    max_reports = models.IntegerField(
+        default=-1,
+        help_text=_('Monthly report limit, -1 means unlimited'),
+    )
     features = models.JSONField(
         default=list,
         help_text=_('List of feature strings for display'),

@@ -5,6 +5,9 @@ from .views import (
     CenterSubscriptionView,
     PublicPlanListView,
     SubscriptionStatusView,
+    SuperadminChangePlanView,
+    SuperadminCreateInvoiceView,
+    SuperadminExtendTrialView,
     SuperadminInvoiceListView,
     SuperadminInvoiceMarkPaidView,
     SuperadminInvoiceMarkUnpaidView,
@@ -56,6 +59,21 @@ superadmin_patterns = [
         'invoices/<int:invoice_id>/mark-unpaid/',
         SuperadminInvoiceMarkUnpaidView.as_view(),
         name='sa-invoice-mark-unpaid',
+    ),
+    path(
+        'subscriptions/<int:subscription_id>/extend-trial/',
+        SuperadminExtendTrialView.as_view(),
+        name='sa-extend-trial',
+    ),
+    path(
+        'subscriptions/<int:subscription_id>/change-plan/',
+        SuperadminChangePlanView.as_view(),
+        name='sa-change-plan',
+    ),
+    path(
+        'subscriptions/<int:subscription_id>/create-invoice/',
+        SuperadminCreateInvoiceView.as_view(),
+        name='sa-create-invoice',
     ),
 ]
 

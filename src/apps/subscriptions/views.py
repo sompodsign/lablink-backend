@@ -117,27 +117,79 @@ class SubscriptionStatusView(APIView):
 
         from django.core.cache import cache
 
+        from core.tenants.models import Staff
+
         cache_key = f'sub_status:{tenant.id}'
         cached = cache.get(cache_key)
 
+        max_staff = -1
         if cached:
             sub_status = cached
         else:
             try:
-                sub = Subscription.objects.filter(center=tenant).latest(
-                    'started_at',
-                )
+                sub = Subscription.objects.select_related('plan').filter(
+                    center=tenant,
+                ).latest('started_at')
                 sub_status = sub.status
+                max_staff = sub.plan.max_staff
             except Subscription.DoesNotExist:
                 sub_status = 'NONE'
             cache.set(cache_key, sub_status, 300)
 
-        is_blocked = sub_status in ('EXPIRED', 'CANCELLED')
+        # If we got status from cache, still need max_staff
+        if cached:
+            try:
+                sub = Subscription.objects.select_related('plan').filter(
+                    center=tenant,
+                ).latest('started_at')
+                max_staff = sub.plan.max_staff
+            except Subscription.DoesNotExist:
+                pass
+
+        is_blocked = sub_status in ('EXPIRED', 'CANCELLED', 'NONE')
+        current_staff_count = Staff.objects.filter(center=tenant).count()
+        staff_limit_reached = (
+            max_staff != -1 and current_staff_count >= max_staff
+        )
+
+        # Report usage this month
+        max_reports = -1
+        if cached:
+            try:
+                max_reports = sub.plan.max_reports
+            except Exception:
+                pass
+        else:
+            try:
+                max_reports = sub.plan.max_reports
+            except Exception:
+                pass
+
+        from django.utils import timezone as tz
+
+        from apps.diagnostics.models import Report
+
+        now = tz.now()
+        current_report_count = Report.objects.filter(
+            test_order__center=tenant,
+            created_at__year=now.year,
+            created_at__month=now.month,
+            is_deleted=False,
+        ).count()
+        report_limit_reached = (
+            max_reports != -1 and current_report_count >= max_reports
+        )
 
         return Response({
             'status': sub_status,
             'is_blocked': is_blocked,
             'center_name': tenant.name,
+            'max_staff': max_staff,
+            'current_staff_count': current_staff_count,
+            'staff_limit_reached': staff_limit_reached,
+            'max_reports': max_reports,
+            'current_report_count': current_report_count,
+            'report_limit_reached': report_limit_reached,
         })
 
 
@@ -338,3 +390,220 @@ class SuperadminInvoiceMarkUnpaidView(APIView):
             'detail': f'Invoice #{invoice.id} reverted to pending.',
             'invoice': InvoiceSerializer(invoice).data,
         })
+
+
+class SuperadminExtendTrialView(APIView):
+    """Superadmin: extend a center's trial period by N days."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request, subscription_id):
+        try:
+            sub = Subscription.objects.select_related('center').get(
+                pk=subscription_id,
+            )
+        except Subscription.DoesNotExist:
+            return Response(
+                {'detail': 'Subscription not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        days = request.data.get('days')
+        if not days or not isinstance(days, int) or days < 1:
+            return Response(
+                {'detail': 'Provide a positive integer "days" value.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from datetime import timedelta
+
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        # If trial already expired, reset trial_end from now
+        if sub.trial_end and sub.trial_end < timezone.now():
+            sub.trial_end = timezone.now() + timedelta(days=days)
+        elif sub.trial_end:
+            sub.trial_end = sub.trial_end + timedelta(days=days)
+        else:
+            sub.trial_end = timezone.now() + timedelta(days=days)
+
+        sub.trial_start = sub.trial_start or timezone.now()
+        sub.status = Subscription.Status.TRIAL
+        sub.billing_date = sub.trial_end.date()
+        sub.save(update_fields=[
+            'status', 'trial_start', 'trial_end', 'billing_date',
+        ])
+
+        # Invalidate cached status
+        cache.delete(f'sub_status:{sub.center_id}')
+
+        logger.info(
+            'Trial extended by %d days for %s by superadmin %s',
+            days,
+            sub.center.name,
+            request.user.username,
+        )
+
+        return Response({
+            'detail': f'Trial extended by {days} days for {sub.center.name}.',
+            'subscription': SubscriptionSerializer(sub).data,
+        })
+
+
+class SuperadminChangePlanView(APIView):
+    """Superadmin: change a center's subscription plan and activate it."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request, subscription_id):
+        try:
+            sub = Subscription.objects.select_related('center', 'plan').get(
+                pk=subscription_id,
+            )
+        except Subscription.DoesNotExist:
+            return Response(
+                {'detail': 'Subscription not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        plan_id = request.data.get('plan_id')
+        if not plan_id:
+            return Response(
+                {'detail': 'Provide a "plan_id".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            new_plan = SubscriptionPlan.objects.get(pk=plan_id, is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            return Response(
+                {'detail': 'Plan not found or inactive.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        from datetime import timedelta
+
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        old_plan_name = sub.plan.name
+        sub.plan = new_plan
+        sub.status = Subscription.Status.ACTIVE
+        sub.billing_date = (timezone.now() + timedelta(days=30)).date()
+        sub.save(update_fields=['plan', 'status', 'billing_date'])
+
+        # Invalidate cached status
+        cache.delete(f'sub_status:{sub.center_id}')
+
+        logger.info(
+            'Plan changed from %s to %s for %s by superadmin %s',
+            old_plan_name,
+            new_plan.name,
+            sub.center.name,
+            request.user.username,
+        )
+
+        return Response({
+            'detail': (
+                f'Plan changed to {new_plan.name} for {sub.center.name}. '
+                f'Subscription activated.'
+            ),
+            'subscription': SubscriptionSerializer(sub).data,
+        })
+
+
+class SuperadminCreateInvoiceView(APIView):
+    """Superadmin: create a custom invoice for a center's subscription."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request, subscription_id):
+        try:
+            sub = Subscription.objects.select_related('center', 'plan').get(
+                pk=subscription_id,
+            )
+        except Subscription.DoesNotExist:
+            return Response(
+                {'detail': 'Subscription not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        from datetime import date
+        from decimal import Decimal, InvalidOperation
+
+        # Validate amount
+        raw_amount = request.data.get('amount')
+        if not raw_amount:
+            return Response(
+                {'detail': 'Provide an "amount".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            amount = Decimal(str(raw_amount))
+            if amount <= 0:
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            return Response(
+                {'detail': 'Amount must be a positive number.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate due_date
+        raw_due_date = request.data.get('due_date')
+        if not raw_due_date:
+            return Response(
+                {'detail': 'Provide a "due_date" (YYYY-MM-DD).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            due_date = date.fromisoformat(raw_due_date)
+        except (ValueError, TypeError):
+            return Response(
+                {'detail': 'Invalid due_date format. Use YYYY-MM-DD.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        notes = request.data.get('notes', '')
+
+        invoice = Invoice.objects.create(
+            subscription=sub,
+            amount=amount,
+            due_date=due_date,
+            status=Invoice.Status.PENDING,
+            notes=notes,
+        )
+
+        logger.info(
+            'Custom invoice #%s created for %s (৳%s) by superadmin %s',
+            invoice.id,
+            sub.center.name,
+            amount,
+            request.user.username,
+        )
+
+        # Send email notification
+        from apps.subscriptions.tasks import _get_center_admin_email
+
+        admin_email = _get_center_admin_email(sub.center)
+        if admin_email:
+            send_email_async(
+                EmailType.INVOICE_GENERATED,
+                recipient=admin_email,
+                context={
+                    'center_name': sub.center.name,
+                    'amount': str(amount),
+                    'due_date': str(due_date),
+                },
+            )
+
+        return Response(
+            {
+                'detail': (
+                    f'Invoice #{invoice.id} created for {sub.center.name} '
+                    f'(৳{amount}, due {due_date}).'
+                ),
+                'invoice': InvoiceSerializer(invoice).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )

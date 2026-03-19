@@ -186,6 +186,39 @@ class SuperadminCenterViewTests(APITestCase):
             DiagnosticCenter.objects.filter(domain="new-center").exists(),
         )
 
+    def test_create_center_auto_creates_trial_subscription(self):
+        """Superadmin-created centers get a trial subscription automatically."""
+        from apps.subscriptions.models import Subscription, SubscriptionPlan
+
+        SubscriptionPlan.objects.get_or_create(
+            slug='trial',
+            defaults={
+                'name': 'Free Trial',
+                'price': 0,
+                'trial_days': 14,
+            },
+        )
+
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/centers/",
+            {
+                "name": "Trial Center",
+                "domain": "trial-center",
+                "address": "789 Trial St",
+                "contact_number": "01800000002",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        center = DiagnosticCenter.objects.get(domain="trial-center")
+        sub = Subscription.objects.get(center=center)
+        self.assertEqual(sub.status, 'TRIAL')
+        self.assertEqual(sub.plan.slug, 'trial')
+        self.assertIsNotNone(sub.trial_start)
+        self.assertIsNotNone(sub.trial_end)
+        self.assertIsNotNone(sub.billing_date)
+
     def test_create_center_duplicate_domain(self):
         self._auth()
         response = self.client.post(

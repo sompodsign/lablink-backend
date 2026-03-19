@@ -113,9 +113,28 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.subscriptions.models import Subscription, SubscriptionPlan
+
         center = super().create(validated_data)
         # Grant all existing permissions to the new center
         center.available_permissions.set(Permission.objects.all())
+
+        # Auto-create trial subscription
+        trial_plan = SubscriptionPlan.objects.filter(slug='trial').first()
+        if trial_plan:
+            now = timezone.now()
+            Subscription.objects.create(
+                center=center,
+                plan=trial_plan,
+                status=Subscription.Status.TRIAL,
+                trial_start=now,
+                trial_end=now + timedelta(days=trial_plan.trial_days),
+                billing_date=(now + timedelta(days=trial_plan.trial_days)).date(),
+            )
 
         # Send welcome email to newly created center
         if center.email:
@@ -260,6 +279,8 @@ class SuperadminStaffCreateSerializer(serializers.Serializer):
         return value
 
     def validate(self, data):
+        from apps.subscriptions.models import Subscription
+
         from .models import Role
 
         center = data["center"]
@@ -271,6 +292,28 @@ class SuperadminStaffCreateSerializer(serializers.Serializer):
                 {"role_id": "Role does not belong to this center."},
             ) from None
         data["role"] = role
+
+        # Enforce max_staff limit
+        try:
+            sub = Subscription.objects.select_related("plan").filter(
+                center=center,
+            ).latest("started_at")
+            max_staff = sub.plan.max_staff
+        except Subscription.DoesNotExist:
+            max_staff = -1
+
+        if max_staff != -1:
+            current_count = Staff.objects.filter(center=center).count()
+            if current_count >= max_staff:
+                raise serializers.ValidationError(
+                    {
+                        "non_field_errors": [
+                            f"Staff limit reached ({current_count}/{max_staff}). "
+                            f"Upgrade the plan to add more staff members."
+                        ]
+                    }
+                )
+
         return data
 
     def create(self, validated_data):

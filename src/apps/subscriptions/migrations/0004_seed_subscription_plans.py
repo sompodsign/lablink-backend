@@ -1,10 +1,10 @@
-import logging
+"""Seed the 4-tier subscription plans via data migration.
 
-from django.core.management.base import BaseCommand
+Ensures plans exist in production after `manage.py migrate`
+without needing to manually run `seed_plans`.
+"""
 
-from apps.subscriptions.models import SubscriptionPlan
-
-logger = logging.getLogger(__name__)
+from django.db import migrations
 
 PLANS = [
     {
@@ -78,18 +78,27 @@ PLANS = [
 ]
 
 
-class Command(BaseCommand):
-    help = 'Seed default subscription plans'
+def seed_plans(apps, _schema_editor):
+    SubscriptionPlan = apps.get_model('subscriptions', 'SubscriptionPlan')
+    for plan_data in PLANS:
+        SubscriptionPlan.objects.update_or_create(
+            slug=plan_data['slug'],
+            defaults=plan_data,
+        )
 
-    def handle(self, *args, **options):
-        for plan_data in PLANS:
-            plan, created = SubscriptionPlan.objects.update_or_create(
-                slug=plan_data['slug'],
-                defaults=plan_data,
-            )
-            action = 'Created' if created else 'Updated'
-            self.stdout.write(
-                self.style.SUCCESS(f'{action} plan: {plan.name} (৳{plan.price}/mo)')
-            )
 
-        self.stdout.write(self.style.SUCCESS('Done seeding subscription plans.'))
+def unseed_plans(apps, _schema_editor):
+    SubscriptionPlan = apps.get_model('subscriptions', 'SubscriptionPlan')
+    slugs = [p['slug'] for p in PLANS]
+    SubscriptionPlan.objects.filter(slug__in=slugs).delete()
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('subscriptions', '0003_add_max_reports_to_plan'),
+    ]
+
+    operations = [
+        migrations.RunPython(seed_plans, unseed_plans),
+    ]

@@ -381,6 +381,31 @@ class StaffCreateSerializer(serializers.Serializer):
             )
         return value
 
+    def validate(self, data):
+        from apps.subscriptions.models import Subscription
+
+        tenant = self.context["request"].tenant
+        try:
+            sub = Subscription.objects.select_related("plan").filter(
+                center=tenant,
+            ).latest("started_at")
+            max_staff = sub.plan.max_staff
+        except Subscription.DoesNotExist:
+            max_staff = -1
+
+        if max_staff != -1:
+            current_count = Staff.objects.filter(center=tenant).count()
+            if current_count >= max_staff:
+                raise serializers.ValidationError(
+                    {
+                        "non_field_errors": [
+                            f"Staff limit reached ({current_count}/{max_staff}). "
+                            f"Upgrade your plan to add more staff members."
+                        ]
+                    }
+                )
+        return data
+
     def create(self, validated_data):
         tenant = self.context["request"].tenant
         role = validated_data["role_id"]
