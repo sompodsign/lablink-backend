@@ -144,12 +144,18 @@ class InvoiceCreateSerializer(serializers.Serializer):
     items = InvoiceItemInputSerializer(many=True, required=False, default=list)
     include_visit_fee = serializers.BooleanField(
         default=False,
-        help_text="Auto-add doctor visit fee",
+        help_text="Auto-add doctor visit fee(s)",
     )
     doctor_id = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="Doctor ID — required when include_visit_fee is True",
+        help_text="Single doctor ID — backward compat, prefer doctor_ids",
+    )
+    doctor_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        default=list,
+        help_text="List of doctor IDs for multi-doctor visit fees",
     )
     discount_percentage = serializers.DecimalField(
         max_digits=5,
@@ -288,32 +294,41 @@ class InvoiceCreateSerializer(serializers.Serializer):
                 unit_price=unit_price,
             )
 
-        # Add visit fee if requested (per-doctor fee)
+        # Add visit fee(s) if requested (multi-doctor support)
         include_visit_fee = validated_data["include_visit_fee"]
         if include_visit_fee:
-            doctor_id = validated_data.get("doctor_id")
-            if not doctor_id:
-                raise serializers.ValidationError(
-                    {"doctor_id": "Doctor is required when including visit fee."}
-                )
             from core.tenants.models import Doctor
 
-            try:
-                doctor = Doctor.objects.select_related("user").get(
-                    pk=doctor_id, user__center=tenant
-                )
-            except Doctor.DoesNotExist:
+            # Merge doctor_id (backward compat) into doctor_ids
+            doctor_ids = list(validated_data.get("doctor_ids") or [])
+            single_id = validated_data.get("doctor_id")
+            if single_id and single_id not in doctor_ids:
+                doctor_ids.append(single_id)
+
+            if not doctor_ids:
                 raise serializers.ValidationError(
-                    {"doctor_id": "Doctor not found in this center."}
-                ) from None
-            if doctor.visit_fee > 0:
-                InvoiceItem.objects.create(
-                    invoice=invoice,
-                    item_type=InvoiceItem.ItemType.VISIT_FEE,
-                    description=f"Consultation Fee — {doctor}",
-                    quantity=1,
-                    unit_price=doctor.visit_fee,
+                    {
+                        "doctor_ids": "At least one doctor is required when including visit fee."
+                    }
                 )
+
+            for did in doctor_ids:
+                try:
+                    doctor = Doctor.objects.select_related("user").get(
+                        pk=did, user__center=tenant
+                    )
+                except Doctor.DoesNotExist:
+                    raise serializers.ValidationError(
+                        {"doctor_ids": f"Doctor {did} not found in this center."}
+                    ) from None
+                if doctor.visit_fee > 0:
+                    InvoiceItem.objects.create(
+                        invoice=invoice,
+                        item_type=InvoiceItem.ItemType.VISIT_FEE,
+                        description=f"Consultation Fee — {doctor}",
+                        quantity=1,
+                        unit_price=doctor.visit_fee,
+                    )
 
         # Recalculate totals
         invoice.recalculate_totals()
