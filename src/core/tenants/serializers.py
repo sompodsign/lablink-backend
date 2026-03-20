@@ -7,7 +7,15 @@ from rest_framework import serializers
 
 from apps.notifications.emails import EmailType, send_email
 
-from .models import DiagnosticCenter, Doctor, Permission, PlatformSettings, Role, Service, Staff
+from .models import (
+    DiagnosticCenter,
+    Doctor,
+    Permission,
+    PlatformSettings,
+    Role,
+    Service,
+    Staff,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -16,14 +24,14 @@ logger = logging.getLogger(__name__)
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
-        fields = ['id', 'title', 'description', 'icon', 'order']
+        fields = ["id", "title", "description", "icon", "order"]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        lang = self.context.get('language', 'en')
-        if lang == 'bn':
-            data['title'] = instance.title_bn or data['title']
-            data['description'] = instance.description_bn or data['description']
+        lang = self.context.get("language", "en")
+        if lang == "bn":
+            data["title"] = instance.title_bn or data["title"]
+            data["description"] = instance.description_bn or data["description"]
         return data
 
 
@@ -34,28 +42,28 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
     class Meta:
         model = DiagnosticCenter
         fields = [
-            'id',
-            'name',
-            'domain',
-            'language',
-            'tagline',
-            'address',
-            'contact_number',
-            'email',
-            'logo_url',
-            'primary_color',
-            'opening_hours',
-            'years_of_experience',
-            'happy_patients_count',
-            'test_types_available_count',
-            'lab_support_availability',
-            'allow_online_appointments',
-            'services',
+            "id",
+            "name",
+            "domain",
+            "language",
+            "tagline",
+            "address",
+            "contact_number",
+            "email",
+            "logo_url",
+            "primary_color",
+            "opening_hours",
+            "years_of_experience",
+            "happy_patients_count",
+            "test_types_available_count",
+            "lab_support_availability",
+            "allow_online_appointments",
+            "services",
         ]
 
     def get_logo_url(self, obj) -> str | None:
         if obj.logo:
-            request = self.context.get('request')
+            request = self.context.get("request")
             if request:
                 return request.build_absolute_uri(obj.logo.url)
         return None
@@ -65,14 +73,14 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
         return ServiceSerializer(
             active_services,
             many=True,
-            context={'language': obj.language},
+            context={"language": obj.language},
         ).data
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         lang = instance.language
-        if lang == 'bn':
-            data['tagline'] = instance.tagline_bn or data['tagline']
+        if lang == "bn":
+            data["tagline"] = instance.tagline_bn or data["tagline"]
         return data
 
 
@@ -84,53 +92,65 @@ class CenterSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = DiagnosticCenter
         fields = [
-            'id',
-            'name',
-            'language',
-            'tagline',
-            'tagline_bn',
-            'address',
-            'contact_number',
-            'email',
-            'logo',
-            'logo_url',
-            'primary_color',
-            'opening_hours',
-            'years_of_experience',
-            'happy_patients_count',
-            'test_types_available_count',
-            'lab_support_availability',
-            'allow_online_appointments',
+            "id",
+            "name",
+            "language",
+            "tagline",
+            "tagline_bn",
+            "address",
+            "contact_number",
+            "email",
+            "logo",
+            "logo_url",
+            "primary_color",
+            "opening_hours",
+            "years_of_experience",
+            "happy_patients_count",
+            "test_types_available_count",
+            "lab_support_availability",
+            "allow_online_appointments",
+            "doctor_visit_fee",
+            # Print layout
+            "paper_size",
+            "use_preprinted_paper",
+            "print_header_margin_mm",
+            "print_footer_margin_mm",
         ]
-        read_only_fields = ['id', 'logo_url']
+        read_only_fields = ["id", "logo_url"]
 
     def get_logo_url(self, obj) -> str | None:
         if obj.logo:
-            request = self.context.get('request')
+            request = self.context.get("request")
             if request:
                 return request.build_absolute_uri(obj.logo.url)
         return None
 
 
 class DoctorSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source='user.get_full_name')
-    email = serializers.EmailField(source='user.email', read_only=True)
+    name = serializers.CharField(source="user.get_full_name")
+    email = serializers.EmailField(source="user.email", read_only=True)
 
     class Meta:
         model = Doctor
-        fields = ['id', 'name', 'email', 'specialization', 'designation', 'bio']
+        fields = [
+            "id",
+            "name",
+            "email",
+            "specialization",
+            "designation",
+            "bio",
+            "visit_fee",
+        ]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        lang = self.context.get('language', 'en')
-        if lang == 'bn':
-            data['specialization'] = (
-                instance.specialization_bn or data['specialization']
+        lang = self.context.get("language", "en")
+        if lang == "bn":
+            data["specialization"] = (
+                instance.specialization_bn or data["specialization"]
             )
-            data['designation'] = (
-                instance.designation_bn or data['designation']
-            )
-            data['bio'] = instance.bio_bn or data['bio']
+            data["designation"] = instance.designation_bn or data["designation"]
+            data["bio"] = instance.bio_bn or data["bio"]
         return data
 
 
@@ -151,6 +171,7 @@ class DoctorManagementSerializer(serializers.ModelSerializer):
             "specialization",
             "designation",
             "bio",
+            "visit_fee",
         ]
         read_only_fields = ["id", "name", "email", "username"]
 
@@ -167,6 +188,9 @@ class DoctorCreateSerializer(serializers.Serializer):
     specialization = serializers.CharField(max_length=255)
     designation = serializers.CharField(max_length=255)
     bio = serializers.CharField(required=False, allow_blank=True, default="")
+    visit_fee = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default="0.00"
+    )
 
     def validate_email(self, value):
         tenant = self.context["request"].tenant
@@ -202,6 +226,7 @@ class DoctorCreateSerializer(serializers.Serializer):
                 specialization=validated_data["specialization"],
                 designation=validated_data["designation"],
                 bio=validated_data.get("bio", ""),
+                visit_fee=validated_data.get("visit_fee", "0.00"),
             )
 
         # Send credentials email (outside transaction)
@@ -210,10 +235,10 @@ class DoctorCreateSerializer(serializers.Serializer):
                 EmailType.DOCTOR_CREDENTIALS,
                 recipient=user.email,
                 context={
-                    'first_name': user.first_name,
-                    'center_name': tenant.name,
-                    'username': username,
-                    'password': password,
+                    "first_name": user.first_name,
+                    "center_name": tenant.name,
+                    "username": username,
+                    "password": password,
                 },
             )
 
@@ -386,9 +411,13 @@ class StaffCreateSerializer(serializers.Serializer):
 
         tenant = self.context["request"].tenant
         try:
-            sub = Subscription.objects.select_related("plan").filter(
-                center=tenant,
-            ).latest("started_at")
+            sub = (
+                Subscription.objects.select_related("plan")
+                .filter(
+                    center=tenant,
+                )
+                .latest("started_at")
+            )
             max_staff = sub.plan.max_staff
         except Subscription.DoesNotExist:
             max_staff = -1
@@ -445,11 +474,11 @@ class StaffCreateSerializer(serializers.Serializer):
                 EmailType.STAFF_CREDENTIALS,
                 recipient=user.email,
                 context={
-                    'first_name': user.first_name,
-                    'role_name': role.name,
-                    'center_name': tenant.name,
-                    'username': username,
-                    'password': password,
+                    "first_name": user.first_name,
+                    "role_name": role.name,
+                    "center_name": tenant.name,
+                    "username": username,
+                    "password": password,
                 },
             )
 
@@ -488,6 +517,5 @@ class PlatformSettingsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PlatformSettings
-        fields = ['language', 'updated_at']
-        read_only_fields = ['updated_at']
-
+        fields = ["language", "updated_at"]
+        read_only_fields = ["updated_at"]

@@ -4,15 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subscriptions', '0002_backfill_trial_subscriptions'),
+        ("subscriptions", "0002_backfill_trial_subscriptions"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='subscriptionplan',
-            name='max_reports',
-            field=models.IntegerField(default=-1, help_text='Monthly report limit, -1 means unlimited'),
+            model_name="subscriptionplan",
+            name="max_reports",
+            field=models.IntegerField(
+                default=-1, help_text="Monthly report limit, -1 means unlimited"
+            ),
         ),
     ]

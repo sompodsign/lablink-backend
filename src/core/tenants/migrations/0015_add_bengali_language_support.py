@@ -4,58 +4,104 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0014_rename_lab_tech_to_medical_technologist'),
+        ("tenants", "0014_rename_lab_tech_to_medical_technologist"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='PlatformSettings',
+            name="PlatformSettings",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('language', models.CharField(choices=[('en', 'English'), ('bn', 'Bengali')], default='en', help_text='Default language for the main LabLink landing page', max_length=5)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "language",
+                    models.CharField(
+                        choices=[("en", "English"), ("bn", "Bengali")],
+                        default="en",
+                        help_text="Default language for the main LabLink landing page",
+                        max_length=5,
+                    ),
+                ),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
-                'verbose_name': 'platform settings',
-                'verbose_name_plural': 'platform settings',
-                'db_table': 'core_platform_settings',
+                "verbose_name": "platform settings",
+                "verbose_name_plural": "platform settings",
+                "db_table": "core_platform_settings",
             },
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='language',
-            field=models.CharField(choices=[('en', 'English'), ('bn', 'Bengali')], default='en', help_text="Language for this center's public pages and dashboard", max_length=5),
+            model_name="diagnosticcenter",
+            name="language",
+            field=models.CharField(
+                choices=[("en", "English"), ("bn", "Bengali")],
+                default="en",
+                help_text="Language for this center's public pages and dashboard",
+                max_length=5,
+            ),
         ),
         migrations.AddField(
-            model_name='diagnosticcenter',
-            name='tagline_bn',
-            field=models.CharField(blank=True, default='', help_text='Bengali translation of the tagline', max_length=255),
+            model_name="diagnosticcenter",
+            name="tagline_bn",
+            field=models.CharField(
+                blank=True,
+                default="",
+                help_text="Bengali translation of the tagline",
+                max_length=255,
+            ),
         ),
         migrations.AddField(
-            model_name='doctor',
-            name='bio_bn',
-            field=models.TextField(blank=True, default='', help_text='Bengali translation of bio'),
+            model_name="doctor",
+            name="bio_bn",
+            field=models.TextField(
+                blank=True, default="", help_text="Bengali translation of bio"
+            ),
         ),
         migrations.AddField(
-            model_name='doctor',
-            name='designation_bn',
-            field=models.CharField(blank=True, default='', help_text='Bengali translation of designation', max_length=255),
+            model_name="doctor",
+            name="designation_bn",
+            field=models.CharField(
+                blank=True,
+                default="",
+                help_text="Bengali translation of designation",
+                max_length=255,
+            ),
         ),
         migrations.AddField(
-            model_name='doctor',
-            name='specialization_bn',
-            field=models.CharField(blank=True, default='', help_text='Bengali translation of specialization', max_length=255),
+            model_name="doctor",
+            name="specialization_bn",
+            field=models.CharField(
+                blank=True,
+                default="",
+                help_text="Bengali translation of specialization",
+                max_length=255,
+            ),
         ),
         migrations.AddField(
-            model_name='service',
-            name='description_bn',
-            field=models.TextField(blank=True, default='', help_text='Bengali translation of the description'),
+            model_name="service",
+            name="description_bn",
+            field=models.TextField(
+                blank=True,
+                default="",
+                help_text="Bengali translation of the description",
+            ),
         ),
         migrations.AddField(
-            model_name='service',
-            name='title_bn',
-            field=models.CharField(blank=True, default='', help_text='Bengali translation of the title', max_length=100),
+            model_name="service",
+            name="title_bn",
+            field=models.CharField(
+                blank=True,
+                default="",
+                help_text="Bengali translation of the title",
+                max_length=100,
+            ),
         ),
     ]

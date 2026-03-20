@@ -6,7 +6,13 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from core.tenants.middleware import TenantMiddleware
-from core.tenants.models import DiagnosticCenter, Doctor, PlatformSettings, Service, Staff
+from core.tenants.models import (
+    DiagnosticCenter,
+    Doctor,
+    PlatformSettings,
+    Service,
+    Staff,
+)
 from core.tenants.permissions import (
     IsCenterAdmin,
     IsCenterDoctor,
@@ -796,18 +802,28 @@ class StaffViewTests(APITestCase):
         from core.tenants.models import Role
 
         plan = SubscriptionPlan.objects.create(
-            name="Tiny", slug="tiny-plan", price=0, max_staff=2,
+            name="Tiny",
+            slug="tiny-plan",
+            price=0,
+            max_staff=2,
         )
         Subscription.objects.create(
-            center=self.center, plan=plan, status=Subscription.Status.ACTIVE,
+            center=self.center,
+            plan=plan,
+            status=Subscription.Status.ACTIVE,
         )
         # center already has 2 staff (admin + receptionist from setUp)
         self._auth(self.admin_user)
         role = Role.objects.get(name="Receptionist", center=self.center)
-        response = self.client.post("/api/tenants/staff/", {
-            "first_name": "Blocked", "last_name": "User",
-            "email": "blocked@example.com", "role_id": role.id,
-        })
+        response = self.client.post(
+            "/api/tenants/staff/",
+            {
+                "first_name": "Blocked",
+                "last_name": "User",
+                "email": "blocked@example.com",
+                "role_id": role.id,
+            },
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Staff limit reached", str(response.data))
 
@@ -817,17 +833,27 @@ class StaffViewTests(APITestCase):
         from core.tenants.models import Role
 
         plan = SubscriptionPlan.objects.create(
-            name="Unlimited", slug="unlimited-plan", price=0, max_staff=-1,
+            name="Unlimited",
+            slug="unlimited-plan",
+            price=0,
+            max_staff=-1,
         )
         Subscription.objects.create(
-            center=self.center, plan=plan, status=Subscription.Status.ACTIVE,
+            center=self.center,
+            plan=plan,
+            status=Subscription.Status.ACTIVE,
         )
         self._auth(self.admin_user)
         role = Role.objects.get(name="Receptionist", center=self.center)
-        response = self.client.post("/api/tenants/staff/", {
-            "first_name": "Allowed", "last_name": "User",
-            "email": "allowed@example.com", "role_id": role.id,
-        })
+        response = self.client.post(
+            "/api/tenants/staff/",
+            {
+                "first_name": "Allowed",
+                "last_name": "User",
+                "email": "allowed@example.com",
+                "role_id": role.id,
+            },
+        )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_create_staff_allowed_under_limit(self):
@@ -836,17 +862,27 @@ class StaffViewTests(APITestCase):
         from core.tenants.models import Role
 
         plan = SubscriptionPlan.objects.create(
-            name="Room", slug="room-plan", price=0, max_staff=5,
+            name="Room",
+            slug="room-plan",
+            price=0,
+            max_staff=5,
         )
         Subscription.objects.create(
-            center=self.center, plan=plan, status=Subscription.Status.ACTIVE,
+            center=self.center,
+            plan=plan,
+            status=Subscription.Status.ACTIVE,
         )
         self._auth(self.admin_user)
         role = Role.objects.get(name="Receptionist", center=self.center)
-        response = self.client.post("/api/tenants/staff/", {
-            "first_name": "Under", "last_name": "Limit",
-            "email": "under@example.com", "role_id": role.id,
-        })
+        response = self.client.post(
+            "/api/tenants/staff/",
+            {
+                "first_name": "Under",
+                "last_name": "Limit",
+                "email": "under@example.com",
+                "role_id": role.id,
+            },
+        )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
 
@@ -1421,16 +1457,16 @@ class PlatformSettingsModelTests(TestCase):
 
     def test_default_language_is_english(self):
         settings = PlatformSettings.load()
-        self.assertEqual(settings.language, 'en')
+        self.assertEqual(settings.language, "en")
 
     def test_save_always_uses_pk_1(self):
-        settings = PlatformSettings(language='bn')
+        settings = PlatformSettings(language="bn")
         settings.save()
         self.assertEqual(settings.pk, 1)
 
     def test_str(self):
         settings = PlatformSettings.load()
-        self.assertEqual(str(settings), 'PlatformSettings (language=en)')
+        self.assertEqual(str(settings), "PlatformSettings (language=en)")
 
 
 # ---------------------------------------------------------------------------
@@ -1441,36 +1477,36 @@ class PlatformSettingsModelTests(TestCase):
 class PlatformSettingsViewTests(APITestCase):
     def setUp(self):
         self.center = make_center()
-        self.superuser = make_user('super_platform', is_superuser=True)
-        self.admin_user = make_user('admin_platform')
-        make_staff(self.admin_user, self.center, 'Admin')
+        self.superuser = make_user("super_platform", is_superuser=True)
+        self.admin_user = make_user("admin_platform")
+        make_staff(self.admin_user, self.center, "Admin")
 
     def _auth(self, user):
         self.client.credentials(**jwt_auth_header(user))
 
     def test_superadmin_can_get_settings(self):
         self._auth(self.superuser)
-        response = self.client.get('/api/tenants/platform-settings/')
+        response = self.client.get("/api/tenants/platform-settings/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['language'], 'en')
+        self.assertEqual(response.data["language"], "en")
 
     def test_superadmin_can_update_language(self):
         self._auth(self.superuser)
         response = self.client.patch(
-            '/api/tenants/platform-settings/',
-            {'language': 'bn'},
-            format='json',
+            "/api/tenants/platform-settings/",
+            {"language": "bn"},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['language'], 'bn')
+        self.assertEqual(response.data["language"], "bn")
 
     def test_center_admin_denied(self):
         self._auth(self.admin_user)
-        response = self.client.get('/api/tenants/platform-settings/')
+        response = self.client.get("/api/tenants/platform-settings/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_unauthenticated_denied(self):
-        response = self.client.get('/api/tenants/platform-settings/')
+        response = self.client.get("/api/tenants/platform-settings/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
@@ -1482,16 +1518,16 @@ class PlatformSettingsViewTests(APITestCase):
 class PublicPlatformSettingsTests(APITestCase):
     def test_public_returns_language(self):
         PlatformSettings.load()  # ensure exists
-        response = self.client.get('/api/public/platform-settings/')
+        response = self.client.get("/api/public/platform-settings/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('language', response.data)
+        self.assertIn("language", response.data)
 
     def test_public_reflects_changes(self):
         settings = PlatformSettings.load()
-        settings.language = 'bn'
+        settings.language = "bn"
         settings.save()
-        response = self.client.get('/api/public/platform-settings/')
-        self.assertEqual(response.data['language'], 'bn')
+        response = self.client.get("/api/public/platform-settings/")
+        self.assertEqual(response.data["language"], "bn")
 
 
 # ---------------------------------------------------------------------------
@@ -1502,14 +1538,14 @@ class PublicPlatformSettingsTests(APITestCase):
 class CenterLanguageTests(TestCase):
     def test_center_default_language_is_english(self):
         center = make_center()
-        self.assertEqual(center.language, 'en')
+        self.assertEqual(center.language, "en")
 
     def test_center_language_can_be_set_to_bengali(self):
         center = make_center()
-        center.language = 'bn'
+        center.language = "bn"
         center.save()
         center.refresh_from_db()
-        self.assertEqual(center.language, 'bn')
+        self.assertEqual(center.language, "bn")
 
 
 # ---------------------------------------------------------------------------
@@ -1520,16 +1556,16 @@ class CenterLanguageTests(TestCase):
 class LanguageAwareSerializerTests(TestCase):
     def setUp(self):
         self.center = make_center()
-        self.center.tagline = 'English tagline'
-        self.center.tagline_bn = 'বাংলা ট্যাগলাইন'
-        self.center.language = 'bn'
+        self.center.tagline = "English tagline"
+        self.center.tagline_bn = "বাংলা ট্যাগলাইন"
+        self.center.language = "bn"
         self.center.save()
         self.service = Service.objects.create(
             center=self.center,
-            title='Blood Test',
-            title_bn='রক্ত পরীক্ষা',
-            description='Complete blood count',
-            description_bn='সম্পূর্ণ রক্ত গণনা',
+            title="Blood Test",
+            title_bn="রক্ত পরীক্ষা",
+            description="Complete blood count",
+            description_bn="সম্পূর্ণ রক্ত গণনা",
             is_active=True,
         )
 
@@ -1537,54 +1573,48 @@ class LanguageAwareSerializerTests(TestCase):
         from core.tenants.serializers import DiagnosticCenterSerializer
 
         data = DiagnosticCenterSerializer(self.center).data
-        self.assertEqual(data['tagline'], 'বাংলা ট্যাগলাইন')
+        self.assertEqual(data["tagline"], "বাংলা ট্যাগলাইন")
 
     def test_center_serializer_returns_english_when_lang_en(self):
         from core.tenants.serializers import DiagnosticCenterSerializer
 
-        self.center.language = 'en'
+        self.center.language = "en"
         self.center.save()
         data = DiagnosticCenterSerializer(self.center).data
-        self.assertEqual(data['tagline'], 'English tagline')
+        self.assertEqual(data["tagline"], "English tagline")
 
     def test_service_serializer_returns_bengali_when_bn(self):
         from core.tenants.serializers import ServiceSerializer
 
-        data = ServiceSerializer(
-            self.service, context={'language': 'bn'}
-        ).data
-        self.assertEqual(data['title'], 'রক্ত পরীক্ষা')
-        self.assertEqual(data['description'], 'সম্পূর্ণ রক্ত গণনা')
+        data = ServiceSerializer(self.service, context={"language": "bn"}).data
+        self.assertEqual(data["title"], "রক্ত পরীক্ষা")
+        self.assertEqual(data["description"], "সম্পূর্ণ রক্ত গণনা")
 
     def test_service_serializer_returns_english_when_en(self):
         from core.tenants.serializers import ServiceSerializer
 
-        data = ServiceSerializer(
-            self.service, context={'language': 'en'}
-        ).data
-        self.assertEqual(data['title'], 'Blood Test')
-        self.assertEqual(data['description'], 'Complete blood count')
+        data = ServiceSerializer(self.service, context={"language": "en"}).data
+        self.assertEqual(data["title"], "Blood Test")
+        self.assertEqual(data["description"], "Complete blood count")
 
     def test_service_falls_back_to_english_when_bn_empty(self):
         from core.tenants.serializers import ServiceSerializer
 
-        self.service.title_bn = ''
+        self.service.title_bn = ""
         self.service.save()
-        data = ServiceSerializer(
-            self.service, context={'language': 'bn'}
-        ).data
-        self.assertEqual(data['title'], 'Blood Test')
+        data = ServiceSerializer(self.service, context={"language": "bn"}).data
+        self.assertEqual(data["title"], "Blood Test")
 
     def test_doctor_serializer_returns_bengali(self):
         from core.tenants.serializers import DoctorSerializer
 
-        user = make_user('doc_lang', 'ডক্টর', 'নাম')
+        user = make_user("doc_lang", "ডক্টর", "নাম")
         doc = make_doctor(user, self.center)
-        doc.specialization = 'Cardiology'
-        doc.specialization_bn = 'হৃদরোগ বিদ্যা'
-        doc.designation = 'Consultant'
-        doc.designation_bn = 'পরামর্শদাতা'
+        doc.specialization = "Cardiology"
+        doc.specialization_bn = "হৃদরোগ বিদ্যা"
+        doc.designation = "Consultant"
+        doc.designation_bn = "পরামর্শদাতা"
         doc.save()
-        data = DoctorSerializer(doc, context={'language': 'bn'}).data
-        self.assertEqual(data['specialization'], 'হৃদরোগ বিদ্যা')
-        self.assertEqual(data['designation'], 'পরামর্শদাতা')
+        data = DoctorSerializer(doc, context={"language": "bn"}).data
+        self.assertEqual(data["specialization"], "হৃদরোগ বিদ্যা")
+        self.assertEqual(data["designation"], "পরামর্শদাতা")

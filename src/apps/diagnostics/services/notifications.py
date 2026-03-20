@@ -26,17 +26,17 @@ def send_report_ready_email(report, patient_email: str) -> bool:
     patient = report.test_order.patient
 
     # Build the report URL
-    base_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
-    report_url = f'{base_url}/report/{report.access_token}'
+    base_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    report_url = f"{base_url}/report/{report.access_token}"
 
     return send_email(
         EmailType.REPORT_READY,
         recipient=patient_email,
         context={
-            'patient_name': patient.get_full_name(),
-            'test_name': report.test_type.name,
-            'report_date': report.created_at.strftime('%d %B %Y'),
-            'center_name': center.name,
-            'report_url': report_url,
+            "patient_name": patient.get_full_name(),
+            "test_name": report.test_type.name,
+            "report_date": report.created_at.strftime("%d %B %Y"),
+            "center_name": center.name,
+            "report_url": report_url,
         },
     )

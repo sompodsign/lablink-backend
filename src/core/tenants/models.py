@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -9,8 +10,8 @@ if TYPE_CHECKING:
 
 
 class LanguageChoices(models.TextChoices):
-    ENGLISH = 'en', _('English')
-    BENGALI = 'bn', _('Bengali')
+    ENGLISH = "en", _("English")
+    BENGALI = "bn", _("Bengali")
 
 
 class DiagnosticCenter(models.Model):
@@ -25,7 +26,7 @@ class DiagnosticCenter(models.Model):
         max_length=5,
         choices=LanguageChoices.choices,
         default=LanguageChoices.ENGLISH,
-        help_text=_('Language for this center\'s public pages and dashboard'),
+        help_text=_("Language for this center's public pages and dashboard"),
     )
     tagline = models.CharField(
         max_length=255,
@@ -35,8 +36,8 @@ class DiagnosticCenter(models.Model):
     tagline_bn = models.CharField(
         max_length=255,
         blank=True,
-        default='',
-        help_text=_('Bengali translation of the tagline'),
+        default="",
+        help_text=_("Bengali translation of the tagline"),
     )
     address = models.TextField()
     contact_number = models.CharField(max_length=20)
@@ -69,6 +70,41 @@ class DiagnosticCenter(models.Model):
         default=False,
         help_text=_("Whether patients can self-book appointments online."),
     )
+    doctor_visit_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Default doctor consultation / visit fee for this center"),
+    )
+
+    # ── Print Layout ──────────────────────────────────────────────
+    class PaperSize(models.TextChoices):
+        A4 = "A4", _("A4 (210 × 297 mm)")
+        A5 = "A5", _("A5 (148 × 210 mm)")
+        LETTER = "Letter", _("Letter (216 × 279 mm)")
+
+    paper_size = models.CharField(
+        max_length=10,
+        choices=PaperSize.choices,
+        default=PaperSize.A4,
+        help_text=_("Paper size for printing invoices and reports"),
+    )
+    use_preprinted_paper = models.BooleanField(
+        default=False,
+        help_text=_(
+            "Hide digital header/footer when printing "
+            "(for pre-printed letterhead paper)"
+        ),
+    )
+    print_header_margin_mm = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Top margin in mm to skip for pre-printed header"),
+    )
+    print_footer_margin_mm = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Bottom margin in mm to skip for pre-printed footer"),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -91,14 +127,14 @@ class Service(models.Model):
     title_bn = models.CharField(
         max_length=100,
         blank=True,
-        default='',
-        help_text=_('Bengali translation of the title'),
+        default="",
+        help_text=_("Bengali translation of the title"),
     )
     description = models.TextField()
     description_bn = models.TextField(
         blank=True,
-        default='',
-        help_text=_('Bengali translation of the description'),
+        default="",
+        help_text=_("Bengali translation of the description"),
     )
     icon = models.CharField(
         max_length=10,
@@ -131,21 +167,27 @@ class Doctor(models.Model):
     specialization_bn = models.CharField(
         max_length=255,
         blank=True,
-        default='',
-        help_text=_('Bengali translation of specialization'),
+        default="",
+        help_text=_("Bengali translation of specialization"),
     )
     designation = models.CharField(max_length=255)
     designation_bn = models.CharField(
         max_length=255,
         blank=True,
-        default='',
-        help_text=_('Bengali translation of designation'),
+        default="",
+        help_text=_("Bengali translation of designation"),
     )
     bio = models.TextField(blank=True)
     bio_bn = models.TextField(
         blank=True,
-        default='',
-        help_text=_('Bengali translation of bio'),
+        default="",
+        help_text=_("Bengali translation of bio"),
+    )
+    visit_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Doctor consultation / visit fee"),
     )
 
     class Meta:
@@ -268,14 +310,14 @@ class PlatformSettings(models.Model):
         max_length=5,
         choices=LanguageChoices.choices,
         default=LanguageChoices.ENGLISH,
-        help_text=_('Default language for the main LabLink landing page'),
+        help_text=_("Default language for the main LabLink landing page"),
     )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = 'core_platform_settings'
-        verbose_name = _('platform settings')
-        verbose_name_plural = _('platform settings')
+        db_table = "core_platform_settings"
+        verbose_name = _("platform settings")
+        verbose_name_plural = _("platform settings")
 
     def save(self, *args, **kwargs):
         self.pk = 1  # Enforce singleton
@@ -287,4 +329,4 @@ class PlatformSettings(models.Model):
         return obj
 
     def __str__(self) -> str:
-        return f'PlatformSettings (language={self.language})'
+        return f"PlatformSettings (language={self.language})"

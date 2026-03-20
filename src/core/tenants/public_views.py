@@ -67,7 +67,7 @@ class PublicDoctorsView(APIView):
             DoctorSerializer(
                 doctors,
                 many=True,
-                context={'language': center.language},
+                context={"language": center.language},
             ).data
         )
 

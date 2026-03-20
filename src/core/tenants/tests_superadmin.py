@@ -191,11 +191,11 @@ class SuperadminCenterViewTests(APITestCase):
         from apps.subscriptions.models import Subscription, SubscriptionPlan
 
         SubscriptionPlan.objects.get_or_create(
-            slug='trial',
+            slug="trial",
             defaults={
-                'name': 'Free Trial',
-                'price': 0,
-                'trial_days': 14,
+                "name": "Free Trial",
+                "price": 0,
+                "trial_days": 14,
             },
         )
 
@@ -213,8 +213,8 @@ class SuperadminCenterViewTests(APITestCase):
 
         center = DiagnosticCenter.objects.get(domain="trial-center")
         sub = Subscription.objects.get(center=center)
-        self.assertEqual(sub.status, 'TRIAL')
-        self.assertEqual(sub.plan.slug, 'trial')
+        self.assertEqual(sub.status, "TRIAL")
+        self.assertEqual(sub.plan.slug, "trial")
         self.assertIsNotNone(sub.trial_start)
         self.assertIsNotNone(sub.trial_end)
         self.assertIsNotNone(sub.billing_date)

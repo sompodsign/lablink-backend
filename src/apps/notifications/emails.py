@@ -19,34 +19,34 @@ class EmailType(StrEnum):
     """Every transactional email the platform can send."""
 
     # Auth & Account
-    WELCOME_PATIENT = 'welcome_patient'
-    PASSWORD_RESET = 'password_reset'
-    PASSWORD_RESET_SUCCESS = 'password_reset_success'
-    ACCOUNT_APPROVED = 'account_approved'
-    ACCOUNT_DECLINED = 'account_declined'
+    WELCOME_PATIENT = "welcome_patient"
+    PASSWORD_RESET = "password_reset"
+    PASSWORD_RESET_SUCCESS = "password_reset_success"
+    ACCOUNT_APPROVED = "account_approved"
+    ACCOUNT_DECLINED = "account_declined"
 
     # Appointments
-    APPOINTMENT_BOOKED = 'appointment_booked'
-    APPOINTMENT_CONFIRMED = 'appointment_confirmed'
-    APPOINTMENT_CANCELLED = 'appointment_cancelled'
+    APPOINTMENT_BOOKED = "appointment_booked"
+    APPOINTMENT_CONFIRMED = "appointment_confirmed"
+    APPOINTMENT_CANCELLED = "appointment_cancelled"
 
     # Reports
-    REPORT_READY = 'report_ready'
+    REPORT_READY = "report_ready"
 
     # Staff & Doctor Credentials
-    STAFF_CREDENTIALS = 'staff_credentials'
-    DOCTOR_CREDENTIALS = 'doctor_credentials'
+    STAFF_CREDENTIALS = "staff_credentials"
+    DOCTOR_CREDENTIALS = "doctor_credentials"
 
     # Subscriptions & Billing
-    TRIAL_EXPIRY_WARNING = 'trial_expiry_warning'
-    TRIAL_EXPIRED = 'trial_expired'
-    INVOICE_GENERATED = 'invoice_generated'
-    INVOICE_OVERDUE = 'invoice_overdue'
-    PAYMENT_RECEIVED = 'payment_received'
+    TRIAL_EXPIRY_WARNING = "trial_expiry_warning"
+    TRIAL_EXPIRED = "trial_expired"
+    INVOICE_GENERATED = "invoice_generated"
+    INVOICE_OVERDUE = "invoice_overdue"
+    PAYMENT_RECEIVED = "payment_received"
 
     # Admin Operations
-    CENTER_CREATED = 'center_created'
-    CENTER_DEACTIVATED = 'center_deactivated'
+    CENTER_CREATED = "center_created"
+    CENTER_DEACTIVATED = "center_deactivated"
 
 
 def send_email(
@@ -68,11 +68,11 @@ def send_email(
     """
     template = TEMPLATES.get(str(email_type))
     if not template:
-        logger.error('Unknown email type: %s', email_type)
+        logger.error("Unknown email type: %s", email_type)
         return False
 
     if not recipient:
-        logger.warning('Empty recipient for email type: %s', email_type)
+        logger.warning("Empty recipient for email type: %s", email_type)
         return False
 
     subject_tpl, body_tpl = template
@@ -82,9 +82,9 @@ def send_email(
         body = body_tpl.format(**context)
     except KeyError:
         logger.exception(
-            'Missing context key for email type %s',
+            "Missing context key for email type %s",
             email_type,
-            extra={'context_keys': list(context.keys())},
+            extra={"context_keys": list(context.keys())},
         )
         return False
 
@@ -97,14 +97,14 @@ def send_email(
             fail_silently=False,
         )
         logger.info(
-            'Email sent: %s → %s',
+            "Email sent: %s → %s",
             email_type,
             recipient,
         )
         return True
     except Exception:
         logger.exception(
-            'Failed to send email: %s → %s',
+            "Failed to send email: %s → %s",
             email_type,
             recipient,
         )

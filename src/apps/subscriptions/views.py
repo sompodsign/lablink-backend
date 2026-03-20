@@ -1,3 +1,4 @@
+import contextlib
 import logging
 
 from rest_framework import permissions, status
@@ -5,7 +6,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.notifications.emails import EmailType, send_email_async
-
 from core.tenants.permissions import IsCenterAdmin, IsSuperAdmin
 
 from .models import Invoice, Subscription, SubscriptionPlan
@@ -45,28 +45,28 @@ class CenterRegistrationView(APIView):
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
 
-        center = result['center']
-        subscription = result['subscription']
+        center = result["center"]
+        subscription = result["subscription"]
 
         response_data = {
-            'detail': 'Center registered successfully!',
-            'center': {
-                'id': center.id,
-                'name': center.name,
-                'domain': center.domain,
+            "detail": "Center registered successfully!",
+            "center": {
+                "id": center.id,
+                "name": center.name,
+                "domain": center.domain,
             },
-            'subscription': {
-                'plan': subscription.plan.name,
-                'status': subscription.status,
-                'trial_end': (
+            "subscription": {
+                "plan": subscription.plan.name,
+                "status": subscription.status,
+                "trial_end": (
                     subscription.trial_end.isoformat()
                     if subscription.trial_end
                     else None
                 ),
             },
-            'admin': {
-                'username': result['admin_user'].username,
-                'email': result['admin_user'].email,
+            "admin": {
+                "username": result["admin_user"].username,
+                "email": result["admin_user"].email,
             },
         }
 
@@ -85,17 +85,17 @@ class CenterSubscriptionView(APIView):
         tenant = request.tenant
         if not tenant:
             return Response(
-                {'detail': 'No center context.'},
+                {"detail": "No center context."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         try:
-            subscription = Subscription.objects.select_related('plan').get(
+            subscription = Subscription.objects.select_related("plan").get(
                 center=tenant,
             )
         except Subscription.DoesNotExist:
             return Response(
-                {'detail': 'No subscription found for this center.'},
+                {"detail": "No subscription found for this center."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -112,14 +112,14 @@ class SubscriptionStatusView(APIView):
         tenant = request.tenant
         if not tenant:
             return Response(
-                {'status': 'NONE', 'is_blocked': False},
+                {"status": "NONE", "is_blocked": False},
             )
 
         from django.core.cache import cache
 
         from core.tenants.models import Staff
 
-        cache_key = f'sub_status:{tenant.id}'
+        cache_key = f"sub_status:{tenant.id}"
         cached = cache.get(cache_key)
 
         max_staff = -1
@@ -127,43 +127,41 @@ class SubscriptionStatusView(APIView):
             sub_status = cached
         else:
             try:
-                sub = Subscription.objects.select_related('plan').filter(
-                    center=tenant,
-                ).latest('started_at')
+                sub = (
+                    Subscription.objects.select_related("plan")
+                    .filter(
+                        center=tenant,
+                    )
+                    .latest("started_at")
+                )
                 sub_status = sub.status
                 max_staff = sub.plan.max_staff
             except Subscription.DoesNotExist:
-                sub_status = 'NONE'
+                sub_status = "NONE"
             cache.set(cache_key, sub_status, 300)
 
         # If we got status from cache, still need max_staff
         if cached:
             try:
-                sub = Subscription.objects.select_related('plan').filter(
-                    center=tenant,
-                ).latest('started_at')
+                sub = (
+                    Subscription.objects.select_related("plan")
+                    .filter(
+                        center=tenant,
+                    )
+                    .latest("started_at")
+                )
                 max_staff = sub.plan.max_staff
             except Subscription.DoesNotExist:
                 pass
 
-        is_blocked = sub_status in ('EXPIRED', 'CANCELLED', 'NONE')
+        is_blocked = sub_status in ("EXPIRED", "CANCELLED", "NONE")
         current_staff_count = Staff.objects.filter(center=tenant).count()
-        staff_limit_reached = (
-            max_staff != -1 and current_staff_count >= max_staff
-        )
+        staff_limit_reached = max_staff != -1 and current_staff_count >= max_staff
 
         # Report usage this month
         max_reports = -1
-        if cached:
-            try:
-                max_reports = sub.plan.max_reports
-            except Exception:
-                pass
-        else:
-            try:
-                max_reports = sub.plan.max_reports
-            except Exception:
-                pass
+        with contextlib.suppress(Exception):
+            max_reports = sub.plan.max_reports
 
         from django.utils import timezone as tz
 
@@ -176,21 +174,21 @@ class SubscriptionStatusView(APIView):
             created_at__month=now.month,
             is_deleted=False,
         ).count()
-        report_limit_reached = (
-            max_reports != -1 and current_report_count >= max_reports
-        )
+        report_limit_reached = max_reports != -1 and current_report_count >= max_reports
 
-        return Response({
-            'status': sub_status,
-            'is_blocked': is_blocked,
-            'center_name': tenant.name,
-            'max_staff': max_staff,
-            'current_staff_count': current_staff_count,
-            'staff_limit_reached': staff_limit_reached,
-            'max_reports': max_reports,
-            'current_report_count': current_report_count,
-            'report_limit_reached': report_limit_reached,
-        })
+        return Response(
+            {
+                "status": sub_status,
+                "is_blocked": is_blocked,
+                "center_name": tenant.name,
+                "max_staff": max_staff,
+                "current_staff_count": current_staff_count,
+                "staff_limit_reached": staff_limit_reached,
+                "max_reports": max_reports,
+                "current_report_count": current_report_count,
+                "report_limit_reached": report_limit_reached,
+            }
+        )
 
 
 # ── Superadmin Views ─────────────────────────────────────────────
@@ -203,17 +201,17 @@ class SuperadminSubscriptionListView(APIView):
 
     def get(self, request):
         subscriptions = (
-            Subscription.objects.select_related('plan', 'center')
-            .prefetch_related('invoices')
-            .order_by('-started_at')
+            Subscription.objects.select_related("plan", "center")
+            .prefetch_related("invoices")
+            .order_by("-started_at")
         )
 
         # Optional filters
-        status_filter = request.query_params.get('status')
+        status_filter = request.query_params.get("status")
         if status_filter:
             subscriptions = subscriptions.filter(status=status_filter.upper())
 
-        search = request.query_params.get('search', '').strip()
+        search = request.query_params.get("search", "").strip()
         if search:
             subscriptions = subscriptions.filter(
                 center__name__icontains=search,
@@ -221,27 +219,29 @@ class SuperadminSubscriptionListView(APIView):
 
         data = []
         for sub in subscriptions[:100]:
-            data.append({  # noqa: PERF401
-                'id': sub.id,
-                'center_id': sub.center.id,
-                'center_name': sub.center.name,
-                'center_domain': sub.center.domain,
-                'plan_name': sub.plan.name,
-                'plan_price': str(sub.plan.price),
-                'status': sub.status,
-                'trial_start': (
-                    sub.trial_start.isoformat() if sub.trial_start else None
-                ),
-                'trial_end': sub.trial_end.isoformat() if sub.trial_end else None,
-                'billing_date': (
-                    sub.billing_date.isoformat() if sub.billing_date else None
-                ),
-                'started_at': sub.started_at.isoformat(),
-                'invoices_count': sub.invoices.count(),
-                'pending_invoices': sub.invoices.filter(
-                    status=Invoice.Status.PENDING,
-                ).count(),
-            })
+            data.append(
+                {  # noqa: PERF401
+                    "id": sub.id,
+                    "center_id": sub.center.id,
+                    "center_name": sub.center.name,
+                    "center_domain": sub.center.domain,
+                    "plan_name": sub.plan.name,
+                    "plan_price": str(sub.plan.price),
+                    "status": sub.status,
+                    "trial_start": (
+                        sub.trial_start.isoformat() if sub.trial_start else None
+                    ),
+                    "trial_end": sub.trial_end.isoformat() if sub.trial_end else None,
+                    "billing_date": (
+                        sub.billing_date.isoformat() if sub.billing_date else None
+                    ),
+                    "started_at": sub.started_at.isoformat(),
+                    "invoices_count": sub.invoices.count(),
+                    "pending_invoices": sub.invoices.filter(
+                        status=Invoice.Status.PENDING,
+                    ).count(),
+                }
+            )
 
         return Response(data)
 
@@ -253,15 +253,15 @@ class SuperadminInvoiceListView(APIView):
 
     def get(self, request):
         invoices = Invoice.objects.select_related(
-            'subscription__center',
-            'subscription__plan',
-        ).order_by('-created_at')
+            "subscription__center",
+            "subscription__plan",
+        ).order_by("-created_at")
 
-        status_filter = request.query_params.get('status')
+        status_filter = request.query_params.get("status")
         if status_filter:
             invoices = invoices.filter(status=status_filter.upper())
 
-        center_id = request.query_params.get('center')
+        center_id = request.query_params.get("center")
         if center_id:
             invoices = invoices.filter(
                 subscription__center_id=center_id,
@@ -269,20 +269,22 @@ class SuperadminInvoiceListView(APIView):
 
         data = []
         for inv in invoices[:100]:
-            data.append({  # noqa: PERF401
-                'id': inv.id,
-                'center_name': inv.subscription.center.name,
-                'center_domain': inv.subscription.center.domain,
-                'plan_name': inv.subscription.plan.name,
-                'amount': str(inv.amount),
-                'status': inv.status,
-                'payment_method': inv.payment_method,
-                'due_date': inv.due_date.isoformat(),
-                'paid_at': inv.paid_at.isoformat() if inv.paid_at else None,
-                'transaction_id': inv.transaction_id,
-                'notes': inv.notes,
-                'created_at': inv.created_at.isoformat(),
-            })
+            data.append(
+                {  # noqa: PERF401
+                    "id": inv.id,
+                    "center_name": inv.subscription.center.name,
+                    "center_domain": inv.subscription.center.domain,
+                    "plan_name": inv.subscription.plan.name,
+                    "amount": str(inv.amount),
+                    "status": inv.status,
+                    "payment_method": inv.payment_method,
+                    "due_date": inv.due_date.isoformat(),
+                    "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
+                    "transaction_id": inv.transaction_id,
+                    "notes": inv.notes,
+                    "created_at": inv.created_at.isoformat(),
+                }
+            )
 
         return Response(data)
 
@@ -295,17 +297,17 @@ class SuperadminInvoiceMarkPaidView(APIView):
     def post(self, request, invoice_id):
         try:
             invoice = Invoice.objects.select_related(
-                'subscription',
+                "subscription",
             ).get(pk=invoice_id)
         except Invoice.DoesNotExist:
             return Response(
-                {'detail': 'Invoice not found.'},
+                {"detail": "Invoice not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         if invoice.status == Invoice.Status.PAID:
             return Response(
-                {'detail': 'Invoice is already paid.'},
+                {"detail": "Invoice is already paid."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -315,21 +317,21 @@ class SuperadminInvoiceMarkPaidView(APIView):
         invoice.status = Invoice.Status.PAID
         invoice.paid_at = timezone.now()
         invoice.payment_method = request.data.get(
-            'payment_method', invoice.payment_method
+            "payment_method", invoice.payment_method
         )
         invoice.transaction_id = request.data.get(
-            'transaction_id', invoice.transaction_id
+            "transaction_id", invoice.transaction_id
         )
-        invoice.notes = request.data.get('notes', invoice.notes)
+        invoice.notes = request.data.get("notes", invoice.notes)
         invoice.save()
 
         # Activate subscription
         sub = invoice.subscription
         sub.status = Subscription.Status.ACTIVE
-        sub.save(update_fields=['status'])
+        sub.save(update_fields=["status"])
 
         logger.info(
-            'Invoice #%s marked paid by superadmin %s',
+            "Invoice #%s marked paid by superadmin %s",
             invoice.id,
             request.user.username,
         )
@@ -341,16 +343,18 @@ class SuperadminInvoiceMarkPaidView(APIView):
                 EmailType.PAYMENT_RECEIVED,
                 recipient=center.email,
                 context={
-                    'center_name': center.name,
-                    'amount': str(invoice.amount),
-                    'plan_name': sub.plan.name,
+                    "center_name": center.name,
+                    "amount": str(invoice.amount),
+                    "plan_name": sub.plan.name,
                 },
             )
 
-        return Response({
-            'detail': f'Invoice #{invoice.id} marked as paid. Subscription activated.',
-            'invoice': InvoiceSerializer(invoice).data,
-        })
+        return Response(
+            {
+                "detail": f"Invoice #{invoice.id} marked as paid. Subscription activated.",
+                "invoice": InvoiceSerializer(invoice).data,
+            }
+        )
 
 
 class SuperadminInvoiceMarkUnpaidView(APIView):
@@ -361,35 +365,37 @@ class SuperadminInvoiceMarkUnpaidView(APIView):
     def post(self, request, invoice_id):
         try:
             invoice = Invoice.objects.select_related(
-                'subscription',
+                "subscription",
             ).get(pk=invoice_id)
         except Invoice.DoesNotExist:
             return Response(
-                {'detail': 'Invoice not found.'},
+                {"detail": "Invoice not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         if invoice.status != Invoice.Status.PAID:
             return Response(
-                {'detail': 'Invoice is not paid.'},
+                {"detail": "Invoice is not paid."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Revert invoice
         invoice.status = Invoice.Status.PENDING
         invoice.paid_at = None
-        invoice.save(update_fields=['status', 'paid_at'])
+        invoice.save(update_fields=["status", "paid_at"])
 
         logger.info(
-            'Invoice #%s reverted to unpaid by superadmin %s',
+            "Invoice #%s reverted to unpaid by superadmin %s",
             invoice.id,
             request.user.username,
         )
 
-        return Response({
-            'detail': f'Invoice #{invoice.id} reverted to pending.',
-            'invoice': InvoiceSerializer(invoice).data,
-        })
+        return Response(
+            {
+                "detail": f"Invoice #{invoice.id} reverted to pending.",
+                "invoice": InvoiceSerializer(invoice).data,
+            }
+        )
 
 
 class SuperadminExtendTrialView(APIView):
@@ -399,19 +405,19 @@ class SuperadminExtendTrialView(APIView):
 
     def post(self, request, subscription_id):
         try:
-            sub = Subscription.objects.select_related('center').get(
+            sub = Subscription.objects.select_related("center").get(
                 pk=subscription_id,
             )
         except Subscription.DoesNotExist:
             return Response(
-                {'detail': 'Subscription not found.'},
+                {"detail": "Subscription not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        days = request.data.get('days')
+        days = request.data.get("days")
         if not days or not isinstance(days, int) or days < 1:
             return Response(
-                {'detail': 'Provide a positive integer "days" value.'},
+                {"detail": 'Provide a positive integer "days" value.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -431,24 +437,31 @@ class SuperadminExtendTrialView(APIView):
         sub.trial_start = sub.trial_start or timezone.now()
         sub.status = Subscription.Status.TRIAL
         sub.billing_date = sub.trial_end.date()
-        sub.save(update_fields=[
-            'status', 'trial_start', 'trial_end', 'billing_date',
-        ])
+        sub.save(
+            update_fields=[
+                "status",
+                "trial_start",
+                "trial_end",
+                "billing_date",
+            ]
+        )
 
         # Invalidate cached status
-        cache.delete(f'sub_status:{sub.center_id}')
+        cache.delete(f"sub_status:{sub.center_id}")
 
         logger.info(
-            'Trial extended by %d days for %s by superadmin %s',
+            "Trial extended by %d days for %s by superadmin %s",
             days,
             sub.center.name,
             request.user.username,
         )
 
-        return Response({
-            'detail': f'Trial extended by {days} days for {sub.center.name}.',
-            'subscription': SubscriptionSerializer(sub).data,
-        })
+        return Response(
+            {
+                "detail": f"Trial extended by {days} days for {sub.center.name}.",
+                "subscription": SubscriptionSerializer(sub).data,
+            }
+        )
 
 
 class SuperadminChangePlanView(APIView):
@@ -458,19 +471,19 @@ class SuperadminChangePlanView(APIView):
 
     def post(self, request, subscription_id):
         try:
-            sub = Subscription.objects.select_related('center', 'plan').get(
+            sub = Subscription.objects.select_related("center", "plan").get(
                 pk=subscription_id,
             )
         except Subscription.DoesNotExist:
             return Response(
-                {'detail': 'Subscription not found.'},
+                {"detail": "Subscription not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        plan_id = request.data.get('plan_id')
+        plan_id = request.data.get("plan_id")
         if not plan_id:
             return Response(
-                {'detail': 'Provide a "plan_id".'},
+                {"detail": 'Provide a "plan_id".'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -478,7 +491,7 @@ class SuperadminChangePlanView(APIView):
             new_plan = SubscriptionPlan.objects.get(pk=plan_id, is_active=True)
         except SubscriptionPlan.DoesNotExist:
             return Response(
-                {'detail': 'Plan not found or inactive.'},
+                {"detail": "Plan not found or inactive."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -491,26 +504,28 @@ class SuperadminChangePlanView(APIView):
         sub.plan = new_plan
         sub.status = Subscription.Status.ACTIVE
         sub.billing_date = (timezone.now() + timedelta(days=30)).date()
-        sub.save(update_fields=['plan', 'status', 'billing_date'])
+        sub.save(update_fields=["plan", "status", "billing_date"])
 
         # Invalidate cached status
-        cache.delete(f'sub_status:{sub.center_id}')
+        cache.delete(f"sub_status:{sub.center_id}")
 
         logger.info(
-            'Plan changed from %s to %s for %s by superadmin %s',
+            "Plan changed from %s to %s for %s by superadmin %s",
             old_plan_name,
             new_plan.name,
             sub.center.name,
             request.user.username,
         )
 
-        return Response({
-            'detail': (
-                f'Plan changed to {new_plan.name} for {sub.center.name}. '
-                f'Subscription activated.'
-            ),
-            'subscription': SubscriptionSerializer(sub).data,
-        })
+        return Response(
+            {
+                "detail": (
+                    f"Plan changed to {new_plan.name} for {sub.center.name}. "
+                    f"Subscription activated."
+                ),
+                "subscription": SubscriptionSerializer(sub).data,
+            }
+        )
 
 
 class SuperadminCreateInvoiceView(APIView):
@@ -520,12 +535,12 @@ class SuperadminCreateInvoiceView(APIView):
 
     def post(self, request, subscription_id):
         try:
-            sub = Subscription.objects.select_related('center', 'plan').get(
+            sub = Subscription.objects.select_related("center", "plan").get(
                 pk=subscription_id,
             )
         except Subscription.DoesNotExist:
             return Response(
-                {'detail': 'Subscription not found.'},
+                {"detail": "Subscription not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -533,10 +548,10 @@ class SuperadminCreateInvoiceView(APIView):
         from decimal import Decimal, InvalidOperation
 
         # Validate amount
-        raw_amount = request.data.get('amount')
+        raw_amount = request.data.get("amount")
         if not raw_amount:
             return Response(
-                {'detail': 'Provide an "amount".'},
+                {"detail": 'Provide an "amount".'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
@@ -545,26 +560,26 @@ class SuperadminCreateInvoiceView(APIView):
                 raise ValueError
         except (InvalidOperation, ValueError):
             return Response(
-                {'detail': 'Amount must be a positive number.'},
+                {"detail": "Amount must be a positive number."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Validate due_date
-        raw_due_date = request.data.get('due_date')
+        raw_due_date = request.data.get("due_date")
         if not raw_due_date:
             return Response(
-                {'detail': 'Provide a "due_date" (YYYY-MM-DD).'},
+                {"detail": 'Provide a "due_date" (YYYY-MM-DD).'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
             due_date = date.fromisoformat(raw_due_date)
         except (ValueError, TypeError):
             return Response(
-                {'detail': 'Invalid due_date format. Use YYYY-MM-DD.'},
+                {"detail": "Invalid due_date format. Use YYYY-MM-DD."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        notes = request.data.get('notes', '')
+        notes = request.data.get("notes", "")
 
         invoice = Invoice.objects.create(
             subscription=sub,
@@ -575,7 +590,7 @@ class SuperadminCreateInvoiceView(APIView):
         )
 
         logger.info(
-            'Custom invoice #%s created for %s (৳%s) by superadmin %s',
+            "Custom invoice #%s created for %s (৳%s) by superadmin %s",
             invoice.id,
             sub.center.name,
             amount,
@@ -591,19 +606,19 @@ class SuperadminCreateInvoiceView(APIView):
                 EmailType.INVOICE_GENERATED,
                 recipient=admin_email,
                 context={
-                    'center_name': sub.center.name,
-                    'amount': str(amount),
-                    'due_date': str(due_date),
+                    "center_name": sub.center.name,
+                    "amount": str(amount),
+                    "due_date": str(due_date),
                 },
             )
 
         return Response(
             {
-                'detail': (
-                    f'Invoice #{invoice.id} created for {sub.center.name} '
-                    f'(৳{amount}, due {due_date}).'
+                "detail": (
+                    f"Invoice #{invoice.id} created for {sub.center.name} "
+                    f"(৳{amount}, due {due_date})."
                 ),
-                'invoice': InvoiceSerializer(invoice).data,
+                "invoice": InvoiceSerializer(invoice).data,
             },
             status=status.HTTP_201_CREATED,
         )

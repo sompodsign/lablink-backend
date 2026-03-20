@@ -11,6 +11,7 @@ from apps.diagnostics.models import (
     TestOrder,
     TestType,
 )
+from apps.payments.models import Invoice, InvoiceItem
 from core.tenants.models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from core.users.models import PatientProfile
 
@@ -222,6 +223,33 @@ def make_report_template(test_type, center, fields=None):
         test_type=test_type,
         center=center,
         fields=fields,
+    )
+
+
+def make_invoice(patient, center, created_by=None, **kwargs):
+    defaults = {
+        "status": Invoice.Status.ISSUED,
+    }
+    defaults.update(kwargs)
+    return Invoice.objects.create(
+        patient=patient,
+        center=center,
+        created_by=created_by,
+        **defaults,
+    )
+
+
+def make_invoice_item(invoice, **kwargs):
+    defaults = {
+        "item_type": InvoiceItem.ItemType.TEST,
+        "description": "CBC Test",
+        "quantity": 1,
+        "unit_price": "500.00",
+    }
+    defaults.update(kwargs)
+    return InvoiceItem.objects.create(
+        invoice=invoice,
+        **defaults,
     )
 
 

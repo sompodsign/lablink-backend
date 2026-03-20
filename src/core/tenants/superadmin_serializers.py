@@ -6,7 +6,6 @@ from django.db import transaction
 from rest_framework import serializers
 
 from apps.notifications.emails import EmailType, send_email
-
 from core.users.models import PatientProfile
 
 from .models import DiagnosticCenter, Doctor, Permission, Staff
@@ -124,7 +123,7 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
         center.available_permissions.set(Permission.objects.all())
 
         # Auto-create trial subscription
-        trial_plan = SubscriptionPlan.objects.filter(slug='trial').first()
+        trial_plan = SubscriptionPlan.objects.filter(slug="trial").first()
         if trial_plan:
             now = timezone.now()
             Subscription.objects.create(
@@ -141,7 +140,7 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
             send_email(
                 EmailType.CENTER_CREATED,
                 recipient=center.email,
-                context={'center_name': center.name},
+                context={"center_name": center.name},
             )
 
         return center
@@ -295,9 +294,13 @@ class SuperadminStaffCreateSerializer(serializers.Serializer):
 
         # Enforce max_staff limit
         try:
-            sub = Subscription.objects.select_related("plan").filter(
-                center=center,
-            ).latest("started_at")
+            sub = (
+                Subscription.objects.select_related("plan")
+                .filter(
+                    center=center,
+                )
+                .latest("started_at")
+            )
             max_staff = sub.plan.max_staff
         except Subscription.DoesNotExist:
             max_staff = -1
@@ -356,11 +359,11 @@ class SuperadminStaffCreateSerializer(serializers.Serializer):
                 EmailType.STAFF_CREDENTIALS,
                 recipient=user.email,
                 context={
-                    'first_name': user.first_name,
-                    'role_name': role.name,
-                    'center_name': center.name,
-                    'username': username,
-                    'password': password,
+                    "first_name": user.first_name,
+                    "role_name": role.name,
+                    "center_name": center.name,
+                    "username": username,
+                    "password": password,
                 },
             )
 

@@ -99,6 +99,9 @@ class CenterTestPricingViewSet(viewsets.ModelViewSet):
             "test_type"
         )
 
+    def perform_create(self, serializer):
+        serializer.save(center=self.request.tenant)
+
 
 # ─── Report Templates ─────────────────────────────────────────────
 
@@ -459,9 +462,13 @@ class ReportViewSet(viewsets.ModelViewSet):
             from apps.subscriptions.models import Subscription
 
             try:
-                sub = Subscription.objects.select_related('plan').filter(
-                    center=tenant,
-                ).latest('started_at')
+                sub = (
+                    Subscription.objects.select_related("plan")
+                    .filter(
+                        center=tenant,
+                    )
+                    .latest("started_at")
+                )
                 max_reports = sub.plan.max_reports
                 if max_reports != -1:
                     now = timezone.now()
@@ -474,12 +481,12 @@ class ReportViewSet(viewsets.ModelViewSet):
                     if current_count >= max_reports:
                         return Response(
                             {
-                                'detail': (
-                                    f'Monthly report limit ({max_reports}) reached. '
-                                    f'Upgrade your plan for more reports.'
+                                "detail": (
+                                    f"Monthly report limit ({max_reports}) reached. "
+                                    f"Upgrade your plan for more reports."
                                 ),
-                                'current_count': current_count,
-                                'max_reports': max_reports,
+                                "current_count": current_count,
+                                "max_reports": max_reports,
                             },
                             status=status.HTTP_403_FORBIDDEN,
                         )

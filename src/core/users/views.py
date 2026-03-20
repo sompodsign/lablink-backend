@@ -12,7 +12,6 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.notifications.emails import EmailType, send_email
-
 from core.tenants.permissions import IsCenterStaff, IsCenterStaffOrDoctor
 from core.users.serializers import (
     PatientRegistrationSerializer,
@@ -212,8 +211,8 @@ class PasswordResetRequestView(APIView):
             EmailType.PASSWORD_RESET,
             recipient=user.email,
             context={
-                'user_name': user.get_full_name() or user.username,
-                'reset_url': reset_url,
+                "user_name": user.get_full_name() or user.username,
+                "reset_url": reset_url,
             },
         )
         return Response(
@@ -280,7 +279,7 @@ class PasswordResetConfirmView(APIView):
             send_email(
                 EmailType.PASSWORD_RESET_SUCCESS,
                 recipient=user.email,
-                context={'user_name': user.get_full_name() or user.username},
+                context={"user_name": user.get_full_name() or user.username},
             )
 
         return Response(
@@ -319,24 +318,24 @@ class RegisterView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = serializer.save()
         center = _resolve_center_from_request(self.request)
-        center_name = center.name if center else 'LabLink'
+        center_name = center.name if center else "LabLink"
 
         # Build login URL from request origin
-        origin = self.request.META.get('HTTP_ORIGIN', '')
+        origin = self.request.META.get("HTTP_ORIGIN", "")
         if not origin:
             host = self.request.get_host()
-            scheme = 'https' if self.request.is_secure() else 'http'
-            origin = f'{scheme}://{host}'
-        login_url = f'{origin.rstrip("/")}/login'
+            scheme = "https" if self.request.is_secure() else "http"
+            origin = f"{scheme}://{host}"
+        login_url = f"{origin.rstrip('/')}/login"
 
         if user.email:
             send_email(
                 EmailType.WELCOME_PATIENT,
                 recipient=user.email,
                 context={
-                    'patient_name': user.get_full_name() or user.username,
-                    'center_name': center_name,
-                    'login_url': login_url,
+                    "patient_name": user.get_full_name() or user.username,
+                    "center_name": center_name,
+                    "login_url": login_url,
                 },
             )
 
@@ -418,7 +417,7 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         tenant = self.request.tenant
-        return (
+        qs = (
             User.objects.filter(
                 Q(patient_profile__registered_at_center=tenant)
                 | Q(appointments__center=tenant)
@@ -427,6 +426,18 @@ class PatientViewSet(viewsets.ModelViewSet):
             .distinct()
             .order_by("first_name", "last_name")
         )
+
+        # Search filter for autocomplete
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.filter(
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(phone_number__icontains=search)
+                | Q(email__icontains=search)
+            )[:20]
+
+        return qs
 
     def get_serializer_class(self):
         if self.action == "create":

@@ -591,11 +591,11 @@ class StaffViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema(
-    tags=['Settings'],
-    summary='Get or update platform-wide settings',
+    tags=["Settings"],
+    summary="Get or update platform-wide settings",
     description=(
-        'SuperAdmin reads or updates global platform settings '
-        '(e.g. default language for the main landing page).'
+        "SuperAdmin reads or updates global platform settings "
+        "(e.g. default language for the main landing page)."
     ),
 )
 class PlatformSettingsView(APIView):
@@ -622,7 +622,7 @@ class PlatformSettingsView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         logger.info(
-            'Platform settings updated',
-            extra={'fields': list(request.data.keys())},
+            "Platform settings updated",
+            extra={"fields": list(request.data.keys())},
         )
         return Response(serializer.data)

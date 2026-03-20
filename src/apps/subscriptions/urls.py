@@ -16,64 +16,64 @@ from .views import (
 
 # Public (no auth)
 public_patterns = [
-    path('plans/', PublicPlanListView.as_view(), name='public-plans'),
+    path("plans/", PublicPlanListView.as_view(), name="public-plans"),
     path(
-        'register-center/',
+        "register-center/",
         CenterRegistrationView.as_view(),
-        name='register-center',
+        name="register-center",
     ),
 ]
 
 # Center admin (auth required)
 center_patterns = [
     path(
-        'my-subscription/',
+        "my-subscription/",
         CenterSubscriptionView.as_view(),
-        name='center-subscription',
+        name="center-subscription",
     ),
     path(
-        'status/',
+        "status/",
         SubscriptionStatusView.as_view(),
-        name='subscription-status',
+        name="subscription-status",
     ),
 ]
 
 # Superadmin
 superadmin_patterns = [
     path(
-        'subscriptions/',
+        "subscriptions/",
         SuperadminSubscriptionListView.as_view(),
-        name='sa-subscriptions',
+        name="sa-subscriptions",
     ),
     path(
-        'invoices/',
+        "invoices/",
         SuperadminInvoiceListView.as_view(),
-        name='sa-invoices',
+        name="sa-invoices",
     ),
     path(
-        'invoices/<int:invoice_id>/mark-paid/',
+        "invoices/<int:invoice_id>/mark-paid/",
         SuperadminInvoiceMarkPaidView.as_view(),
-        name='sa-invoice-mark-paid',
+        name="sa-invoice-mark-paid",
     ),
     path(
-        'invoices/<int:invoice_id>/mark-unpaid/',
+        "invoices/<int:invoice_id>/mark-unpaid/",
         SuperadminInvoiceMarkUnpaidView.as_view(),
-        name='sa-invoice-mark-unpaid',
+        name="sa-invoice-mark-unpaid",
     ),
     path(
-        'subscriptions/<int:subscription_id>/extend-trial/',
+        "subscriptions/<int:subscription_id>/extend-trial/",
         SuperadminExtendTrialView.as_view(),
-        name='sa-extend-trial',
+        name="sa-extend-trial",
     ),
     path(
-        'subscriptions/<int:subscription_id>/change-plan/',
+        "subscriptions/<int:subscription_id>/change-plan/",
         SuperadminChangePlanView.as_view(),
-        name='sa-change-plan',
+        name="sa-change-plan",
     ),
     path(
-        'subscriptions/<int:subscription_id>/create-invoice/',
+        "subscriptions/<int:subscription_id>/create-invoice/",
         SuperadminCreateInvoiceView.as_view(),
-        name='sa-create-invoice',
+        name="sa-create-invoice",
     ),
 ]
 

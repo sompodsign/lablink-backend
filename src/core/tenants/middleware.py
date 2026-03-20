@@ -27,7 +27,7 @@ _SOFT_BLOCK_EXEMPT_PREFIXES = (
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 # Subscription statuses that trigger soft-block
-_BLOCKED_STATUSES = {"EXPIRED", "CANCELLED"}
+_BLOCKED_STATUSES = {"EXPIRED", "CANCELLED", "NONE"}
 
 
 def _extract_subdomain(host: str) -> str | None:
@@ -78,10 +78,10 @@ def _get_subscription_status(center) -> str | None:
     from apps.subscriptions.models import Subscription
 
     try:
-        sub = Subscription.objects.filter(center=center).latest('started_at')
+        sub = Subscription.objects.filter(center=center).latest("started_at")
         status = sub.status
     except Subscription.DoesNotExist:
-        status = 'NONE'
+        status = "NONE"
 
     cache.set(cache_key, status, 300)  # 5 minutes
     return status
@@ -192,4 +192,3 @@ class TenantMiddleware:
             return DiagnosticCenter.objects.first()
 
         return None
-

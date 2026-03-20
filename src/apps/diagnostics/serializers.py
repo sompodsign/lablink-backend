@@ -29,6 +29,7 @@ class CenterTestPricingSerializer(serializers.ModelSerializer):
     class Meta:
         model = CenterTestPricing
         fields = "__all__"
+        read_only_fields = ["center"]
 
 
 # ─── Report Template ───────────────────────────────────────────────
@@ -407,6 +408,11 @@ class ReportPrintSerializer(serializers.ModelSerializer):
             "email": center.email or "",
             "logo": logo_url,
             "primary_color": center.primary_color,
+            # Print layout
+            "paper_size": center.paper_size,
+            "use_preprinted_paper": center.use_preprinted_paper,
+            "print_header_margin_mm": center.print_header_margin_mm,
+            "print_footer_margin_mm": center.print_footer_margin_mm,
         }
 
     def get_patient(self, obj):

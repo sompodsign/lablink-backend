@@ -5,72 +5,201 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('tenants', '0013_diagnosticcenter_allow_online_appointments'),
+        ("tenants", "0013_diagnosticcenter_allow_online_appointments"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SubscriptionPlan',
+            name="SubscriptionPlan",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=100)),
-                ('slug', models.SlugField(help_text='URL-safe identifier', unique=True)),
-                ('price', models.DecimalField(decimal_places=2, help_text='Monthly price in BDT', max_digits=10)),
-                ('trial_days', models.IntegerField(default=14, help_text='Number of free trial days')),
-                ('max_staff', models.IntegerField(default=-1, help_text='-1 means unlimited')),
-                ('features', models.JSONField(default=list, help_text='List of feature strings for display')),
-                ('is_active', models.BooleanField(default=True, help_text='Available for new subscriptions')),
-                ('display_order', models.IntegerField(default=0, help_text='Ordering on pricing page')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=100)),
+                (
+                    "slug",
+                    models.SlugField(help_text="URL-safe identifier", unique=True),
+                ),
+                (
+                    "price",
+                    models.DecimalField(
+                        decimal_places=2,
+                        help_text="Monthly price in BDT",
+                        max_digits=10,
+                    ),
+                ),
+                (
+                    "trial_days",
+                    models.IntegerField(
+                        default=14, help_text="Number of free trial days"
+                    ),
+                ),
+                (
+                    "max_staff",
+                    models.IntegerField(default=-1, help_text="-1 means unlimited"),
+                ),
+                (
+                    "features",
+                    models.JSONField(
+                        default=list, help_text="List of feature strings for display"
+                    ),
+                ),
+                (
+                    "is_active",
+                    models.BooleanField(
+                        default=True, help_text="Available for new subscriptions"
+                    ),
+                ),
+                (
+                    "display_order",
+                    models.IntegerField(
+                        default=0, help_text="Ordering on pricing page"
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'subscription plan',
-                'verbose_name_plural': 'subscription plans',
-                'db_table': 'apps_subscription_plan',
-                'ordering': ['display_order'],
+                "verbose_name": "subscription plan",
+                "verbose_name_plural": "subscription plans",
+                "db_table": "apps_subscription_plan",
+                "ordering": ["display_order"],
             },
         ),
         migrations.CreateModel(
-            name='Subscription',
+            name="Subscription",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('status', models.CharField(choices=[('TRIAL', 'Trial'), ('ACTIVE', 'Active'), ('EXPIRED', 'Expired'), ('CANCELLED', 'Cancelled')], default='TRIAL', max_length=20)),
-                ('trial_start', models.DateTimeField(blank=True, help_text='When the trial period started', null=True)),
-                ('trial_end', models.DateTimeField(blank=True, help_text='When the trial period expires', null=True)),
-                ('billing_date', models.DateField(blank=True, help_text='Next billing date', null=True)),
-                ('started_at', models.DateTimeField(auto_now_add=True)),
-                ('cancelled_at', models.DateTimeField(blank=True, null=True)),
-                ('center', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='subscription', to='tenants.diagnosticcenter')),
-                ('plan', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='subscriptions', to='subscriptions.subscriptionplan')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("TRIAL", "Trial"),
+                            ("ACTIVE", "Active"),
+                            ("EXPIRED", "Expired"),
+                            ("CANCELLED", "Cancelled"),
+                        ],
+                        default="TRIAL",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "trial_start",
+                    models.DateTimeField(
+                        blank=True, help_text="When the trial period started", null=True
+                    ),
+                ),
+                (
+                    "trial_end",
+                    models.DateTimeField(
+                        blank=True, help_text="When the trial period expires", null=True
+                    ),
+                ),
+                (
+                    "billing_date",
+                    models.DateField(
+                        blank=True, help_text="Next billing date", null=True
+                    ),
+                ),
+                ("started_at", models.DateTimeField(auto_now_add=True)),
+                ("cancelled_at", models.DateTimeField(blank=True, null=True)),
+                (
+                    "center",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="subscription",
+                        to="tenants.diagnosticcenter",
+                    ),
+                ),
+                (
+                    "plan",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="subscriptions",
+                        to="subscriptions.subscriptionplan",
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'subscription',
-                'verbose_name_plural': 'subscriptions',
-                'db_table': 'apps_subscription',
+                "verbose_name": "subscription",
+                "verbose_name_plural": "subscriptions",
+                "db_table": "apps_subscription",
             },
         ),
         migrations.CreateModel(
-            name='Invoice',
+            name="Invoice",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('amount', models.DecimalField(decimal_places=2, max_digits=10)),
-                ('status', models.CharField(choices=[('PENDING', 'Pending'), ('PAID', 'Paid'), ('OVERDUE', 'Overdue'), ('CANCELLED', 'Cancelled')], default='PENDING', max_length=20)),
-                ('payment_method', models.CharField(blank=True, choices=[('CASH', 'Cash'), ('BKASH', 'bKash'), ('NAGAD', 'Nagad'), ('ONLINE', 'Online Gateway'), ('BANK_TRANSFER', 'Bank Transfer')], max_length=20)),
-                ('due_date', models.DateField()),
-                ('paid_at', models.DateTimeField(blank=True, null=True)),
-                ('transaction_id', models.CharField(blank=True, max_length=100)),
-                ('notes', models.TextField(blank=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('subscription', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='invoices', to='subscriptions.subscription')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("amount", models.DecimalField(decimal_places=2, max_digits=10)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "Pending"),
+                            ("PAID", "Paid"),
+                            ("OVERDUE", "Overdue"),
+                            ("CANCELLED", "Cancelled"),
+                        ],
+                        default="PENDING",
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "payment_method",
+                    models.CharField(
+                        blank=True,
+                        choices=[
+                            ("CASH", "Cash"),
+                            ("BKASH", "bKash"),
+                            ("NAGAD", "Nagad"),
+                            ("ONLINE", "Online Gateway"),
+                            ("BANK_TRANSFER", "Bank Transfer"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                ("due_date", models.DateField()),
+                ("paid_at", models.DateTimeField(blank=True, null=True)),
+                ("transaction_id", models.CharField(blank=True, max_length=100)),
+                ("notes", models.TextField(blank=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "subscription",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="invoices",
+                        to="subscriptions.subscription",
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'invoice',
-                'verbose_name_plural': 'invoices',
-                'db_table': 'apps_invoice',
-                'ordering': ['-created_at'],
+                "verbose_name": "invoice",
+                "verbose_name_plural": "invoices",
+                "db_table": "apps_invoice",
+                "ordering": ["-created_at"],
             },
         ),
     ]

@@ -6,16 +6,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('diagnostics', '0017_digital_report_delivery'),
+        ("diagnostics", "0017_digital_report_delivery"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='report',
-            name='created_by',
-            field=models.ForeignKey(blank=True, help_text='Medical technologist who created this report', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='created_reports', to=settings.AUTH_USER_MODEL),
+            model_name="report",
+            name="created_by",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Medical technologist who created this report",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="created_reports",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
     ]

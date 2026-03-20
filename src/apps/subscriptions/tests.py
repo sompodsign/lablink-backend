@@ -774,6 +774,17 @@ class SoftBlockMiddlewareTests(TestCase):
         )
         self.assertNotEqual(response.status_code, 402)
 
+    def test_no_subscription_blocks_post(self):
+        """Centers with no subscription record should be soft-blocked."""
+        # No subscription created for self.center
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        response = self.client.post(
+            "/api/diagnostics/test-orders/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 402)
+
 
 class SubscriptionStatusAPITests(TestCase):
     """Tests for subscription status endpoint."""
