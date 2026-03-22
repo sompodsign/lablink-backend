@@ -26,29 +26,29 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = 'Seed default report templates and pricing for diagnostic centers.'
+    help = "Seed default report templates and pricing for diagnostic centers."
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--domain',
+            "--domain",
             type=str,
-            help='Seed templates for a single center identified by its domain.',
+            help="Seed templates for a single center identified by its domain.",
         )
         parser.add_argument(
-            '--center-id',
+            "--center-id",
             type=int,
-            help='Seed templates for a single center identified by its PK.',
+            help="Seed templates for a single center identified by its PK.",
         )
         parser.add_argument(
-            '--force',
-            action='store_true',
+            "--force",
+            action="store_true",
             default=False,
-            help='Overwrite existing templates (default: skip centers that already have templates).',
+            help="Overwrite existing templates (default: skip centers that already have templates).",
         )
 
     def handle(self, *args, **options):
         centers = self._resolve_centers(options)
-        force = options['force']
+        force = options["force"]
 
         total_tmpl_created = 0
         total_tmpl_skipped = 0
@@ -59,7 +59,9 @@ class Command(BaseCommand):
 
         for center in centers:
             t_created, t_skipped = self._seed_templates(
-                center, test_types, force,
+                center,
+                test_types,
+                force,
             )
             p_created, p_skipped = self._seed_pricing(center, test_types)
             total_tmpl_created += t_created
@@ -69,36 +71,32 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f'Done — templates: {total_tmpl_created} created, '
-                f'{total_tmpl_skipped} skipped | '
-                f'pricing: {total_price_created} created, '
-                f'{total_price_skipped} skipped.'
+                f"Done — templates: {total_tmpl_created} created, "
+                f"{total_tmpl_skipped} skipped | "
+                f"pricing: {total_price_created} created, "
+                f"{total_price_skipped} skipped."
             )
         )
 
     # ─────────────────────────────────────────────────────────────
     def _resolve_centers(self, options):
-        domain = options.get('domain')
-        center_id = options.get('center_id')
+        domain = options.get("domain")
+        center_id = options.get("center_id")
 
         if domain and center_id:
-            raise CommandError('Specify --domain or --center-id, not both.')
+            raise CommandError("Specify --domain or --center-id, not both.")
 
         if domain:
             try:
                 return [DiagnosticCenter.objects.get(domain=domain)]
             except DiagnosticCenter.DoesNotExist:
-                raise CommandError(
-                    f'No center found with domain "{domain}".'
-                ) from None
+                raise CommandError(f'No center found with domain "{domain}".') from None
 
         if center_id:
             try:
                 return [DiagnosticCenter.objects.get(pk=center_id)]
             except DiagnosticCenter.DoesNotExist:
-                raise CommandError(
-                    f'No center found with ID {center_id}.'
-                ) from None
+                raise CommandError(f"No center found with ID {center_id}.") from None
 
         return DiagnosticCenter.objects.all()
 
@@ -109,7 +107,8 @@ class Command(BaseCommand):
 
         existing = set(
             ReportTemplate.objects.filter(center=center).values_list(
-                'test_type_id', flat=True,
+                "test_type_id",
+                flat=True,
             )
         )
 
@@ -148,7 +147,7 @@ class Command(BaseCommand):
                 created += 1
 
         self.stdout.write(
-            f'  {center.name}: templates — {created} created, {skipped} skipped'
+            f"  {center.name}: templates — {created} created, {skipped} skipped"
         )
         return created, skipped
 
@@ -156,7 +155,8 @@ class Command(BaseCommand):
     def _seed_pricing(self, center, test_types):
         existing = set(
             CenterTestPricing.objects.filter(center=center).values_list(
-                'test_type_id', flat=True,
+                "test_type_id",
+                flat=True,
             )
         )
 
@@ -175,12 +175,13 @@ class Command(BaseCommand):
 
         if to_create:
             CenterTestPricing.objects.bulk_create(
-                to_create, ignore_conflicts=True,
+                to_create,
+                ignore_conflicts=True,
             )
 
         created = len(to_create)
         skipped = len(existing)
         self.stdout.write(
-            f'  {center.name}: pricing  — {created} created, {skipped} skipped'
+            f"  {center.name}: pricing  — {created} created, {skipped} skipped"
         )
         return created, skipped

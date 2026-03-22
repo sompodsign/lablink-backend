@@ -4,25 +4,30 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0018_diagnosticcenter_paper_size_and_more'),
+        ("tenants", "0018_diagnosticcenter_paper_size_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='doctor',
-            name='available_from',
-            field=models.TimeField(default='09:00', help_text='Daily start time for appointments'),
+            model_name="doctor",
+            name="available_from",
+            field=models.TimeField(
+                default="09:00", help_text="Daily start time for appointments"
+            ),
         ),
         migrations.AddField(
-            model_name='doctor',
-            name='available_to',
-            field=models.TimeField(default='17:00', help_text='Daily end time for appointments'),
+            model_name="doctor",
+            name="available_to",
+            field=models.TimeField(
+                default="17:00", help_text="Daily end time for appointments"
+            ),
         ),
         migrations.AddField(
-            model_name='doctor',
-            name='slot_duration_minutes',
-            field=models.PositiveIntegerField(default=30, help_text='Appointment slot duration in minutes'),
+            model_name="doctor",
+            name="slot_duration_minutes",
+            field=models.PositiveIntegerField(
+                default=30, help_text="Appointment slot duration in minutes"
+            ),
         ),
     ]

@@ -12,23 +12,23 @@ class AppointmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment
         fields = [
-            'id',
-            'patient',
-            'patient_name',
-            'center',
-            'doctor',
-            'doctor_name',
-            'date',
-            'time',
-            'status',
-            'symptoms',
-            'guest_name',
-            'guest_phone',
-            'invoice_id',
-            'invoice_status',
-            'created_at',
+            "id",
+            "patient",
+            "patient_name",
+            "center",
+            "doctor",
+            "doctor_name",
+            "date",
+            "time",
+            "status",
+            "symptoms",
+            "guest_name",
+            "guest_phone",
+            "invoice_id",
+            "invoice_status",
+            "created_at",
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ["id", "created_at"]
 
     def get_patient_name(self, obj) -> str:
         if obj.patient:
@@ -38,12 +38,15 @@ class AppointmentSerializer(serializers.ModelSerializer):
     def get_doctor_name(self, obj) -> str:
         if obj.doctor:
             return str(obj.doctor)
-        return ''
+        return ""
 
     def _get_invoice(self, obj):
         """Get the first linked invoice (uses prefetch if available)."""
-        if hasattr(obj, '_prefetched_objects_cache') and 'invoices' in obj._prefetched_objects_cache:
-            invoices = obj._prefetched_objects_cache['invoices']
+        if (
+            hasattr(obj, "_prefetched_objects_cache")
+            and "invoices" in obj._prefetched_objects_cache
+        ):
+            invoices = obj._prefetched_objects_cache["invoices"]
             return invoices[0] if invoices else None
         return obj.invoices.first()
 

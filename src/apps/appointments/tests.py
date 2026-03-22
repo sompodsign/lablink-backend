@@ -337,41 +337,48 @@ class AutoInvoiceTests(APITestCase):
         from apps.subscriptions.models import Subscription, SubscriptionPlan
 
         self.center = make_center(
-            name='Invoice Center', domain='inv-center',
-            doctor_visit_fee=Decimal('500.00'),
+            name="Invoice Center",
+            domain="inv-center",
+            doctor_visit_fee=Decimal("500.00"),
         )
         # Active subscription so middleware doesn't block writes
         plan = SubscriptionPlan.objects.create(
-            name='Test Plan', slug='inv-test-plan', price=0,
+            name="Test Plan",
+            slug="inv-test-plan",
+            price=0,
         )
         Subscription.objects.create(
-            center=self.center, plan=plan,
+            center=self.center,
+            plan=plan,
             status=Subscription.Status.ACTIVE,
         )
 
-        self.staff_user = make_user('inv_staff')
-        make_staff(self.staff_user, self.center, 'Admin')
-        self.doc_user = make_user('inv_doc', 'Dr', 'Invoice')
+        self.staff_user = make_user("inv_staff")
+        make_staff(self.staff_user, self.center, "Admin")
+        self.doc_user = make_user("inv_doc", "Dr", "Invoice")
         self.doctor = make_doctor(self.doc_user, self.center)
-        self.doctor.visit_fee = Decimal('500.00')
-        self.doctor.save(update_fields=['visit_fee'])
-        self.patient = make_patient('inv_pat', self.center)
+        self.doctor.visit_fee = Decimal("500.00")
+        self.doctor.save(update_fields=["visit_fee"])
+        self.patient = make_patient("inv_pat", self.center)
         self.appt = make_appointment(
-            self.patient, self.center, doctor=self.doctor,
+            self.patient,
+            self.center,
+            doctor=self.doctor,
         )
 
     def tearDown(self):
         from django.core.cache import cache
+
         cache.clear()
 
     def _auth(self, user):
         self.client.credentials(**jwt_auth_header(user))
-        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
 
     def _patch_status(self, appt_id, new_status):
         return self.client.patch(
-            f'/api/appointments/appointments/{appt_id}/',
-            {'status': new_status},
+            f"/api/appointments/appointments/{appt_id}/",
+            {"status": new_status},
         )
 
     def test_completing_creates_paid_invoice(self):
@@ -379,7 +386,7 @@ class AutoInvoiceTests(APITestCase):
         from apps.payments.models import Invoice
 
         self._auth(self.staff_user)
-        response = self._patch_status(self.appt.id, 'COMPLETED')
+        response = self._patch_status(self.appt.id, "COMPLETED")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         invoices = Invoice.objects.filter(appointment=self.appt)
@@ -395,21 +402,21 @@ class AutoInvoiceTests(APITestCase):
         from apps.payments.models import InvoiceItem
 
         self._auth(self.staff_user)
-        self._patch_status(self.appt.id, 'COMPLETED')
+        self._patch_status(self.appt.id, "COMPLETED")
 
         items = InvoiceItem.objects.filter(invoice__appointment=self.appt)
         self.assertEqual(items.count(), 1)
         item = items.first()
         self.assertEqual(item.item_type, InvoiceItem.ItemType.VISIT_FEE)
-        self.assertEqual(item.unit_price, Decimal('500.00'))
+        self.assertEqual(item.unit_price, Decimal("500.00"))
 
     def test_uncompleting_cancels_invoice(self):
         """Changing status away from COMPLETED cancels the linked invoice."""
         from apps.payments.models import Invoice
 
         self._auth(self.staff_user)
-        self._patch_status(self.appt.id, 'COMPLETED')
-        self._patch_status(self.appt.id, 'CANCELLED')
+        self._patch_status(self.appt.id, "COMPLETED")
+        self._patch_status(self.appt.id, "CANCELLED")
 
         invoice = Invoice.objects.filter(appointment=self.appt).first()
         self.assertEqual(invoice.status, Invoice.Status.CANCELLED)
@@ -419,9 +426,9 @@ class AutoInvoiceTests(APITestCase):
         from apps.payments.models import Invoice
 
         self._auth(self.staff_user)
-        self._patch_status(self.appt.id, 'COMPLETED')
-        self._patch_status(self.appt.id, 'CANCELLED')
-        self._patch_status(self.appt.id, 'COMPLETED')
+        self._patch_status(self.appt.id, "COMPLETED")
+        self._patch_status(self.appt.id, "CANCELLED")
+        self._patch_status(self.appt.id, "COMPLETED")
 
         invoices = Invoice.objects.filter(appointment=self.appt)
         self.assertEqual(invoices.count(), 2)
@@ -434,10 +441,10 @@ class AutoInvoiceTests(APITestCase):
         from apps.payments.models import Invoice
 
         self._auth(self.staff_user)
-        self._patch_status(self.appt.id, 'COMPLETED')
+        self._patch_status(self.appt.id, "COMPLETED")
 
         # Manually PATCH again (status is already COMPLETED)
-        self._patch_status(self.appt.id, 'COMPLETED')
+        self._patch_status(self.appt.id, "COMPLETED")
 
         invoices = Invoice.objects.filter(appointment=self.appt)
         self.assertEqual(invoices.count(), 1)
@@ -448,7 +455,7 @@ class AutoInvoiceTests(APITestCase):
 
         appt_no_doc = make_appointment(self.patient, self.center)
         self._auth(self.staff_user)
-        self._patch_status(appt_no_doc.id, 'COMPLETED')
+        self._patch_status(appt_no_doc.id, "COMPLETED")
 
         items = InvoiceItem.objects.filter(invoice__appointment=appt_no_doc)
         self.assertEqual(items.count(), 0)
@@ -458,20 +465,20 @@ class AutoInvoiceTests(APITestCase):
         from apps.payments.models import Invoice
 
         self._auth(self.staff_user)
-        self._patch_status(self.appt.id, 'COMPLETED')
+        self._patch_status(self.appt.id, "COMPLETED")
 
         invoice = Invoice.objects.get(appointment=self.appt)
         self.assertEqual(invoice.center, self.center)
         self.assertEqual(invoice.created_by, self.staff_user)
-        self.assertIn('Auto-generated', invoice.notes)
+        self.assertIn("Auto-generated", invoice.notes)
 
     def test_api_response_includes_invoice_fields(self):
         """After completion, the appointment response has invoice_id and invoice_status."""
         self._auth(self.staff_user)
-        response = self._patch_status(self.appt.id, 'COMPLETED')
+        response = self._patch_status(self.appt.id, "COMPLETED")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('invoice_id'))
-        self.assertEqual(response.data.get('invoice_status'), 'PAID')
+        self.assertIsNotNone(response.data.get("invoice_id"))
+        self.assertEqual(response.data.get("invoice_status"), "PAID")
 
 
 class AvailableSlotsTests(APITestCase):
@@ -481,84 +488,92 @@ class AvailableSlotsTests(APITestCase):
         from apps.subscriptions.models import Subscription, SubscriptionPlan
 
         self.center = make_center(
-            name='Slot Center', domain='slot-center',
+            name="Slot Center",
+            domain="slot-center",
         )
         plan = SubscriptionPlan.objects.create(
-            name='Slot Plan', slug='slot-plan', price=0,
+            name="Slot Plan",
+            slug="slot-plan",
+            price=0,
         )
         Subscription.objects.create(
-            center=self.center, plan=plan,
+            center=self.center,
+            plan=plan,
             status=Subscription.Status.ACTIVE,
         )
-        self.staff_user = make_user('slot_staff')
-        make_staff(self.staff_user, self.center, 'Admin')
-        self.doc_user = make_user('slot_doc', 'Dr', 'Slot')
+        self.staff_user = make_user("slot_staff")
+        make_staff(self.staff_user, self.center, "Admin")
+        self.doc_user = make_user("slot_doc", "Dr", "Slot")
         self.doctor = make_doctor(self.doc_user, self.center)
         # Set schedule: 09:00–11:00, 30-min slots → 4 slots
         self.doctor.available_from = time(9, 0)
         self.doctor.available_to = time(11, 0)
         self.doctor.slot_duration_minutes = 30
         self.doctor.save()
-        self.patient = make_patient('slot_pat', self.center)
+        self.patient = make_patient("slot_pat", self.center)
 
     def tearDown(self):
         from django.core.cache import cache
+
         cache.clear()
 
     def _auth(self, user):
         self.client.credentials(**jwt_auth_header(user))
-        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
 
     def test_returns_all_slots(self):
         """With no bookings, all slots should be available."""
         self._auth(self.staff_user)
         resp = self.client.get(
-            '/api/appointments/appointments/available-slots/',
-            {'doctor': self.doctor.id, 'date': '2026-04-01'},
+            "/api/appointments/appointments/available-slots/",
+            {"doctor": self.doctor.id, "date": "2026-04-01"},
         )
         self.assertEqual(resp.status_code, 200)
-        slots = resp.data['slots']
+        slots = resp.data["slots"]
         self.assertEqual(len(slots), 4)  # 09:00, 09:30, 10:00, 10:30
-        self.assertTrue(all(s['available'] for s in slots))
-        self.assertEqual(slots[0]['time'], '09:00')
-        self.assertEqual(slots[-1]['time'], '10:30')
+        self.assertTrue(all(s["available"] for s in slots))
+        self.assertEqual(slots[0]["time"], "09:00")
+        self.assertEqual(slots[-1]["time"], "10:30")
 
     def test_booked_slot_marked_unavailable(self):
         """An existing appointment marks its slot as unavailable."""
         Appointment.objects.create(
-            patient=self.patient, center=self.center,
-            doctor=self.doctor, date=date(2026, 4, 1),
-            time=time(9, 30), status='CONFIRMED',
+            patient=self.patient,
+            center=self.center,
+            doctor=self.doctor,
+            date=date(2026, 4, 1),
+            time=time(9, 30),
+            status="CONFIRMED",
         )
         self._auth(self.staff_user)
         resp = self.client.get(
-            '/api/appointments/appointments/available-slots/',
-            {'doctor': self.doctor.id, 'date': '2026-04-01'},
+            "/api/appointments/appointments/available-slots/",
+            {"doctor": self.doctor.id, "date": "2026-04-01"},
         )
         self.assertEqual(resp.status_code, 200)
-        slots = {s['time']: s['available'] for s in resp.data['slots']}
-        self.assertTrue(slots['09:00'])
-        self.assertFalse(slots['09:30'])  # booked
-        self.assertTrue(slots['10:00'])
+        slots = {s["time"]: s["available"] for s in resp.data["slots"]}
+        self.assertTrue(slots["09:00"])
+        self.assertFalse(slots["09:30"])  # booked
+        self.assertTrue(slots["10:00"])
 
     def test_public_access_with_domain(self):
         """Unauthenticated access works when passing domain param."""
         resp = self.client.get(
-            '/api/appointments/appointments/available-slots/',
+            "/api/appointments/appointments/available-slots/",
             {
-                'doctor': self.doctor.id,
-                'date': '2026-04-01',
-                'domain': 'slot-center',
+                "doctor": self.doctor.id,
+                "date": "2026-04-01",
+                "domain": "slot-center",
             },
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(len(resp.data['slots']), 4)
+        self.assertEqual(len(resp.data["slots"]), 4)
 
     def test_missing_params_returns_400(self):
         """Missing doctor or date returns 400."""
         self._auth(self.staff_user)
         resp = self.client.get(
-            '/api/appointments/appointments/available-slots/',
-            {'doctor': self.doctor.id},
+            "/api/appointments/appointments/available-slots/",
+            {"doctor": self.doctor.id},
         )
         self.assertEqual(resp.status_code, 400)

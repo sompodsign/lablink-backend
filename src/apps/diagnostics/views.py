@@ -1,5 +1,4 @@
 import logging
-
 from datetime import timedelta
 
 from django.utils import timezone
@@ -698,18 +697,18 @@ class AnalyticsViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
 
     @extend_schema(
-        tags=['Analytics'],
-        summary='Revenue breakdown by test type',
+        tags=["Analytics"],
+        summary="Revenue breakdown by test type",
         parameters=[
-            OpenApiParameter(name='days', type=int, required=False),
+            OpenApiParameter(name="days", type=int, required=False),
         ],
     )
-    @action(detail=False, methods=['get'], url_path='revenue-by-test')
+    @action(detail=False, methods=["get"], url_path="revenue-by-test")
     def revenue_by_test(self, request):
         from apps.diagnostics.services.analytics import revenue_by_test_type
 
         tenant = request.tenant
-        days = int(request.query_params.get('days', 30))
+        days = int(request.query_params.get("days", 30))
         start = (timezone.now() - timedelta(days=days)).isoformat()
         data = revenue_by_test_type(tenant, start)
         return Response(data)
@@ -738,20 +737,20 @@ class AnalyticsViewSet(viewsets.ViewSet):
         return Response(data)
 
     @extend_schema(
-        tags=['Analytics'],
-        summary='Revenue by referring doctor',
+        tags=["Analytics"],
+        summary="Revenue by referring doctor",
         parameters=[
-            OpenApiParameter(name='days', type=int, required=False),
+            OpenApiParameter(name="days", type=int, required=False),
         ],
     )
-    @action(detail=False, methods=['get'], url_path='revenue-by-doctor')
+    @action(detail=False, methods=["get"], url_path="revenue-by-doctor")
     def revenue_by_doctor(self, request):
         from apps.diagnostics.services.analytics import (
             revenue_by_doctor as rbd,
         )
 
         tenant = request.tenant
-        days = int(request.query_params.get('days', 30))
+        days = int(request.query_params.get("days", 30))
         start = (timezone.now() - timedelta(days=days)).isoformat()
         data = rbd(tenant, start)
         return Response(data)
@@ -793,46 +792,46 @@ class AnalyticsViewSet(viewsets.ViewSet):
         return Response(data)
 
     @extend_schema(
-        tags=['Analytics'],
-        summary='Invoice revenue summary',
+        tags=["Analytics"],
+        summary="Invoice revenue summary",
         parameters=[
-            OpenApiParameter(name='days', type=int, required=False),
+            OpenApiParameter(name="days", type=int, required=False),
         ],
     )
-    @action(detail=False, methods=['get'], url_path='invoice-summary')
+    @action(detail=False, methods=["get"], url_path="invoice-summary")
     def invoice_summary(self, request):
         from apps.diagnostics.services.analytics import (
             invoice_revenue_summary,
         )
 
         tenant = request.tenant
-        days = int(request.query_params.get('days', 30))
+        days = int(request.query_params.get("days", 30))
         data = invoice_revenue_summary(tenant, days)
         return Response(data)
 
     @extend_schema(
-        tags=['Analytics'],
-        summary='Appointment statistics',
+        tags=["Analytics"],
+        summary="Appointment statistics",
         parameters=[
-            OpenApiParameter(name='days', type=int, required=False),
+            OpenApiParameter(name="days", type=int, required=False),
         ],
     )
-    @action(detail=False, methods=['get'], url_path='appointment-stats')
+    @action(detail=False, methods=["get"], url_path="appointment-stats")
     def appointment_stats(self, request):
         from apps.diagnostics.services.analytics import (
             appointment_stats as appt_stats,
         )
 
         tenant = request.tenant
-        days = int(request.query_params.get('days', 30))
+        days = int(request.query_params.get("days", 30))
         data = appt_stats(tenant, days)
         return Response(data)
 
     @extend_schema(
-        tags=['Analytics'],
+        tags=["Analytics"],
         summary="Today's summary at a glance",
     )
-    @action(detail=False, methods=['get'], url_path='today-summary')
+    @action(detail=False, methods=["get"], url_path="today-summary")
     def today_summary(self, request):
         from apps.diagnostics.services.analytics import (
             today_summary as ts,

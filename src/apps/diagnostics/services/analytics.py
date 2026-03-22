@@ -223,7 +223,7 @@ def turnaround_time_stats(center, days=30):
                 "count": len(tats),
             }
         )
-    return sorted(data, key=lambda x: x['avg_tat_hours'])
+    return sorted(data, key=lambda x: x["avg_tat_hours"])
 
 
 def invoice_revenue_summary(center, days=30):
@@ -245,7 +245,7 @@ def invoice_revenue_summary(center, days=30):
 
     base_qs = Invoice.objects.filter(
         center=center,
-        status__in=['PAID', 'ISSUED'],
+        status__in=["PAID", "ISSUED"],
     )
 
     # Period totals
@@ -256,43 +256,45 @@ def invoice_revenue_summary(center, days=30):
 
     def _agg(qs):
         result = qs.aggregate(
-            total=Sum('total'),
-            count=Count('id'),
+            total=Sum("total"),
+            count=Count("id"),
         )
         return {
-            'total': float(result['total'] or 0),
-            'count': result['count'],
+            "total": float(result["total"] or 0),
+            "count": result["count"],
         }
 
     # Breakdown by item type
     item_breakdown = (
         InvoiceItem.objects.filter(
             invoice__center=center,
-            invoice__status__in=['PAID', 'ISSUED'],
+            invoice__status__in=["PAID", "ISSUED"],
             invoice__created_at__gte=start,
         )
-        .values('item_type')
+        .values("item_type")
         .annotate(
-            total=Sum('total_price'),
-            count=Count('id'),
+            total=Sum("total_price"),
+            count=Count("id"),
         )
-        .order_by('-total')
+        .order_by("-total")
     )
 
     by_type = []
     for row in item_breakdown:
-        by_type.append({
-            'item_type': row['item_type'],
-            'total': float(row['total'] or 0),
-            'count': row['count'],
-        })
+        by_type.append(
+            {
+                "item_type": row["item_type"],
+                "total": float(row["total"] or 0),
+                "count": row["count"],
+            }
+        )
 
     return {
-        'period': _agg(period_qs),
-        'today': _agg(today_qs),
-        'this_week': _agg(week_qs),
-        'this_month': _agg(month_qs),
-        'by_item_type': by_type,
+        "period": _agg(period_qs),
+        "today": _agg(today_qs),
+        "this_week": _agg(week_qs),
+        "this_month": _agg(month_qs),
+        "by_item_type": by_type,
     }
 
 
@@ -307,42 +309,46 @@ def appointment_stats(center, days=30):
     )
 
     total = qs.count()
-    by_status = dict(qs.values_list('status').annotate(c=Count('id')).values_list('status', 'c'))
+    by_status = dict(
+        qs.values_list("status").annotate(c=Count("id")).values_list("status", "c")
+    )
 
-    completed = by_status.get('COMPLETED', 0)
-    cancelled = by_status.get('CANCELLED', 0)
-    pending = by_status.get('PENDING', 0)
-    confirmed = by_status.get('CONFIRMED', 0)
+    completed = by_status.get("COMPLETED", 0)
+    cancelled = by_status.get("CANCELLED", 0)
+    pending = by_status.get("PENDING", 0)
+    confirmed = by_status.get("CONFIRMED", 0)
     completion_rate = round((completed / total) * 100, 1) if total else 0
 
     # By doctor
     by_doctor = list(
         qs.filter(doctor__isnull=False)
-        .values('doctor__user__first_name', 'doctor__user__last_name')
+        .values("doctor__user__first_name", "doctor__user__last_name")
         .annotate(
-            total=Count('id'),
-            completed=Count('id', filter=models.Q(status='COMPLETED')),
+            total=Count("id"),
+            completed=Count("id", filter=models.Q(status="COMPLETED")),
         )
-        .order_by('-total')[:10]
+        .order_by("-total")[:10]
     )
 
     doctor_data = []
     for row in by_doctor:
         name = f"{row['doctor__user__first_name']} {row['doctor__user__last_name']}".strip()
-        doctor_data.append({
-            'doctor_name': name,
-            'total': row['total'],
-            'completed': row['completed'],
-        })
+        doctor_data.append(
+            {
+                "doctor_name": name,
+                "total": row["total"],
+                "completed": row["completed"],
+            }
+        )
 
     return {
-        'total': total,
-        'completed': completed,
-        'cancelled': cancelled,
-        'pending': pending,
-        'confirmed': confirmed,
-        'completion_rate': completion_rate,
-        'by_doctor': doctor_data,
+        "total": total,
+        "completed": completed,
+        "cancelled": cancelled,
+        "pending": pending,
+        "confirmed": confirmed,
+        "completion_rate": completion_rate,
+        "by_doctor": doctor_data,
     }
 
 
@@ -361,17 +367,17 @@ def today_summary(center):
     invoices_today = Invoice.objects.filter(
         center=center,
         created_at__date=today,
-        status__in=['PAID', 'ISSUED'],
+        status__in=["PAID", "ISSUED"],
     )
     inv_agg = invoices_today.aggregate(
-        total=Sum('total'),
-        count=Count('id'),
+        total=Sum("total"),
+        count=Count("id"),
     )
 
     # Appointments today
     appts_today = Appointment.objects.filter(center=center, date=today)
     appt_total = appts_today.count()
-    appt_completed = appts_today.filter(status='COMPLETED').count()
+    appt_completed = appts_today.filter(status="COMPLETED").count()
 
     # Test orders today
     test_orders_today = TestOrder.objects.filter(
@@ -387,11 +393,10 @@ def today_summary(center):
     ).count()
 
     return {
-        'revenue': float(inv_agg['total'] or 0),
-        'invoices': inv_agg['count'],
-        'appointments_total': appt_total,
-        'appointments_completed': appt_completed,
-        'test_orders': test_orders_today,
-        'reports': reports_today,
+        "revenue": float(inv_agg["total"] or 0),
+        "invoices": inv_agg["count"],
+        "appointments_total": appt_total,
+        "appointments_completed": appt_completed,
+        "test_orders": test_orders_today,
+        "reports": reports_today,
     }
-
