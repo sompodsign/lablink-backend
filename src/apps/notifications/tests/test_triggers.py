@@ -602,11 +602,21 @@ class CenterCreatedEmailTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        mock_send_email.assert_called_once()
 
-        call_args = mock_send_email.call_args
-        self.assertEqual(call_args.args[0], EmailType.CENTER_CREATED)
-        self.assertEqual(call_args.kwargs["recipient"], "admin@newcenter.com")
+        # send_email is called twice: STAFF_CREDENTIALS + CENTER_CREATED
+        self.assertEqual(mock_send_email.call_count, 2)
+
+        # Verify CENTER_CREATED email was sent to the center email
+        center_created_calls = [
+            c
+            for c in mock_send_email.call_args_list
+            if c.args[0] == EmailType.CENTER_CREATED
+        ]
+        self.assertEqual(len(center_created_calls), 1)
+        self.assertEqual(
+            center_created_calls[0].kwargs["recipient"],
+            "info@newcenter.com",
+        )
 
 
 class CenterDeactivatedEmailTests(TestCase):
