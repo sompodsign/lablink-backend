@@ -33,7 +33,7 @@ class ReportLimitTests(APITestCase):
 
         self.patient = make_patient("rl_pat", self.center)
 
-        # Create a plan with max_reports=3 for easy testing
+        # Update the subscription created by make_center with a limited plan
         self.plan = SubscriptionPlan.objects.create(
             name="Test Limit Plan",
             slug="test-limit-plan",
@@ -41,11 +41,11 @@ class ReportLimitTests(APITestCase):
             max_staff=5,
             max_reports=3,
         )
-        self.sub = Subscription.objects.create(
-            center=self.center,
+        Subscription.objects.filter(center=self.center).update(
             plan=self.plan,
             status=Subscription.Status.ACTIVE,
         )
+        self.sub = Subscription.objects.get(center=self.center)
 
     def _auth(self):
         self.client.credentials(**jwt_auth_header(self.lab_tech_user))

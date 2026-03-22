@@ -12,6 +12,7 @@ from apps.diagnostics.models import (
     TestType,
 )
 from apps.payments.models import Invoice, InvoiceItem
+from apps.subscriptions.models import Subscription, SubscriptionPlan
 from core.tenants.models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from core.users.models import PatientProfile
 
@@ -55,13 +56,41 @@ DOCTOR_PERMISSIONS = [
 # ── Object Factories ──────────────────────────────────────────────
 
 
+def _get_or_create_default_plan():
+    """Return the default test subscription plan, creating if needed."""
+    plan, _created = SubscriptionPlan.objects.get_or_create(
+        slug="test-plan",
+        defaults={
+            "name": "Test Plan",
+            "price": "0.00",
+            "trial_days": 0,
+            "max_staff": -1,
+            "max_reports": -1,
+        },
+    )
+    return plan
+
+
+def make_subscription(center, status="ACTIVE", plan=None):
+    """Create an active subscription for the center."""
+    if plan is None:
+        plan = _get_or_create_default_plan()
+    return Subscription.objects.create(
+        center=center,
+        plan=plan,
+        status=status,
+    )
+
+
 def make_center(name="Center A", domain="center-a", **kwargs):
     defaults = {
         "address": "123 Test St",
         "contact_number": "01700000001",
     }
     defaults.update(kwargs)
-    return DiagnosticCenter.objects.create(name=name, domain=domain, **defaults)
+    center = DiagnosticCenter.objects.create(name=name, domain=domain, **defaults)
+    make_subscription(center)
+    return center
 
 
 def make_user(username, first_name="Test", last_name="User", phone="", **kwargs):

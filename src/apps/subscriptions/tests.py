@@ -41,13 +41,17 @@ class SubscriptionPlanModelTests(TestCase):
 
     def test_default_ordering(self):
         SubscriptionPlan.objects.create(
-            name="Plan B", slug="plan-b", price=200, display_order=2
+            name="Plan B", slug="ordering-plan-b", price=200, display_order=2
         )
         SubscriptionPlan.objects.create(
-            name="Plan A", slug="plan-a", price=100, display_order=1
+            name="Plan A", slug="ordering-plan-a", price=100, display_order=1
         )
-        plans = list(SubscriptionPlan.objects.values_list("slug", flat=True))
-        self.assertEqual(plans, ["plan-a", "plan-b"])
+        plans = list(
+            SubscriptionPlan.objects.filter(slug__startswith="ordering-").values_list(
+                "slug", flat=True
+            )
+        )
+        self.assertEqual(plans, ["ordering-plan-a", "ordering-plan-b"])
 
 
 class SubscriptionModelTests(TestCase):
@@ -55,7 +59,10 @@ class SubscriptionModelTests(TestCase):
 
     def setUp(self):
         self.plan = SubscriptionPlan.objects.create(
-            name="Starter", slug="starter", price=Decimal("2499"), trial_days=14
+            name="Starter Model",
+            slug="starter-model-test",
+            price=Decimal("2499"),
+            trial_days=14,
         )
         self.center = DiagnosticCenter.objects.create(
             name="Test Center", domain="test-center"
@@ -346,11 +353,21 @@ class PublicPlansAPITests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
-        SubscriptionPlan.objects.create(
-            name="Trial", slug="trial", price=0, is_active=True, display_order=0
+        SubscriptionPlan.objects.get_or_create(
+            slug="trial",
+            defaults={
+                "name": "Trial",
+                "price": 0,
+                "is_active": True,
+                "display_order": 0,
+            },
         )
         SubscriptionPlan.objects.create(
-            name="Hidden", slug="hidden", price=999, is_active=False, display_order=5
+            name="Hidden",
+            slug="hidden-plan-test",
+            price=999,
+            is_active=False,
+            display_order=5,
         )
 
     def test_list_active_plans_only(self):
@@ -358,7 +375,7 @@ class PublicPlansAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         slugs = [p["slug"] for p in response.data]
         self.assertIn("trial", slugs)
-        self.assertNotIn("hidden", slugs)
+        self.assertNotIn("hidden-plan-test", slugs)
 
 
 class SuperadminBillingAPITests(TestCase):
@@ -372,7 +389,7 @@ class SuperadminBillingAPITests(TestCase):
             password="admin123",
         )
         self.plan = SubscriptionPlan.objects.create(
-            name="Starter", slug="starter", price=2499
+            name="Starter Billing", slug="starter-billing-test", price=2499
         )
         self.center = DiagnosticCenter.objects.create(
             name="Billing Test Center", domain="billing-test"
@@ -436,7 +453,7 @@ class TrialExpiryTaskTests(TestCase):
 
     def setUp(self):
         self.plan = SubscriptionPlan.objects.create(
-            name="Trial Plan", slug="trial", price=0, trial_days=14
+            name="Trial Task Plan", slug="trial-task-test", price=0, trial_days=14
         )
 
     def _make_sub(self, trial_end_offset_days):
@@ -484,7 +501,10 @@ class GenerateMonthlyInvoicesTaskTests(TestCase):
 
     def setUp(self):
         self.plan = SubscriptionPlan.objects.create(
-            name="Starter", slug="starter", price=Decimal("2499"), trial_days=14
+            name="Starter Invoice",
+            slug="starter-invoice-test",
+            price=Decimal("2499"),
+            trial_days=14,
         )
 
     def test_generates_invoice_when_billing_date_due(self):

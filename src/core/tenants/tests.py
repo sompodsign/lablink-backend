@@ -804,8 +804,7 @@ class StaffViewTests(APITestCase):
             price=0,
             max_staff=2,
         )
-        Subscription.objects.create(
-            center=self.center,
+        Subscription.objects.filter(center=self.center).update(
             plan=plan,
             status=Subscription.Status.ACTIVE,
         )
@@ -835,8 +834,7 @@ class StaffViewTests(APITestCase):
             price=0,
             max_staff=-1,
         )
-        Subscription.objects.create(
-            center=self.center,
+        Subscription.objects.filter(center=self.center).update(
             plan=plan,
             status=Subscription.Status.ACTIVE,
         )
@@ -864,8 +862,7 @@ class StaffViewTests(APITestCase):
             price=0,
             max_staff=5,
         )
-        Subscription.objects.create(
-            center=self.center,
+        Subscription.objects.filter(center=self.center).update(
             plan=plan,
             status=Subscription.Status.ACTIVE,
         )
@@ -1436,6 +1433,11 @@ class CenterSettingsViewTests(APITestCase):
             "test_types_available_count",
             "lab_support_availability",
             "allow_online_appointments",
+            "doctor_visit_fee",
+            "paper_size",
+            "use_preprinted_paper",
+            "print_header_margin_mm",
+            "print_footer_margin_mm",
         }
         self.assertEqual(set(response.data.keys()), expected_fields)
 

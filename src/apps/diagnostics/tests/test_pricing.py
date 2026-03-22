@@ -55,7 +55,7 @@ class CenterTestPricingViewSetTest(TestCase):
 
     def test_list_returns_only_tenant_pricings(self):
         """List endpoint scoped to the requesting tenant."""
-        other_center = make_center(subdomain="beta-lab")
+        other_center = make_center(name="Beta Lab", domain="beta-lab")
         tt2 = make_test_type("ESR", "200.00")
         make_pricing(self.center, self.tt, "500.00")
         make_pricing(other_center, tt2, "200.00")

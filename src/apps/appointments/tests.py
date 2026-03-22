@@ -334,24 +334,13 @@ class AutoInvoiceTests(APITestCase):
     def setUp(self):
         from decimal import Decimal
 
-        from apps.subscriptions.models import Subscription, SubscriptionPlan
-
         self.center = make_center(
             name="Invoice Center",
             domain="inv-center",
             doctor_visit_fee=Decimal("500.00"),
         )
-        # Active subscription so middleware doesn't block writes
-        plan = SubscriptionPlan.objects.create(
-            name="Test Plan",
-            slug="inv-test-plan",
-            price=0,
-        )
-        Subscription.objects.create(
-            center=self.center,
-            plan=plan,
-            status=Subscription.Status.ACTIVE,
-        )
+        # make_center already creates an ACTIVE subscription;
+        # no need to create another one.
 
         self.staff_user = make_user("inv_staff")
         make_staff(self.staff_user, self.center, "Admin")
@@ -485,22 +474,13 @@ class AvailableSlotsTests(APITestCase):
     """Tests for GET /appointments/appointments/available-slots/."""
 
     def setUp(self):
-        from apps.subscriptions.models import Subscription, SubscriptionPlan
 
         self.center = make_center(
             name="Slot Center",
             domain="slot-center",
         )
-        plan = SubscriptionPlan.objects.create(
-            name="Slot Plan",
-            slug="slot-plan",
-            price=0,
-        )
-        Subscription.objects.create(
-            center=self.center,
-            plan=plan,
-            status=Subscription.Status.ACTIVE,
-        )
+        # make_center already creates an ACTIVE subscription;
+        # no need to create another one.
         self.staff_user = make_user("slot_staff")
         make_staff(self.staff_user, self.center, "Admin")
         self.doc_user = make_user("slot_doc", "Dr", "Slot")
