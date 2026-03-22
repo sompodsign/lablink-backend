@@ -597,6 +597,7 @@ class CenterCreatedEmailTests(TestCase):
                 "address": "123 Test St",
                 "contact_number": "01700000001",
                 "email": "info@newcenter.com",
+                "admin_email": "admin@newcenter.com",
             },
             format="json",
         )
@@ -605,7 +606,7 @@ class CenterCreatedEmailTests(TestCase):
 
         call_args = mock_send_email.call_args
         self.assertEqual(call_args.args[0], EmailType.CENTER_CREATED)
-        self.assertEqual(call_args.kwargs["recipient"], "info@newcenter.com")
+        self.assertEqual(call_args.kwargs["recipient"], "admin@newcenter.com")
 
 
 class CenterDeactivatedEmailTests(TestCase):
