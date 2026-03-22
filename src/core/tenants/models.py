@@ -186,8 +186,22 @@ class Doctor(models.Model):
     visit_fee = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        default=Decimal("0.00"),
-        help_text=_("Doctor consultation / visit fee"),
+        default=Decimal('0.00'),
+        help_text=_('Doctor consultation / visit fee'),
+    )
+
+    # ── Schedule / Availability ────────────────────────────────────
+    available_from = models.TimeField(
+        default='09:00',
+        help_text=_('Daily start time for appointments'),
+    )
+    available_to = models.TimeField(
+        default='17:00',
+        help_text=_('Daily end time for appointments'),
+    )
+    slot_duration_minutes = models.PositiveIntegerField(
+        default=30,
+        help_text=_('Appointment slot duration in minutes'),
     )
 
     class Meta:

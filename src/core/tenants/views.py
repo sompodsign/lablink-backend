@@ -539,20 +539,21 @@ class StaffViewSet(viewsets.ModelViewSet):
         return Response(StaffSerializer(instance).data)
 
     def perform_destroy(self, instance):
-        """Remove staff record but preserve the User account."""
+        """Remove staff record and the associated User account."""
         if instance.user == self.request.user:
             from rest_framework.exceptions import ValidationError
 
             raise ValidationError("You cannot remove yourself.")
+        user = instance.user
         logger.info(
             "Staff member removed",
             extra={
                 "staff_id": instance.id,
-                "user_id": instance.user.id,
+                "user_id": user.id,
                 "center_id": self.request.tenant.id,
             },
         )
-        instance.delete()
+        user.delete()  # cascades to Staff via FK
 
     @extend_schema(
         tags=["Staff"],

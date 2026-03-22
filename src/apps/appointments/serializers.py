@@ -6,25 +6,29 @@ from .models import Appointment
 class AppointmentSerializer(serializers.ModelSerializer):
     patient_name = serializers.SerializerMethodField()
     doctor_name = serializers.SerializerMethodField()
+    invoice_id = serializers.SerializerMethodField()
+    invoice_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
         fields = [
-            "id",
-            "patient",
-            "patient_name",
-            "center",
-            "doctor",
-            "doctor_name",
-            "date",
-            "time",
-            "status",
-            "symptoms",
-            "guest_name",
-            "guest_phone",
-            "created_at",
+            'id',
+            'patient',
+            'patient_name',
+            'center',
+            'doctor',
+            'doctor_name',
+            'date',
+            'time',
+            'status',
+            'symptoms',
+            'guest_name',
+            'guest_phone',
+            'invoice_id',
+            'invoice_status',
+            'created_at',
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ['id', 'created_at']
 
     def get_patient_name(self, obj) -> str:
         if obj.patient:
@@ -34,7 +38,22 @@ class AppointmentSerializer(serializers.ModelSerializer):
     def get_doctor_name(self, obj) -> str:
         if obj.doctor:
             return str(obj.doctor)
-        return ""
+        return ''
+
+    def _get_invoice(self, obj):
+        """Get the first linked invoice (uses prefetch if available)."""
+        if hasattr(obj, '_prefetched_objects_cache') and 'invoices' in obj._prefetched_objects_cache:
+            invoices = obj._prefetched_objects_cache['invoices']
+            return invoices[0] if invoices else None
+        return obj.invoices.first()
+
+    def get_invoice_id(self, obj) -> int | None:
+        inv = self._get_invoice(obj)
+        return inv.id if inv else None
+
+    def get_invoice_status(self, obj) -> str | None:
+        inv = self._get_invoice(obj)
+        return inv.status if inv else None
 
 
 class ConsultationUpdateSerializer(serializers.ModelSerializer):

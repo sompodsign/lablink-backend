@@ -422,6 +422,8 @@ class PatientViewSet(viewsets.ModelViewSet):
                 Q(patient_profile__registered_at_center=tenant)
                 | Q(appointments__center=tenant)
             )
+            .exclude(staff_profile__center=tenant)
+            .exclude(doctor_profile__user__center=tenant)
             .prefetch_related("patient_profile")
             .distinct()
             .order_by("first_name", "last_name")

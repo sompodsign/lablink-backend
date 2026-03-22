@@ -7,6 +7,7 @@ patient retention, and turnaround time metrics.
 import logging
 from datetime import timedelta
 
+from django.db import models
 from django.db.models import Count
 from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.utils import timezone
@@ -222,4 +223,175 @@ def turnaround_time_stats(center, days=30):
                 "count": len(tats),
             }
         )
-    return sorted(data, key=lambda x: x["avg_tat_hours"])
+    return sorted(data, key=lambda x: x['avg_tat_hours'])
+
+
+def invoice_revenue_summary(center, days=30):
+    """Revenue summary from invoices (the real billing source).
+
+    Returns today/week/month totals and breakdown by item type.
+    """
+    from datetime import date as dt_date
+
+    from django.db.models import Sum
+
+    from apps.payments.models import Invoice, InvoiceItem
+
+    now = timezone.now()
+    start = now - timedelta(days=days)
+    today = dt_date.today()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    base_qs = Invoice.objects.filter(
+        center=center,
+        status__in=['PAID', 'ISSUED'],
+    )
+
+    # Period totals
+    period_qs = base_qs.filter(created_at__gte=start)
+    today_qs = base_qs.filter(created_at__date=today)
+    week_qs = base_qs.filter(created_at__date__gte=week_start)
+    month_qs = base_qs.filter(created_at__date__gte=month_start)
+
+    def _agg(qs):
+        result = qs.aggregate(
+            total=Sum('total'),
+            count=Count('id'),
+        )
+        return {
+            'total': float(result['total'] or 0),
+            'count': result['count'],
+        }
+
+    # Breakdown by item type
+    item_breakdown = (
+        InvoiceItem.objects.filter(
+            invoice__center=center,
+            invoice__status__in=['PAID', 'ISSUED'],
+            invoice__created_at__gte=start,
+        )
+        .values('item_type')
+        .annotate(
+            total=Sum('total_price'),
+            count=Count('id'),
+        )
+        .order_by('-total')
+    )
+
+    by_type = []
+    for row in item_breakdown:
+        by_type.append({
+            'item_type': row['item_type'],
+            'total': float(row['total'] or 0),
+            'count': row['count'],
+        })
+
+    return {
+        'period': _agg(period_qs),
+        'today': _agg(today_qs),
+        'this_week': _agg(week_qs),
+        'this_month': _agg(month_qs),
+        'by_item_type': by_type,
+    }
+
+
+def appointment_stats(center, days=30):
+    """Appointment statistics: counts by status, completion rate, by doctor."""
+    from apps.appointments.models import Appointment
+
+    start = timezone.now() - timedelta(days=days)
+    qs = Appointment.objects.filter(
+        center=center,
+        created_at__gte=start,
+    )
+
+    total = qs.count()
+    by_status = dict(qs.values_list('status').annotate(c=Count('id')).values_list('status', 'c'))
+
+    completed = by_status.get('COMPLETED', 0)
+    cancelled = by_status.get('CANCELLED', 0)
+    pending = by_status.get('PENDING', 0)
+    confirmed = by_status.get('CONFIRMED', 0)
+    completion_rate = round((completed / total) * 100, 1) if total else 0
+
+    # By doctor
+    by_doctor = list(
+        qs.filter(doctor__isnull=False)
+        .values('doctor__user__first_name', 'doctor__user__last_name')
+        .annotate(
+            total=Count('id'),
+            completed=Count('id', filter=models.Q(status='COMPLETED')),
+        )
+        .order_by('-total')[:10]
+    )
+
+    doctor_data = []
+    for row in by_doctor:
+        name = f"{row['doctor__user__first_name']} {row['doctor__user__last_name']}".strip()
+        doctor_data.append({
+            'doctor_name': name,
+            'total': row['total'],
+            'completed': row['completed'],
+        })
+
+    return {
+        'total': total,
+        'completed': completed,
+        'cancelled': cancelled,
+        'pending': pending,
+        'confirmed': confirmed,
+        'completion_rate': completion_rate,
+        'by_doctor': doctor_data,
+    }
+
+
+def today_summary(center):
+    """Quick 'today at a glance' for the admin dashboard."""
+    from datetime import date as dt_date
+
+    from django.db.models import Sum
+
+    from apps.appointments.models import Appointment
+    from apps.payments.models import Invoice
+
+    today = dt_date.today()
+
+    # Invoices today
+    invoices_today = Invoice.objects.filter(
+        center=center,
+        created_at__date=today,
+        status__in=['PAID', 'ISSUED'],
+    )
+    inv_agg = invoices_today.aggregate(
+        total=Sum('total'),
+        count=Count('id'),
+    )
+
+    # Appointments today
+    appts_today = Appointment.objects.filter(center=center, date=today)
+    appt_total = appts_today.count()
+    appt_completed = appts_today.filter(status='COMPLETED').count()
+
+    # Test orders today
+    test_orders_today = TestOrder.objects.filter(
+        center=center,
+        created_at__date=today,
+    ).count()
+
+    # Reports created today
+    reports_today = Report.objects.filter(
+        test_order__center=center,
+        created_at__date=today,
+        is_deleted=False,
+    ).count()
+
+    return {
+        'revenue': float(inv_agg['total'] or 0),
+        'invoices': inv_agg['count'],
+        'appointments_total': appt_total,
+        'appointments_completed': appt_completed,
+        'test_orders': test_orders_today,
+        'reports': reports_today,
+    }
+

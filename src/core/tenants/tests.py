@@ -715,18 +715,15 @@ class StaffViewTests(APITestCase):
     def test_admin_can_delete_staff(self):
         self._auth(self.admin_user)
         staff_id = Staff.objects.get(user=self.receptionist_user).id
+        user_id = self.receptionist_user.id
         response = self.client.delete(f"/api/tenants/staff/{staff_id}/")
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        # Staff record gone, but User still exists
+        # Both Staff and User are deleted (hard delete)
         self.assertFalse(Staff.objects.filter(id=staff_id).exists())
         from django.contrib.auth import get_user_model
 
-        self.assertTrue(
-            get_user_model()
-            .objects.filter(
-                username=self.receptionist_user.username,
-            )
-            .exists(),
+        self.assertFalse(
+            get_user_model().objects.filter(id=user_id).exists(),
         )
 
     def test_create_staff_duplicate_email_fails(self):

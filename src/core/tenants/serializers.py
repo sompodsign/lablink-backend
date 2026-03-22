@@ -133,13 +133,16 @@ class DoctorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Doctor
         fields = [
-            "id",
-            "name",
-            "email",
-            "specialization",
-            "designation",
-            "bio",
-            "visit_fee",
+            'id',
+            'name',
+            'email',
+            'specialization',
+            'designation',
+            'bio',
+            'visit_fee',
+            'available_from',
+            'available_to',
+            'slot_duration_minutes',
         ]
 
     def to_representation(self, instance):
@@ -164,16 +167,19 @@ class DoctorManagementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Doctor
         fields = [
-            "id",
-            "name",
-            "email",
-            "username",
-            "specialization",
-            "designation",
-            "bio",
-            "visit_fee",
+            'id',
+            'name',
+            'email',
+            'username',
+            'specialization',
+            'designation',
+            'bio',
+            'visit_fee',
+            'available_from',
+            'available_to',
+            'slot_duration_minutes',
         ]
-        read_only_fields = ["id", "name", "email", "username"]
+        read_only_fields = ['id', 'name', 'email', 'username']
 
 
 class DoctorCreateSerializer(serializers.Serializer):
@@ -460,6 +466,7 @@ class StaffCreateSerializer(serializers.Serializer):
                 phone_number=validated_data.get("phone_number", ""),
                 password=password,
                 is_active=True,
+                center=tenant,
             )
 
             staff = Staff.objects.create(
