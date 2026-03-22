@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ChangePasswordView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
     PatientViewSet,
@@ -15,6 +16,11 @@ router.register(r"patients", PatientViewSet, basename="patient")
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("profile/", UserProfileView.as_view(), name="profile"),
+    path(
+        "change-password/",
+        ChangePasswordView.as_view(),
+        name="change-password",
+    ),
     path(
         "password-reset/",
         PasswordResetRequestView.as_view(),

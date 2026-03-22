@@ -1158,3 +1158,165 @@ class SuperadminCreateInvoiceTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 404)
+
+
+class SuperadminSubscriptionCRUDTests(TestCase):
+    """Tests for superadmin subscription CRUD endpoints."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.superadmin = User.objects.create_superuser(
+            username="crud-admin",
+            email="crud@admin.com",
+            password="admin123",
+        )
+        self.plan = SubscriptionPlan.objects.create(
+            name="CRUD Plan", slug="crud-plan-test", price=1999, trial_days=14
+        )
+        self.center = DiagnosticCenter.objects.create(
+            name="CRUD Center", domain="crud-center"
+        )
+        self.client.force_authenticate(user=self.superadmin)
+
+    # ── Create ────────────────────────────────────────────────
+
+    def test_create_subscription(self):
+        response = self.client.post(
+            "/api/subscriptions/subscriptions/",
+            {"center_id": self.center.id, "plan_id": self.plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.json()
+        self.assertEqual(data["center_id"], self.center.id)
+        self.assertEqual(data["plan_id"], self.plan.id)
+        self.assertEqual(data["status"], "TRIAL")
+        self.assertIsNotNone(data["trial_start"])
+        self.assertIsNotNone(data["trial_end"])
+
+    def test_create_subscription_active_status(self):
+        response = self.client.post(
+            "/api/subscriptions/subscriptions/",
+            {
+                "center_id": self.center.id,
+                "plan_id": self.plan.id,
+                "status": "ACTIVE",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.json()["status"], "ACTIVE")
+
+    def test_create_subscription_duplicate_rejected(self):
+        Subscription.objects.create(center=self.center, plan=self.plan, status="TRIAL")
+        response = self.client.post(
+            "/api/subscriptions/subscriptions/",
+            {"center_id": self.center.id, "plan_id": self.plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_subscription_invalid_center(self):
+        response = self.client.post(
+            "/api/subscriptions/subscriptions/",
+            {"center_id": 99999, "plan_id": self.plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_subscription_invalid_plan(self):
+        response = self.client.post(
+            "/api/subscriptions/subscriptions/",
+            {"center_id": self.center.id, "plan_id": 99999},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # ── Retrieve ──────────────────────────────────────────────
+
+    def test_retrieve_subscription(self):
+        sub = Subscription.objects.create(
+            center=self.center, plan=self.plan, status="ACTIVE"
+        )
+        response = self.client.get(
+            f"/api/subscriptions/subscriptions/{sub.id}/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data["id"], sub.id)
+        self.assertEqual(data["center_name"], "CRUD Center")
+        self.assertEqual(data["plan_name"], "CRUD Plan")
+
+    def test_retrieve_subscription_not_found(self):
+        response = self.client.get(
+            "/api/subscriptions/subscriptions/99999/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    # ── Update ────────────────────────────────────────────────
+
+    def test_update_subscription_status(self):
+        sub = Subscription.objects.create(
+            center=self.center, plan=self.plan, status="TRIAL"
+        )
+        response = self.client.patch(
+            f"/api/subscriptions/subscriptions/{sub.id}/",
+            {"status": "ACTIVE"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["status"], "ACTIVE")
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "ACTIVE")
+
+    def test_update_subscription_plan(self):
+        sub = Subscription.objects.create(
+            center=self.center, plan=self.plan, status="ACTIVE"
+        )
+        new_plan = SubscriptionPlan.objects.create(
+            name="Pro CRUD", slug="pro-crud-test", price=4999
+        )
+        response = self.client.patch(
+            f"/api/subscriptions/subscriptions/{sub.id}/",
+            {"plan_id": new_plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["plan_id"], new_plan.id)
+
+    def test_update_subscription_not_found(self):
+        response = self.client.patch(
+            "/api/subscriptions/subscriptions/99999/",
+            {"status": "ACTIVE"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    # ── Delete ────────────────────────────────────────────────
+
+    def test_delete_subscription(self):
+        sub = Subscription.objects.create(
+            center=self.center, plan=self.plan, status="ACTIVE"
+        )
+        response = self.client.delete(
+            f"/api/subscriptions/subscriptions/{sub.id}/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Subscription.objects.filter(id=sub.id).exists())
+
+    def test_delete_subscription_not_found(self):
+        response = self.client.delete(
+            "/api/subscriptions/subscriptions/99999/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    # ── Auth ──────────────────────────────────────────────────
+
+    def test_unauthenticated_rejected(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            "/api/subscriptions/subscriptions/",
+            {"center_id": self.center.id, "plan_id": self.plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

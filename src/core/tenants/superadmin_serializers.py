@@ -84,7 +84,11 @@ class SuperadminCenterDetailSerializer(SuperadminCenterSerializer):
 
 
 class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
-    """Create a new diagnostic center with all core + design fields."""
+    """Create a new diagnostic center with admin user auto-creation."""
+
+    admin_email = serializers.EmailField(
+        help_text="Email for the auto-created admin user. Credentials will be sent here.",
+    )
 
     class Meta:
         model = DiagnosticCenter
@@ -102,12 +106,20 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
             "happy_patients_count",
             "test_types_available_count",
             "lab_support_availability",
+            "admin_email",
         ]
 
     def validate_domain(self, value):
         if DiagnosticCenter.objects.filter(domain=value).exists():
             raise serializers.ValidationError(
                 "A center with this domain already exists.",
+            )
+        return value
+
+    def validate_admin_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError(
+                "A user with this email already exists.",
             )
         return value
 
@@ -118,30 +130,107 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
 
         from apps.subscriptions.models import Subscription, SubscriptionPlan
 
-        center = super().create(validated_data)
-        # Grant all existing permissions to the new center
-        center.available_permissions.set(Permission.objects.all())
+        from .models import Role
 
-        # Auto-create trial subscription
-        trial_plan = SubscriptionPlan.objects.filter(slug="trial").first()
-        if trial_plan:
-            now = timezone.now()
-            Subscription.objects.create(
+        admin_email = validated_data.pop("admin_email")
+
+        with transaction.atomic():
+            center = super().create(validated_data)
+            # Grant all existing permissions to the new center
+            all_permissions = Permission.objects.all()
+            center.available_permissions.set(all_permissions)
+
+            # ── Create default roles ──────────────────────────────
+            admin_role, _ = Role.objects.get_or_create(
+                name="Admin",
                 center=center,
-                plan=trial_plan,
-                status=Subscription.Status.TRIAL,
-                trial_start=now,
-                trial_end=now + timedelta(days=trial_plan.trial_days),
-                billing_date=(now + timedelta(days=trial_plan.trial_days)).date(),
+                defaults={"is_system": True},
+            )
+            admin_role.permissions.set(all_permissions)
+
+            recep_role, _ = Role.objects.get_or_create(
+                name="Receptionist",
+                center=center,
+                defaults={"is_system": True},
+            )
+            recep_role.permissions.set(
+                Permission.objects.filter(codename__startswith="view_"),
             )
 
-        # Send welcome email to newly created center
+            lab_role, _ = Role.objects.get_or_create(
+                name="Medical Technologist",
+                center=center,
+                defaults={"is_system": True},
+            )
+            lab_role.permissions.set(
+                Permission.objects.filter(
+                    category__in=["Reports", "Test Orders", "Patients"],
+                ),
+            )
+
+            # ── Create admin user ─────────────────────────────────
+            username = f"{center.domain}_admin"
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{center.domain}_admin_{counter}"
+                counter += 1
+
+            password = secrets.token_urlsafe(10)
+            admin_user = User.objects.create_user(
+                username=username,
+                email=admin_email,
+                password=password,
+                first_name="Admin",
+                last_name=center.name,
+                center=center,
+                is_active=True,
+            )
+
+            Staff.objects.create(
+                user=admin_user,
+                center=center,
+                role=admin_role,
+            )
+
+            # ── Auto-create trial subscription ────────────────────
+            trial_plan = SubscriptionPlan.objects.filter(slug="trial").first()
+            if trial_plan:
+                now = timezone.now()
+                Subscription.objects.create(
+                    center=center,
+                    plan=trial_plan,
+                    status=Subscription.Status.TRIAL,
+                    trial_start=now,
+                    trial_end=now + timedelta(days=trial_plan.trial_days),
+                    billing_date=(now + timedelta(days=trial_plan.trial_days)).date(),
+                )
+
+        # Send credentials email (outside transaction)
+        send_email(
+            EmailType.STAFF_CREDENTIALS,
+            recipient=admin_email,
+            context={
+                "first_name": admin_user.first_name,
+                "role_name": "Admin",
+                "center_name": center.name,
+                "username": username,
+                "password": password,
+            },
+        )
+
+        # Also send center welcome email
         if center.email:
             send_email(
                 EmailType.CENTER_CREATED,
                 recipient=center.email,
                 context={"center_name": center.name},
             )
+
+        logger.info(
+            "Center %s created with admin user %s",
+            center.name,
+            username,
+        )
 
         return center
 

@@ -11,6 +11,7 @@ from .views import (
     SuperadminInvoiceListView,
     SuperadminInvoiceMarkPaidView,
     SuperadminInvoiceMarkUnpaidView,
+    SuperadminSubscriptionDetailView,
     SuperadminSubscriptionListView,
 )
 
@@ -44,6 +45,11 @@ superadmin_patterns = [
         "subscriptions/",
         SuperadminSubscriptionListView.as_view(),
         name="sa-subscriptions",
+    ),
+    path(
+        "subscriptions/<int:subscription_id>/",
+        SuperadminSubscriptionDetailView.as_view(),
+        name="sa-subscription-detail",
     ),
     path(
         "invoices/",

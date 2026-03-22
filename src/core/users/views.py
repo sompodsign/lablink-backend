@@ -351,6 +351,58 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
 
+@extend_schema(
+    tags=["Authentication"],
+    summary="Change password",
+    description="Change the authenticated user's password. Requires current password.",
+)
+class ChangePasswordView(APIView):
+    """Authenticated user changes their own password."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        current_password = request.data.get("current_password", "")
+        new_password = request.data.get("new_password", "")
+        confirm_password = request.data.get("confirm_password", "")
+
+        if not all([current_password, new_password, confirm_password]):
+            return Response(
+                {"detail": "All fields are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {"detail": "New passwords do not match."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not request.user.check_password(current_password):
+            return Response(
+                {"detail": "Current password is incorrect."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate Django password rules
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        try:
+            validate_password(new_password, request.user)
+        except DjangoValidationError as e:
+            return Response(
+                {"detail": e.messages[0]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request.user.set_password(new_password)
+        request.user.save()
+        logger.info("User %s changed password", request.user.username)
+
+        return Response({"detail": "Password changed successfully."})
+
+
 @extend_schema_view(
     list=extend_schema(
         tags=["Patients"],

@@ -65,6 +65,67 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         ]
 
 
+class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
+    """Superadmin: create / update subscriptions for any center."""
+
+    center_id = serializers.IntegerField()
+    plan_id = serializers.IntegerField()
+    center_name = serializers.CharField(source="center.name", read_only=True)
+    center_domain = serializers.CharField(source="center.domain", read_only=True)
+    plan_name = serializers.CharField(source="plan.name", read_only=True)
+
+    class Meta:
+        model = Subscription
+        fields = [
+            "id",
+            "center_id",
+            "center_name",
+            "center_domain",
+            "plan_id",
+            "plan_name",
+            "status",
+            "trial_start",
+            "trial_end",
+            "billing_date",
+            "started_at",
+            "cancelled_at",
+        ]
+        read_only_fields = ["id", "started_at", "cancelled_at"]
+
+    def validate_center_id(self, value):
+        from core.tenants.models import DiagnosticCenter
+
+        if not DiagnosticCenter.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Center not found.")
+        # On create, reject if subscription already exists
+        if not self.instance and Subscription.objects.filter(center_id=value).exists():
+            raise serializers.ValidationError("This center already has a subscription.")
+        return value
+
+    def validate_plan_id(self, value):
+        if not SubscriptionPlan.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Plan not found.")
+        return value
+
+    def create(self, validated_data):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        plan = SubscriptionPlan.objects.get(id=validated_data["plan_id"])
+        status = validated_data.get("status", Subscription.Status.TRIAL)
+
+        # Auto-populate trial dates if status is TRIAL and not provided
+        if status == Subscription.Status.TRIAL:
+            now = timezone.now()
+            validated_data.setdefault("trial_start", now)
+            validated_data.setdefault(
+                "trial_end", now + timedelta(days=plan.trial_days)
+            )
+
+        return super().create(validated_data)
+
+
 class CenterRegistrationSerializer(serializers.Serializer):
     """Public center registration — creates center + admin + subscription."""
 

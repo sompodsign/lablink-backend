@@ -170,6 +170,7 @@ class SuperadminCenterViewTests(APITestCase):
                 "address": "456 New St",
                 "contact_number": "01800000001",
                 "email": "info@newcenter.com",
+                "admin_email": "admin@newcenter.com",
                 "tagline": "Best diagnostics",
                 "primary_color": "#0d9488",
                 "opening_hours": "9:00 AM - 6:00 PM",
@@ -207,6 +208,7 @@ class SuperadminCenterViewTests(APITestCase):
                 "domain": "trial-center",
                 "address": "789 Trial St",
                 "contact_number": "01800000002",
+                "admin_email": "admin@trialcenter.com",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -219,6 +221,59 @@ class SuperadminCenterViewTests(APITestCase):
         self.assertIsNotNone(sub.trial_end)
         self.assertIsNotNone(sub.billing_date)
 
+    def test_create_center_auto_creates_admin_user(self):
+        """Center creation auto-creates admin user with roles and staff."""
+        from core.tenants.models import Role, Staff
+
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/centers/",
+            {
+                "name": "Admin Center",
+                "domain": "admin-center",
+                "address": "123 Admin St",
+                "contact_number": "01800000003",
+                "admin_email": "admin@admincenter.com",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        center = DiagnosticCenter.objects.get(domain="admin-center")
+
+        # Admin user exists
+        admin_user = User.objects.get(email="admin@admincenter.com")
+        self.assertEqual(admin_user.center, center)
+        self.assertTrue(admin_user.is_active)
+
+        # Staff record with Admin role
+        staff = Staff.objects.get(user=admin_user, center=center)
+        self.assertEqual(staff.role.name, "Admin")
+
+        # Default roles created
+        roles = set(Role.objects.filter(center=center).values_list("name", flat=True))
+        self.assertIn("Admin", roles)
+        self.assertIn("Receptionist", roles)
+        self.assertIn("Medical Technologist", roles)
+
+    def test_create_center_duplicate_admin_email_rejected(self):
+        """Reject if admin_email already belongs to an existing user."""
+        User.objects.create_user(
+            username="existing",
+            email="taken@example.com",
+            password="pass123",
+        )
+        self._auth()
+        response = self.client.post(
+            "/api/tenants/superadmin/centers/",
+            {
+                "name": "Dup Email Center",
+                "domain": "dup-email",
+                "admin_email": "taken@example.com",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("admin_email", response.data)
+
     def test_create_center_duplicate_domain(self):
         self._auth()
         response = self.client.post(
@@ -228,6 +283,7 @@ class SuperadminCenterViewTests(APITestCase):
                 "domain": "test-center",  # already exists
                 "address": "789 Dup St",
                 "contact_number": "01900000001",
+                "admin_email": "admin@dup.com",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

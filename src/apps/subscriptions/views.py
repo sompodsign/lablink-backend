@@ -14,6 +14,7 @@ from .serializers import (
     InvoiceSerializer,
     SubscriptionPlanSerializer,
     SubscriptionSerializer,
+    SuperadminSubscriptionSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,6 +245,103 @@ class SuperadminSubscriptionListView(APIView):
             )
 
         return Response(data)
+
+    def post(self, request):
+        """Create a new subscription for a center."""
+        serializer = SuperadminSubscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        sub = serializer.save()
+
+        logger.info(
+            "Subscription created for %s by superadmin %s",
+            sub.center.name,
+            request.user.username,
+        )
+
+        # Invalidate cached status
+        from django.core.cache import cache
+
+        cache.delete(f"sub_status:{sub.center_id}")
+
+        return Response(
+            SuperadminSubscriptionSerializer(sub).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class SuperadminSubscriptionDetailView(APIView):
+    """Superadmin: retrieve, update, or delete a single subscription."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    def _get_subscription(self, subscription_id):
+        try:
+            return Subscription.objects.select_related("center", "plan").get(
+                pk=subscription_id,
+            )
+        except Subscription.DoesNotExist:
+            return None
+
+    def get(self, request, subscription_id):
+        sub = self._get_subscription(subscription_id)
+        if not sub:
+            return Response(
+                {"detail": "Subscription not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(SuperadminSubscriptionSerializer(sub).data)
+
+    def patch(self, request, subscription_id):
+        sub = self._get_subscription(subscription_id)
+        if not sub:
+            return Response(
+                {"detail": "Subscription not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = SuperadminSubscriptionSerializer(
+            sub, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        sub = serializer.save()
+
+        logger.info(
+            "Subscription #%s updated by superadmin %s",
+            sub.id,
+            request.user.username,
+        )
+
+        # Invalidate cached status
+        from django.core.cache import cache
+
+        cache.delete(f"sub_status:{sub.center_id}")
+
+        return Response(SuperadminSubscriptionSerializer(sub).data)
+
+    def delete(self, request, subscription_id):
+        sub = self._get_subscription(subscription_id)
+        if not sub:
+            return Response(
+                {"detail": "Subscription not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        center_name = sub.center.name
+        center_id = sub.center_id
+        sub.delete()
+
+        logger.info(
+            "Subscription deleted for %s by superadmin %s",
+            center_name,
+            request.user.username,
+        )
+
+        # Invalidate cached status
+        from django.core.cache import cache
+
+        cache.delete(f"sub_status:{center_id}")
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class SuperadminInvoiceListView(APIView):
