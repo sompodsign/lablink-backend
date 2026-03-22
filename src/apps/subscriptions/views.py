@@ -226,6 +226,7 @@ class SuperadminSubscriptionListView(APIView):
                     "center_id": sub.center.id,
                     "center_name": sub.center.name,
                     "center_domain": sub.center.domain,
+                    "plan_id": sub.plan.id,
                     "plan_name": sub.plan.name,
                     "plan_price": str(sub.plan.price),
                     "status": sub.status,
