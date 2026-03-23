@@ -422,19 +422,19 @@ class InvoiceAuditLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = InvoiceAuditLog
         fields = [
-            'id',
-            'action',
-            'changes',
-            'reason',
-            'changed_by',
-            'changed_by_name',
-            'created_at',
+            "id",
+            "action",
+            "changes",
+            "reason",
+            "changed_by",
+            "changed_by_name",
+            "created_at",
         ]
 
     def get_changed_by_name(self, obj) -> str:
         if obj.changed_by:
             return obj.changed_by.get_full_name() or obj.changed_by.email
-        return 'System'
+        return "System"
 
 
 # ─── Update Serializer (PATCH) ────────────────────────────────────
@@ -448,25 +448,25 @@ class InvoiceUpdateSerializer(serializers.Serializer):
         max_digits=5,
         decimal_places=2,
         required=False,
-        min_value=Decimal('0'),
-        max_value=Decimal('100'),
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
     )
     notes = serializers.CharField(required=False, allow_blank=True)
     reason = serializers.CharField(
         required=True,
-        help_text='Reason for this edit (required for audit trail)',
+        help_text="Reason for this edit (required for audit trail)",
     )
 
     def _snapshot_items(self, invoice):
         """Snapshot current items for diffing."""
         return [
             {
-                'id': item.id,
-                'item_type': item.item_type,
-                'description': item.description,
-                'quantity': item.quantity,
-                'unit_price': str(item.unit_price),
-                'total_price': str(item.total_price),
+                "id": item.id,
+                "item_type": item.item_type,
+                "description": item.description,
+                "quantity": item.quantity,
+                "unit_price": str(item.unit_price),
+                "total_price": str(item.total_price),
             }
             for item in invoice.items.all()
         ]
@@ -479,50 +479,50 @@ class InvoiceUpdateSerializer(serializers.Serializer):
             return test_type.base_price
 
     def update(self, invoice, validated_data):
-        request = self.context['request']
+        request = self.context["request"]
         tenant = request.tenant
         changes = {}
 
         # Track field changes
-        if 'discount_percentage' in validated_data:
+        if "discount_percentage" in validated_data:
             old_val = str(invoice.discount_percentage)
-            new_val = str(validated_data['discount_percentage'])
+            new_val = str(validated_data["discount_percentage"])
             if old_val != new_val:
-                changes['discount_percentage'] = {'old': old_val, 'new': new_val}
-                invoice.discount_percentage = validated_data['discount_percentage']
+                changes["discount_percentage"] = {"old": old_val, "new": new_val}
+                invoice.discount_percentage = validated_data["discount_percentage"]
 
-        if 'notes' in validated_data:
+        if "notes" in validated_data:
             old_val = invoice.notes
-            new_val = validated_data['notes']
+            new_val = validated_data["notes"]
             if old_val != new_val:
-                changes['notes'] = {'old': old_val, 'new': new_val}
+                changes["notes"] = {"old": old_val, "new": new_val}
                 invoice.notes = new_val
 
         # Track item changes
-        if 'items' in validated_data:
+        if "items" in validated_data:
             old_items = self._snapshot_items(invoice)
 
             # Delete old items and create new ones
             invoice.items.all().delete()
 
-            for item_data in validated_data['items']:
-                item_type = item_data.get('item_type', InvoiceItem.ItemType.TEST)
-                test_order_id = item_data.get('test_order_id')
-                test_type_id = item_data.get('test_type_id')
+            for item_data in validated_data["items"]:
+                item_type = item_data.get("item_type", InvoiceItem.ItemType.TEST)
+                test_order_id = item_data.get("test_order_id")
+                test_type_id = item_data.get("test_type_id")
                 test_order = None
-                description = item_data.get('description', '')
-                unit_price = item_data.get('unit_price')
-                quantity = item_data.get('quantity', 1)
+                description = item_data.get("description", "")
+                unit_price = item_data.get("unit_price")
+                quantity = item_data.get("quantity", 1)
 
                 if item_type == InvoiceItem.ItemType.TEST:
                     if test_order_id:
                         try:
                             test_order = TestOrder.objects.select_related(
-                                'test_type'
+                                "test_type"
                             ).get(pk=test_order_id, center=tenant)
                         except TestOrder.DoesNotExist:
                             raise serializers.ValidationError(
-                                {'items': f'Test order {test_order_id} not found.'}
+                                {"items": f"Test order {test_order_id} not found."}
                             ) from None
                         if not description:
                             description = test_order.test_type.name
@@ -535,7 +535,7 @@ class InvoiceUpdateSerializer(serializers.Serializer):
                             test_type = TestType.objects.get(pk=test_type_id)
                         except TestType.DoesNotExist:
                             raise serializers.ValidationError(
-                                {'items': f'Test type {test_type_id} not found.'}
+                                {"items": f"Test type {test_type_id} not found."}
                             ) from None
                         if not description:
                             description = test_type.name
@@ -544,7 +544,7 @@ class InvoiceUpdateSerializer(serializers.Serializer):
 
                 if unit_price is None:
                     raise serializers.ValidationError(
-                        {'items': 'unit_price is required for non-test items.'}
+                        {"items": "unit_price is required for non-test items."}
                     )
 
                 InvoiceItem.objects.create(
@@ -558,29 +558,29 @@ class InvoiceUpdateSerializer(serializers.Serializer):
 
             new_items = self._snapshot_items(invoice)
             if old_items != new_items:
-                changes['items'] = {'old': old_items, 'new': new_items}
+                changes["items"] = {"old": old_items, "new": new_items}
 
         # Save field changes
-        if 'discount_percentage' in validated_data or 'notes' in validated_data:
-            update_fields = ['updated_at']
-            if 'discount_percentage' in validated_data:
-                update_fields.append('discount_percentage')
-            if 'notes' in validated_data:
-                update_fields.append('notes')
+        if "discount_percentage" in validated_data or "notes" in validated_data:
+            update_fields = ["updated_at"]
+            if "discount_percentage" in validated_data:
+                update_fields.append("discount_percentage")
+            if "notes" in validated_data:
+                update_fields.append("notes")
             invoice.save(update_fields=update_fields)
 
         # Recalculate totals
         old_totals = {
-            'subtotal': str(invoice.subtotal),
-            'total': str(invoice.total),
+            "subtotal": str(invoice.subtotal),
+            "total": str(invoice.total),
         }
         invoice.recalculate_totals()
         new_totals = {
-            'subtotal': str(invoice.subtotal),
-            'total': str(invoice.total),
+            "subtotal": str(invoice.subtotal),
+            "total": str(invoice.total),
         }
         if old_totals != new_totals:
-            changes['totals'] = {'old': old_totals, 'new': new_totals}
+            changes["totals"] = {"old": old_totals, "new": new_totals}
 
         # Create audit log
         if changes:
@@ -589,7 +589,7 @@ class InvoiceUpdateSerializer(serializers.Serializer):
                 changed_by=request.user,
                 action=InvoiceAuditLog.Action.UPDATED,
                 changes=changes,
-                reason=validated_data.get('reason', ''),
+                reason=validated_data.get("reason", ""),
             )
 
         return invoice

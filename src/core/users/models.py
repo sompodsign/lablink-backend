@@ -21,9 +21,9 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=20, blank=True)
     preferred_language = models.CharField(
         max_length=5,
-        default='en',
-        choices=[('en', 'English'), ('bn', 'বাংলা')],
-        help_text=_('User interface language preference'),
+        default="en",
+        choices=[("en", "English"), ("bn", "বাংলা")],
+        help_text=_("User interface language preference"),
     )
     approval_status = models.CharField(
         max_length=10,

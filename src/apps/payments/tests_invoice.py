@@ -270,81 +270,96 @@ class InvoiceViewTests(APITestCase):
     def test_edit_issued_invoice_items(self):
         """ISSUED invoice can be edited — items replaced, totals recalculated."""
         invoice = make_invoice(
-            self.patient, self.center,
+            self.patient,
+            self.center,
             created_by=self.staff_user,
             status=Invoice.Status.ISSUED,
         )
-        make_invoice_item(invoice, unit_price='500.00')
+        make_invoice_item(invoice, unit_price="500.00")
         invoice.recalculate_totals()
-        self.assertEqual(invoice.total, Decimal('500.00'))
+        self.assertEqual(invoice.total, Decimal("500.00"))
 
         self._auth(self.staff_user)
         payload = {
-            'items': [
-                {'item_type': 'OTHER', 'description': 'Lab Fee', 'unit_price': '300.00', 'quantity': 1},
-                {'item_type': 'OTHER', 'description': 'Processing', 'unit_price': '200.00', 'quantity': 1},
+            "items": [
+                {
+                    "item_type": "OTHER",
+                    "description": "Lab Fee",
+                    "unit_price": "300.00",
+                    "quantity": 1,
+                },
+                {
+                    "item_type": "OTHER",
+                    "description": "Processing",
+                    "unit_price": "200.00",
+                    "quantity": 1,
+                },
             ],
-            'reason': 'Correcting line items',
+            "reason": "Correcting line items",
         }
         response = self.client.patch(
-            f'/api/payments/invoices/{invoice.id}/', payload, format='json'
+            f"/api/payments/invoices/{invoice.id}/", payload, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['items']), 2)
-        self.assertEqual(Decimal(response.data['subtotal']), Decimal('500.00'))
+        self.assertEqual(len(response.data["items"]), 2)
+        self.assertEqual(Decimal(response.data["subtotal"]), Decimal("500.00"))
 
     def test_edit_discount(self):
         """Changing discount recalculates totals and creates audit log."""
         invoice = make_invoice(
-            self.patient, self.center,
+            self.patient,
+            self.center,
             created_by=self.staff_user,
             status=Invoice.Status.ISSUED,
         )
-        make_invoice_item(invoice, unit_price='1000.00')
+        make_invoice_item(invoice, unit_price="1000.00")
         invoice.recalculate_totals()
 
         self._auth(self.staff_user)
         payload = {
-            'discount_percentage': '20.00',
-            'reason': 'Loyalty discount',
+            "discount_percentage": "20.00",
+            "reason": "Loyalty discount",
         }
         response = self.client.patch(
-            f'/api/payments/invoices/{invoice.id}/', payload, format='json'
+            f"/api/payments/invoices/{invoice.id}/", payload, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(Decimal(response.data['discount_percentage']), Decimal('20.00'))
-        self.assertEqual(Decimal(response.data['total']), Decimal('800.00'))
+        self.assertEqual(
+            Decimal(response.data["discount_percentage"]), Decimal("20.00")
+        )
+        self.assertEqual(Decimal(response.data["total"]), Decimal("800.00"))
 
     def test_edit_creates_audit_log(self):
         """Editing creates an InvoiceAuditLog entry."""
         invoice = make_invoice(
-            self.patient, self.center,
+            self.patient,
+            self.center,
             created_by=self.staff_user,
             status=Invoice.Status.ISSUED,
         )
-        make_invoice_item(invoice, unit_price='500.00')
+        make_invoice_item(invoice, unit_price="500.00")
         invoice.recalculate_totals()
 
         self._auth(self.staff_user)
         payload = {
-            'notes': 'Updated notes',
-            'reason': 'Adding note',
+            "notes": "Updated notes",
+            "reason": "Adding note",
         }
-        self.client.patch(f'/api/payments/invoices/{invoice.id}/', payload, format='json')
+        self.client.patch(
+            f"/api/payments/invoices/{invoice.id}/", payload, format="json"
+        )
         log = InvoiceAuditLog.objects.filter(invoice=invoice).first()
         self.assertIsNotNone(log)
-        self.assertEqual(log.action, 'UPDATED')
-        self.assertEqual(log.reason, 'Adding note')
-        self.assertIn('notes', log.changes)
+        self.assertEqual(log.action, "UPDATED")
+        self.assertEqual(log.reason, "Adding note")
+        self.assertIn("notes", log.changes)
 
     def test_cannot_edit_paid_invoice(self):
-        invoice = make_invoice(
-            self.patient, self.center, status=Invoice.Status.PAID
-        )
+        invoice = make_invoice(self.patient, self.center, status=Invoice.Status.PAID)
         self._auth(self.staff_user)
-        payload = {'notes': 'change', 'reason': 'test'}
+        payload = {"notes": "change", "reason": "test"}
         response = self.client.patch(
-            f'/api/payments/invoices/{invoice.id}/', payload, format='json'
+            f"/api/payments/invoices/{invoice.id}/", payload, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -353,9 +368,9 @@ class InvoiceViewTests(APITestCase):
             self.patient, self.center, status=Invoice.Status.CANCELLED
         )
         self._auth(self.staff_user)
-        payload = {'notes': 'change', 'reason': 'test'}
+        payload = {"notes": "change", "reason": "test"}
         response = self.client.patch(
-            f'/api/payments/invoices/{invoice.id}/', payload, format='json'
+            f"/api/payments/invoices/{invoice.id}/", payload, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -364,7 +379,8 @@ class InvoiceViewTests(APITestCase):
     def test_audit_log_endpoint(self):
         """GET /audit-log/ returns change history."""
         invoice = make_invoice(
-            self.patient, self.center,
+            self.patient,
+            self.center,
             created_by=self.staff_user,
             status=Invoice.Status.ISSUED,
         )
@@ -375,20 +391,18 @@ class InvoiceViewTests(APITestCase):
             changes={},
         )
         self._auth(self.staff_user)
-        response = self.client.get(f'/api/payments/invoices/{invoice.id}/audit-log/')
+        response = self.client.get(f"/api/payments/invoices/{invoice.id}/audit-log/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['action'], 'CREATED')
+        self.assertEqual(response.data[0]["action"], "CREATED")
 
     def test_mark_paid_creates_audit_log(self):
         """Marking paid creates a STATUS_CHANGED audit entry."""
-        invoice = make_invoice(
-            self.patient, self.center, status=Invoice.Status.ISSUED
-        )
+        invoice = make_invoice(self.patient, self.center, status=Invoice.Status.ISSUED)
         self._auth(self.staff_user)
-        self.client.post(f'/api/payments/invoices/{invoice.id}/mark-paid/')
+        self.client.post(f"/api/payments/invoices/{invoice.id}/mark-paid/")
         log = InvoiceAuditLog.objects.filter(
-            invoice=invoice, action='STATUS_CHANGED'
+            invoice=invoice, action="STATUS_CHANGED"
         ).first()
         self.assertIsNotNone(log)
-        self.assertEqual(log.changes['status']['new'], 'PAID')
+        self.assertEqual(log.changes["status"]["new"], "PAID")

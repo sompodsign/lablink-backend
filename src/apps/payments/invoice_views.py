@@ -52,7 +52,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     Strictly scoped to staff only.
     """
 
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    http_method_names = ["get", "post", "patch", "head", "options"]
     permission_classes = [permissions.IsAuthenticated, IsCenterStaff]
 
     def get_queryset(self):
@@ -65,13 +65,13 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         )
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action == "create":
             return InvoiceCreateSerializer
-        if self.action == 'partial_update':
+        if self.action == "partial_update":
             return InvoiceUpdateSerializer
-        if self.action == 'print_data':
+        if self.action == "print_data":
             return InvoicePrintSerializer
-        if self.action == 'audit_log':
+        if self.action == "audit_log":
             return InvoiceAuditLogSerializer
         return InvoiceSerializer
 
@@ -88,12 +88,12 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         )
 
     @extend_schema(
-        tags=['Invoices'],
-        summary='Update an invoice',
+        tags=["Invoices"],
+        summary="Update an invoice",
         description=(
-            'Partially update an invoice (items, discount, notes). '
-            'Only DRAFT and ISSUED invoices can be edited. '
-            'A reason is required for the audit trail.'
+            "Partially update an invoice (items, discount, notes). "
+            "Only DRAFT and ISSUED invoices can be edited. "
+            "A reason is required for the audit trail."
         ),
         request=InvoiceUpdateSerializer,
         responses={200: InvoiceSerializer},
@@ -102,95 +102,95 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         invoice = self.get_object()
         if invoice.status != Invoice.Status.ISSUED:
             return Response(
-                {'detail': 'Only issued invoices can be edited.'},
+                {"detail": "Only issued invoices can be edited."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         serializer = InvoiceUpdateSerializer(
             invoice,
             data=request.data,
             partial=True,
-            context={'request': request},
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         updated = serializer.update(invoice, serializer.validated_data)
         return Response(InvoiceSerializer(updated).data)
 
     @extend_schema(
-        tags=['Invoices'],
-        summary='Get print-ready invoice data',
+        tags=["Invoices"],
+        summary="Get print-ready invoice data",
         description=(
-            'Returns all data needed for printing an invoice, '
-            'including center branding, patient details, and '
-            'itemized breakdown with totals.'
+            "Returns all data needed for printing an invoice, "
+            "including center branding, patient details, and "
+            "itemized breakdown with totals."
         ),
         responses={200: InvoicePrintSerializer},
     )
-    @action(detail=True, methods=['get'], url_path='print')
+    @action(detail=True, methods=["get"], url_path="print")
     def print_data(self, request, pk=None):
         invoice = self.get_object()
-        serializer = InvoicePrintSerializer(invoice, context={'request': request})
+        serializer = InvoicePrintSerializer(invoice, context={"request": request})
         return Response(serializer.data)
 
     @extend_schema(
-        tags=['Invoices'],
-        summary='Mark invoice as paid',
-        description='Transition invoice status to PAID.',
+        tags=["Invoices"],
+        summary="Mark invoice as paid",
+        description="Transition invoice status to PAID.",
         responses={200: InvoiceSerializer},
     )
-    @action(detail=True, methods=['post'], url_path='mark-paid')
+    @action(detail=True, methods=["post"], url_path="mark-paid")
     def mark_paid(self, request, pk=None):
         invoice = self.get_object()
         if invoice.status == Invoice.Status.CANCELLED:
             return Response(
-                {'detail': 'Cannot mark a cancelled invoice as paid.'},
+                {"detail": "Cannot mark a cancelled invoice as paid."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         old_status = invoice.status
         invoice.status = Invoice.Status.PAID
-        invoice.save(update_fields=['status', 'updated_at'])
+        invoice.save(update_fields=["status", "updated_at"])
         InvoiceAuditLog.objects.create(
             invoice=invoice,
             changed_by=request.user,
             action=InvoiceAuditLog.Action.STATUS_CHANGED,
-            changes={'status': {'old': old_status, 'new': 'PAID'}},
+            changes={"status": {"old": old_status, "new": "PAID"}},
         )
         return Response(InvoiceSerializer(invoice).data)
 
     @extend_schema(
-        tags=['Invoices'],
-        summary='Cancel invoice',
-        description='Transition invoice status to CANCELLED.',
+        tags=["Invoices"],
+        summary="Cancel invoice",
+        description="Transition invoice status to CANCELLED.",
         responses={200: InvoiceSerializer},
     )
-    @action(detail=True, methods=['post'], url_path='cancel')
+    @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
         invoice = self.get_object()
         if invoice.status == Invoice.Status.PAID:
             return Response(
-                {'detail': 'Cannot cancel a paid invoice.'},
+                {"detail": "Cannot cancel a paid invoice."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         old_status = invoice.status
         invoice.status = Invoice.Status.CANCELLED
-        invoice.save(update_fields=['status', 'updated_at'])
+        invoice.save(update_fields=["status", "updated_at"])
         InvoiceAuditLog.objects.create(
             invoice=invoice,
             changed_by=request.user,
             action=InvoiceAuditLog.Action.STATUS_CHANGED,
-            changes={'status': {'old': old_status, 'new': 'CANCELLED'}},
+            changes={"status": {"old": old_status, "new": "CANCELLED"}},
         )
         return Response(InvoiceSerializer(invoice).data)
 
     @extend_schema(
-        tags=['Invoices'],
-        summary='Get invoice audit log',
-        description='Returns the change history for an invoice.',
+        tags=["Invoices"],
+        summary="Get invoice audit log",
+        description="Returns the change history for an invoice.",
         responses={200: InvoiceAuditLogSerializer(many=True)},
     )
-    @action(detail=True, methods=['get'], url_path='audit-log')
+    @action(detail=True, methods=["get"], url_path="audit-log")
     def audit_log(self, request, pk=None):
         invoice = self.get_object()
-        logs = invoice.audit_logs.select_related('changed_by').all()
+        logs = invoice.audit_logs.select_related("changed_by").all()
         serializer = InvoiceAuditLogSerializer(logs, many=True)
         return Response(serializer.data)
 

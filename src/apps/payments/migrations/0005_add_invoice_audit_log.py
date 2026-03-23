@@ -6,29 +6,71 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('payments', '0004_invoice_walk_in_name_invoice_walk_in_phone_and_more'),
+        ("payments", "0004_invoice_walk_in_name_invoice_walk_in_phone_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='InvoiceAuditLog',
+            name="InvoiceAuditLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('action', models.CharField(choices=[('CREATED', 'Created'), ('UPDATED', 'Updated'), ('STATUS_CHANGED', 'Status Changed')], max_length=20)),
-                ('changes', models.JSONField(default=dict, help_text='JSON diff: {"field": {"old": x, "new": y}, ...}')),
-                ('reason', models.TextField(blank=True, help_text='Reason for the change')),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('changed_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='invoice_audit_logs', to=settings.AUTH_USER_MODEL)),
-                ('invoice', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='audit_logs', to='payments.invoice')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "action",
+                    models.CharField(
+                        choices=[
+                            ("CREATED", "Created"),
+                            ("UPDATED", "Updated"),
+                            ("STATUS_CHANGED", "Status Changed"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "changes",
+                    models.JSONField(
+                        default=dict,
+                        help_text='JSON diff: {"field": {"old": x, "new": y}, ...}',
+                    ),
+                ),
+                (
+                    "reason",
+                    models.TextField(blank=True, help_text="Reason for the change"),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "changed_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="invoice_audit_logs",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "invoice",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="audit_logs",
+                        to="payments.invoice",
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'invoice audit log',
-                'verbose_name_plural': 'invoice audit logs',
-                'db_table': 'apps_billing_invoice_audit_log',
-                'ordering': ['-created_at'],
+                "verbose_name": "invoice audit log",
+                "verbose_name_plural": "invoice audit logs",
+                "db_table": "apps_billing_invoice_audit_log",
+                "ordering": ["-created_at"],
             },
         ),
     ]

@@ -4,15 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('users', '0010_fix_email_constraint_blank'),
+        ("users", "0010_fix_email_constraint_blank"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='user',
-            name='preferred_language',
-            field=models.CharField(choices=[('en', 'English'), ('bn', 'বাংলা')], default='en', help_text='User interface language preference', max_length=5),
+            model_name="user",
+            name="preferred_language",
+            field=models.CharField(
+                choices=[("en", "English"), ("bn", "বাংলা")],
+                default="en",
+                help_text="User interface language preference",
+                max_length=5,
+            ),
         ),
     ]
