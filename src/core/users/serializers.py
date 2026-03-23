@@ -155,6 +155,7 @@ class UserSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "phone_number",
+            "preferred_language",
             "groups",
             "staff_role",
             "role_display",

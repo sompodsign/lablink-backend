@@ -255,3 +255,48 @@ class Payment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.appointment} - {self.amount} - {self.status}"
+
+
+# ─── Invoice Audit Log ───────────────────────────────────────────
+
+
+class InvoiceAuditLog(models.Model):
+    class Action(models.TextChoices):
+        CREATED = 'CREATED', _('Created')
+        UPDATED = 'UPDATED', _('Updated')
+        STATUS_CHANGED = 'STATUS_CHANGED', _('Status Changed')
+
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.CASCADE,
+        related_name='audit_logs',
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invoice_audit_logs',
+    )
+    action = models.CharField(
+        max_length=20,
+        choices=Action.choices,
+    )
+    changes = models.JSONField(
+        default=dict,
+        help_text=_('JSON diff: {"field": {"old": x, "new": y}, ...}'),
+    )
+    reason = models.TextField(
+        blank=True,
+        help_text=_('Reason for the change'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'apps_billing_invoice_audit_log'
+        ordering = ['-created_at']
+        verbose_name = _('invoice audit log')
+        verbose_name_plural = _('invoice audit logs')
+
+    def __str__(self) -> str:
+        return f'{self.invoice.invoice_number} — {self.action} by {self.changed_by}'

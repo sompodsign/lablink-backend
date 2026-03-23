@@ -19,6 +19,12 @@ class User(AbstractUser):
         help_text=_("The center this user belongs to. NULL for superadmins."),
     )
     phone_number = models.CharField(max_length=20, blank=True)
+    preferred_language = models.CharField(
+        max_length=5,
+        default='en',
+        choices=[('en', 'English'), ('bn', 'বাংলা')],
+        help_text=_('User interface language preference'),
+    )
     approval_status = models.CharField(
         max_length=10,
         choices=ApprovalStatus.choices,
