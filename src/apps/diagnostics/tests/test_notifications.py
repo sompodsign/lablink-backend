@@ -50,7 +50,9 @@ class SendReportReadyEmailTest(SimpleTestCase):
 
         call_kwargs = mock_send_email.call_args
         context = call_kwargs.kwargs.get("context", call_kwargs[1].get("context", {}))
-        self.assertIn("abc-123-uuid", context["report_url"])
+        # URL now uses a signed token (contains ':') instead of raw UUID
+        self.assertIn("/report/", context["report_url"])
+        self.assertIn(":", context["report_url"])
         self.assertEqual(context["patient_name"], "Fatima Khan")
         self.assertEqual(context["test_name"], "CBC")
 
@@ -84,6 +86,7 @@ class SendReportReadyEmailTest(SimpleTestCase):
         context = mock_send_email.call_args.kwargs.get(
             "context", mock_send_email.call_args[1].get("context", {})
         )
-        self.assertIn(
-            "https://lab.example.com/report/abc-123-uuid", context["report_url"]
+        # URL should use the FRONTEND_URL setting with a signed token
+        self.assertTrue(
+            context["report_url"].startswith("https://lab.example.com/report/")
         )
