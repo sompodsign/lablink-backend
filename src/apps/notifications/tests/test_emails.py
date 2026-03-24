@@ -203,6 +203,13 @@ class TemplateRenderingTests(SimpleTestCase):
             "center_name": "Lab",
             "report_url": "http://test/report/abc",
         },
+        "batch_report_ready": {
+            "patient_name": "John",
+            "test_names": "CBC, ESR",
+            "report_date": "01 January 2026",
+            "center_name": "Lab",
+            "report_links": "http://test/report/1\nhttp://test/report/2",
+        },
         "staff_credentials": {
             "first_name": "John",
             "role_name": "Admin",

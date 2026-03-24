@@ -1438,6 +1438,8 @@ class CenterSettingsViewTests(APITestCase):
             "use_preprinted_paper",
             "print_header_margin_mm",
             "print_footer_margin_mm",
+            "email_notifications_enabled",
+            "sms_enabled",
         }
         self.assertEqual(set(response.data.keys()), expected_fields)
 

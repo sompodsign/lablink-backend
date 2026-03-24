@@ -149,8 +149,8 @@ class BatchVerifyTest(TestCase):
             result_data={"ESR": {"value": "12"}},
         )
 
-    @patch("apps.diagnostics.views.ReportViewSet._send_verify_email")
-    def test_verifies_all_draft_reports(self, mock_email):
+    @patch("apps.diagnostics.views.ReportViewSet._send_verify_notifications")
+    def test_verifies_all_draft_reports(self, mock_notify):
         resp = self.client.post(
             "/api/diagnostics/reports/batch-verify/",
             {"report_ids": [self.report1.id, self.report2.id]},
@@ -166,8 +166,8 @@ class BatchVerifyTest(TestCase):
         self.assertEqual(self.report2.status, Report.Status.VERIFIED)
         self.assertEqual(self.report1.verified_by, self.admin_user)
 
-    @patch("apps.diagnostics.views.ReportViewSet._send_verify_email")
-    def test_skips_already_verified(self, mock_email):
+    @patch("apps.diagnostics.views.ReportViewSet._send_verify_notifications")
+    def test_skips_already_verified(self, mock_notify):
         # Pre-verify report1
         self.report1.status = Report.Status.VERIFIED
         self.report1.save(update_fields=["status"])
@@ -184,8 +184,8 @@ class BatchVerifyTest(TestCase):
         self.report2.refresh_from_db()
         self.assertEqual(self.report2.status, Report.Status.VERIFIED)
 
-    @patch("apps.diagnostics.views.ReportViewSet._send_verify_email")
-    def test_sends_email_per_patient(self, mock_email):
+    @patch("apps.diagnostics.views.ReportViewSet._send_verify_notifications")
+    def test_sends_email_per_patient(self, mock_notify):
         resp = self.client.post(
             "/api/diagnostics/reports/batch-verify/",
             {"report_ids": [self.report1.id, self.report2.id]},
@@ -193,8 +193,8 @@ class BatchVerifyTest(TestCase):
             **self.auth,
         )
         self.assertEqual(resp.status_code, 200)
-        # Both reports are for the same patient, so email sent once
-        mock_email.assert_called_once()
+        # Both reports are for the same patient, so notification method called once
+        mock_notify.assert_called_once()
 
     def test_non_admin_denied(self):
         tech_user = make_user("tech1")
