@@ -541,7 +541,7 @@ class ReportViewSet(viewsets.ModelViewSet):
         return Response(ReportSerializer(report).data)
 
     def _send_verify_notifications(self, report):
-        """Send email/SMS after verification — grouped if all same-day reports are done."""
+        """Send email/SMS after single-report verification."""
         center = report.test_order.center
         if not center.email_notifications_enabled and not center.sms_enabled:
             return
@@ -552,42 +552,138 @@ class ReportViewSet(viewsets.ModelViewSet):
             phone = getattr(patient, "phone_number", None)
 
             from apps.diagnostics.services.notifications import (
-                send_batch_report_ready_email,
-                send_batch_report_ready_sms,
                 send_report_ready_email,
                 send_report_ready_sms,
             )
 
-            # Find all same-day reports for this patient at this center
-            report_date = report.created_at.date()
-            same_day_reports = Report.objects.filter(
-                test_order__patient=patient,
-                test_order__center=center,
-                created_at__date=report_date,
-                is_deleted=False,
-            ).select_related("test_type")
-
-            all_verified = not same_day_reports.exclude(
-                status=Report.Status.VERIFIED
-            ).exists()
-
-            is_batch = all_verified and same_day_reports.count() > 1
-
-            # Email
+            # Single verify → notify for this report only
             if center.email_notifications_enabled and email:
-                if is_batch:
-                    send_batch_report_ready_email(same_day_reports, email)
-                else:
-                    send_report_ready_email(report, email)
+                send_report_ready_email(report, email)
 
-            # SMS
             if center.sms_enabled and phone:
-                if is_batch:
-                    send_batch_report_ready_sms(same_day_reports, phone)
-                else:
-                    send_report_ready_sms(report, phone)
+                send_report_ready_sms(report, phone)
         except Exception:
             logger.exception("Failed to send report verification notifications")
+
+    @extend_schema(
+        tags=["Reports"],
+        summary="Resend report email",
+        description=(
+            "Resend the report-ready email for a verified/delivered report. "
+            "Rate-limited to 3 per hour per user per report."
+        ),
+        request=None,
+        responses={
+            200: {"type": "object", "properties": {"detail": {"type": "string"}}}
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="resend-email")
+    def resend_email(self, request, pk=None):
+        from core.tenants.throttles import ResendNotificationThrottle
+
+        throttle = ResendNotificationThrottle()
+        if not throttle.allow_request(request, self):
+            return Response(
+                {"detail": "Rate limit exceeded. Try again later."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        report = self.get_object()
+        if report.status not in (Report.Status.VERIFIED, Report.Status.DELIVERED):
+            return Response(
+                {
+                    "detail": "Email can only be resent for verified or delivered reports."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        center = report.test_order.center
+        if not center.email_notifications_enabled:
+            return Response(
+                {"detail": "Email notifications are not enabled for this center."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        patient = report.test_order.patient
+        email = getattr(patient, "email", None)
+        if not email:
+            return Response(
+                {"detail": "Patient has no email address."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from apps.diagnostics.services.notifications import send_report_ready_email
+
+        success = send_report_ready_email(report, email)
+        if success:
+            logger.info(
+                "Report email resent",
+                extra={"report_id": report.id, "resent_by": request.user.id},
+            )
+            return Response({"detail": "Email sent successfully."})
+        return Response(
+            {"detail": "Failed to send email. Please try again."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    @extend_schema(
+        tags=["Reports"],
+        summary="Resend report SMS",
+        description=(
+            "Resend the report-ready SMS for a verified/delivered report. "
+            "Rate-limited to 3 per hour per user per report."
+        ),
+        request=None,
+        responses={
+            200: {"type": "object", "properties": {"detail": {"type": "string"}}}
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="resend-sms")
+    def resend_sms(self, request, pk=None):
+        from core.tenants.throttles import ResendNotificationThrottle
+
+        throttle = ResendNotificationThrottle()
+        if not throttle.allow_request(request, self):
+            return Response(
+                {"detail": "Rate limit exceeded. Try again later."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        report = self.get_object()
+        if report.status not in (Report.Status.VERIFIED, Report.Status.DELIVERED):
+            return Response(
+                {"detail": "SMS can only be resent for verified or delivered reports."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        center = report.test_order.center
+        if not center.sms_enabled:
+            return Response(
+                {"detail": "SMS notifications are not enabled for this center."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        patient = report.test_order.patient
+        phone = getattr(patient, "phone_number", None)
+        if not phone:
+            return Response(
+                {"detail": "Patient has no phone number."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from apps.diagnostics.services.notifications import send_report_ready_sms
+
+        success = send_report_ready_sms(report, phone)
+        if success:
+            logger.info(
+                "Report SMS resent",
+                extra={"report_id": report.id, "resent_by": request.user.id},
+            )
+            return Response({"detail": "SMS sent successfully."})
+        return Response(
+            {"detail": "Failed to send SMS. Please try again."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     @extend_schema(
         tags=["Reports"],

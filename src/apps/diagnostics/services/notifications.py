@@ -128,10 +128,14 @@ def send_report_ready_sms(report, phone_number: str) -> bool:
     report_url = f"{base_url}/report/{signed_token}"
 
     message = (
-        f"Dear {patient.get_full_name()}, "
-        f"your {report.test_type.name} report is ready. "
-        f"View: {report_url} "
-        f"- {center.name}"
+        f"{center.name}\n"
+        f"\n"
+        f"Dear {patient.get_full_name()},\n"
+        f"Your {report.test_type.name} report is ready.\n"
+        f"\n"
+        f"View report: {report_url}\n"
+        f"\n"
+        f"Thank you for choosing {center.name}."
     )
 
     try:
@@ -170,9 +174,13 @@ def send_batch_report_ready_sms(reports, phone_number: str) -> bool:
     test_names = ", ".join(r.test_type.name for r in reports_list)
 
     message = (
-        f"Dear {patient.get_full_name()}, "
-        f"your reports are ready: {test_names}. "
-        f"- {center.name}"
+        f"{center.name}\n"
+        f"\n"
+        f"Dear {patient.get_full_name()},\n"
+        f"Your reports are ready:\n"
+        f"{test_names}\n"
+        f"\n"
+        f"Thank you for choosing {center.name}."
     )
 
     try:

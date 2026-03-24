@@ -31,8 +31,13 @@ def test_order_created_notification(
         )
         return
     message = (
-        f"A {instance.test_type.name} test has been ordered for you "
-        f"at {center.name}. Please visit us at your scheduled time."
+        f"{center.name}\n"
+        f"\n"
+        f"Dear {patient.get_full_name()},\n"
+        f"A {instance.test_type.name} test has been ordered for you.\n"
+        f"\n"
+        f"Please visit us at your scheduled time.\n"
+        f"Thank you for choosing {center.name}."
     )
     send_sms_async(phone, message)
 

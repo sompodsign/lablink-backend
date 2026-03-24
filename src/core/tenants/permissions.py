@@ -100,7 +100,9 @@ class HasCenterPermission(permissions.BasePermission):
         tenant = getattr(request, "tenant", None)
         if not tenant:
             return False
-        required = getattr(view, "required_permission", None)
+        required = getattr(self, "required_permission", None) or getattr(
+            view, "required_permission", None
+        )
         if not required:
             return False
         return (

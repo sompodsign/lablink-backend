@@ -170,6 +170,7 @@ jobs:
           EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
           EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
           DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
+          SMS_API_KEY=${{ secrets.SMS_API_KEY }}
           ENVEOF
 
       - name: Copy to deploy path

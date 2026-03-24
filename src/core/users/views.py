@@ -12,7 +12,11 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.notifications.emails import EmailType, send_email
-from core.tenants.permissions import IsCenterStaff, IsCenterStaffOrDoctor
+from core.tenants.permissions import (
+    HasCenterPermission,
+    IsCenterStaff,
+    IsCenterStaffOrDoctor,
+)
 from core.users.serializers import (
     PatientRegistrationSerializer,
     PatientSerializer,
@@ -455,7 +459,18 @@ class ChangePasswordView(APIView):
     partial_update=extend_schema(
         tags=["Patients"],
         summary="Update patient info",
-        description="Staff updates patient profile (name, phone, medical history, etc.).",
+        description=(
+            "Staff with `manage_patients` permission updates patient profile "
+            "(name, phone, medical history, etc.)."
+        ),
+    ),
+    destroy=extend_schema(
+        tags=["Patients"],
+        summary="Delete a patient",
+        description=(
+            "Staff with `manage_patients` permission deletes a patient and their profile. "
+            "This is a soft operation — only unpublished patients should be deleted."
+        ),
     ),
 )
 class PatientViewSet(viewsets.ModelViewSet):
@@ -465,7 +480,7 @@ class PatientViewSet(viewsets.ModelViewSet):
     """
 
     permission_classes = [permissions.IsAuthenticated, IsCenterStaff]
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         tenant = self.request.tenant
@@ -501,7 +516,10 @@ class PatientViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("list", "retrieve", "create"):
             return [permissions.IsAuthenticated(), IsCenterStaffOrDoctor()]
-        return [permissions.IsAuthenticated(), IsCenterStaff()]
+        # update / partial_update / destroy require manage_patients
+        perm = HasCenterPermission()
+        perm.required_permission = "manage_patients"
+        return [permissions.IsAuthenticated(), perm]
 
     def create(self, request, *args, **kwargs):
         serializer = PatientRegistrationSerializer(

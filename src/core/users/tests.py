@@ -302,3 +302,61 @@ class PatientViewTests(APITestCase):
     def test_unauthenticated_denied(self):
         response = self.client.get("/api/auth/patients/")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    # ── manage_patients permission enforcement ──────────────────
+
+    def test_staff_without_manage_patients_cannot_patch(self):
+        """Staff whose role lacks manage_patients gets 403 on PATCH."""
+        basic_user = make_user("pv_basic")
+        make_staff(
+            basic_user,
+            self.center,
+            "BasicRole",
+            permissions=[
+                "view_patients",
+            ],
+        )
+        self._auth(basic_user)
+        response = self.client.patch(
+            f"/api/auth/patients/{self.patient.id}/",
+            {"first_name": "Hacked"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_without_manage_patients_cannot_delete(self):
+        """Staff whose role lacks manage_patients gets 403 on DELETE."""
+        basic_user = make_user("pv_basic2")
+        make_staff(
+            basic_user,
+            self.center,
+            "BasicRole2",
+            permissions=[
+                "view_patients",
+            ],
+        )
+        self._auth(basic_user)
+        response = self.client.delete(
+            f"/api/auth/patients/{self.patient.id}/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_with_manage_patients_can_patch(self):
+        """Staff with manage_patients permission can update a patient."""
+        self._auth(self.staff_user)  # Admin has all permissions
+        response = self.client.patch(
+            f"/api/auth/patients/{self.patient.id}/",
+            {"first_name": "Updated"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.patient.refresh_from_db()
+        self.assertEqual(self.patient.first_name, "Updated")
+
+    def test_staff_with_manage_patients_can_delete(self):
+        """Staff with manage_patients permission can delete a patient."""
+        self._auth(self.staff_user)  # Admin has all permissions
+        patient_id = self.patient.id
+        response = self.client.delete(
+            f"/api/auth/patients/{patient_id}/",
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(id=patient_id).exists())

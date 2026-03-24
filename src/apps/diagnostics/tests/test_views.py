@@ -474,3 +474,93 @@ class LinkedReportCreationTest(TestCase):
             results[0]["referring_doctor_name"],
             "Dr. Test Doctor",
         )
+
+
+class ResendNotificationTests(TestCase):
+    """Tests for resend-email and resend-sms endpoints."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.center = make_center()
+        self.center.email_notifications_enabled = True
+        self.center.sms_enabled = True
+        self.center.save()
+
+        self.tt = make_test_type("CBC", "500.00")
+        make_pricing(self.center, self.tt, "500.00")
+        self.patient = make_patient("p1", self.center)
+        self.patient.email = "patient@example.com"
+        self.patient.phone_number = "01700000001"
+        self.patient.save()
+
+        self.admin_user = make_user("admin1")
+        make_staff(self.admin_user, self.center, role="Admin")
+        self.auth = jwt_auth_header(self.admin_user)
+
+        self.order = make_test_order(
+            self.patient,
+            self.center,
+            self.tt,
+            status=TestOrder.Status.COMPLETED,
+        )
+        self.report = make_report(self.order, self.tt)
+        self.report.status = Report.Status.VERIFIED
+        self.report.save()
+
+    @patch("apps.diagnostics.services.notifications.send_report_ready_email")
+    def test_resend_email_success(self, mock_send):
+        mock_send.return_value = True
+        resp = self.client.post(
+            f"/api/diagnostics/reports/{self.report.id}/resend-email/",
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 200)
+        mock_send.assert_called_once()
+
+    @patch("apps.diagnostics.services.notifications.send_report_ready_sms")
+    def test_resend_sms_success(self, mock_send):
+        mock_send.return_value = True
+        resp = self.client.post(
+            f"/api/diagnostics/reports/{self.report.id}/resend-sms/",
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 200)
+        mock_send.assert_called_once()
+
+    def test_resend_email_rejects_draft_report(self):
+        self.report.status = Report.Status.DRAFT
+        self.report.save()
+        resp = self.client.post(
+            f"/api/diagnostics/reports/{self.report.id}/resend-email/",
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_resend_sms_rejects_when_sms_disabled(self):
+        self.center.sms_enabled = False
+        self.center.save()
+        resp = self.client.post(
+            f"/api/diagnostics/reports/{self.report.id}/resend-sms/",
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("not enabled", resp.data["detail"])
+
+    def test_resend_email_rejects_when_no_email(self):
+        self.patient.email = ""
+        self.patient.save()
+        resp = self.client.post(
+            f"/api/diagnostics/reports/{self.report.id}/resend-email/",
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("no email", resp.data["detail"])
+
+    @patch("core.tenants.throttles.ResendNotificationThrottle.allow_request")
+    def test_resend_email_rate_limited(self, mock_allow):
+        mock_allow.return_value = False
+        resp = self.client.post(
+            f"/api/diagnostics/reports/{self.report.id}/resend-email/",
+            **self.auth,
+        )
+        self.assertEqual(resp.status_code, 429)
