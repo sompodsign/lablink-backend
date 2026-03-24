@@ -32,6 +32,7 @@ class EmailType(StrEnum):
 
     # Reports
     REPORT_READY = "report_ready"
+    BATCH_REPORT_READY = "batch_report_ready"
 
     # Staff & Doctor Credentials
     STAFF_CREDENTIALS = "staff_credentials"

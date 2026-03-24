@@ -128,6 +128,21 @@ REPORT_READY = (
     ),
 )
 
+BATCH_REPORT_READY = (
+    "Your Lab Reports are Ready — {center_name}",
+    (
+        "Dear {patient_name},\n\n"
+        "Your lab reports are ready. You can view and download each report using the links below:\n\n"
+        "{report_links}\n\n"
+        "Report Details:\n"
+        "  • Tests: {test_names}\n"
+        "  • Date: {report_date}\n"
+        "  • Center: {center_name}\n\n"
+        "This is an automated message from {center_name}.\n"
+        "Please contact us if you have any questions."
+    ),
+)
+
 
 # ── Staff & Doctor Credentials ──────────────────────────────────────
 
@@ -261,6 +276,7 @@ TEMPLATES: dict[str, tuple[str, str]] = {
     "appointment_confirmed": APPOINTMENT_CONFIRMED,
     "appointment_cancelled": APPOINTMENT_CANCELLED,
     "report_ready": REPORT_READY,
+    "batch_report_ready": BATCH_REPORT_READY,
     "staff_credentials": STAFF_CREDENTIALS,
     "doctor_credentials": DOCTOR_CREDENTIALS,
     "trial_expiry_warning": TRIAL_EXPIRY_WARNING,

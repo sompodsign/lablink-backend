@@ -31,6 +31,7 @@ from .models import (
     TestType,
 )
 from .serializers import (
+    BatchReportIdsSerializer,
     CenterTestPricingSerializer,
     ReferringDoctorSerializer,
     ReportCreateSerializer,
@@ -442,11 +443,11 @@ class ReportViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), IsCenterMedicalTechnologist()]
         if self.action == "destroy":
             return [permissions.IsAuthenticated(), IsCenterMedicalTechnologist()]
-        if self.action == "verify":
+        if self.action in ("verify", "batch_verify"):
             return [permissions.IsAuthenticated(), IsCenterAdmin()]
         if self.action == "mark_delivered":
             return [permissions.IsAuthenticated(), IsCenterStaff()]
-        # print_data: any authenticated user (patients filtered by get_queryset)
+        # print_data, batch_print_data: any authenticated user
         return [permissions.IsAuthenticated()]
 
     def perform_destroy(self, instance):
@@ -509,7 +510,9 @@ class ReportViewSet(viewsets.ModelViewSet):
         summary="Verify a report",
         description=(
             "Staff verifies a draft report, changing its status to `VERIFIED`. "
-            "The verifying user is recorded. A report can only be verified once."
+            "The verifying user is recorded. A report can only be verified once. "
+            "If all same-day reports for the patient are now verified, a grouped "
+            "email is sent instead of an individual one."
         ),
         request=None,
         responses={200: ReportSerializer},
@@ -533,20 +536,42 @@ class ReportViewSet(viewsets.ModelViewSet):
             extra={"report_id": report.id, "verified_by": request.user.id},
         )
 
-        # Send email notification to patient (skip if no email)
+        self._send_verify_email(report)
+
+        return Response(ReportSerializer(report).data)
+
+    def _send_verify_email(self, report):
+        """Send email after verification — grouped if all same-day reports are done."""
         try:
             patient = report.test_order.patient
             email = getattr(patient, "email", None)
-            if email:
-                from apps.diagnostics.services.notifications import (
-                    send_report_ready_email,
-                )
+            if not email:
+                return
 
+            from apps.diagnostics.services.notifications import (
+                send_batch_report_ready_email,
+                send_report_ready_email,
+            )
+
+            # Find all same-day reports for this patient at this center
+            report_date = report.created_at.date()
+            same_day_reports = Report.objects.filter(
+                test_order__patient=patient,
+                test_order__center=report.test_order.center,
+                created_at__date=report_date,
+                is_deleted=False,
+            ).select_related("test_type")
+
+            all_verified = not same_day_reports.exclude(
+                status=Report.Status.VERIFIED
+            ).exists()
+
+            if all_verified and same_day_reports.count() > 1:
+                send_batch_report_ready_email(same_day_reports, email)
+            else:
                 send_report_ready_email(report, email)
         except Exception:
             logger.exception("Failed to send report notification email")
-
-        return Response(ReportSerializer(report).data)
 
     @extend_schema(
         tags=["Reports"],
@@ -563,6 +588,129 @@ class ReportViewSet(viewsets.ModelViewSet):
         report = self.get_object()
         serializer = ReportPrintSerializer(report, context={"request": request})
         return Response(serializer.data)
+
+    @extend_schema(
+        tags=["Reports"],
+        summary="Batch print data",
+        description=(
+            "Returns print data for multiple reports at once. "
+            "All reports must belong to the current center."
+        ),
+        request=BatchReportIdsSerializer,
+        responses={200: ReportPrintSerializer(many=True)},
+    )
+    @action(detail=False, methods=["post"], url_path="batch-print-data")
+    def batch_print_data(self, request):
+        serializer = BatchReportIdsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        report_ids = serializer.validated_data["report_ids"]
+
+        tenant = request.tenant
+        reports = Report.objects.filter(
+            id__in=report_ids,
+            test_order__center=tenant,
+            is_deleted=False,
+        ).select_related(
+            "test_type",
+            "test_order__patient",
+            "test_order__center",
+            "created_by",
+        )
+
+        if reports.count() != len(report_ids):
+            return Response(
+                {
+                    "detail": "Some reports were not found or do not belong to this center."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        print_serializer = ReportPrintSerializer(
+            reports, many=True, context={"request": request}
+        )
+        return Response(print_serializer.data)
+
+    @extend_schema(
+        tags=["Reports"],
+        summary="Batch verify reports",
+        description=(
+            "Verifies multiple DRAFT reports at once. "
+            "All reports must belong to the current center. "
+            "After verifying, sends a grouped email if all same-day "
+            "reports for each patient are now verified."
+        ),
+        request=BatchReportIdsSerializer,
+        responses={200: ReportSerializer(many=True)},
+    )
+    @action(detail=False, methods=["post"], url_path="batch-verify")
+    def batch_verify(self, request):
+        serializer = BatchReportIdsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        report_ids = serializer.validated_data["report_ids"]
+
+        tenant = request.tenant
+        reports = Report.objects.filter(
+            id__in=report_ids,
+            test_order__center=tenant,
+            is_deleted=False,
+        ).select_related(
+            "test_type",
+            "test_order__patient",
+            "test_order__center",
+        )
+
+        if reports.count() != len(report_ids):
+            return Response(
+                {
+                    "detail": "Some reports were not found or do not belong to this center."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        now = timezone.now()
+        verified_reports = []
+        for report in reports:
+            if report.status == Report.Status.VERIFIED:
+                verified_reports.append(report)
+                continue
+            report.status = Report.Status.VERIFIED
+            report.verified_by = request.user
+            report.verified_at = now
+            report.save(
+                update_fields=["status", "verified_by", "verified_at", "updated_at"]
+            )
+            verified_reports.append(report)
+            logger.info(
+                "Report batch-verified",
+                extra={"report_id": report.id, "verified_by": request.user.id},
+            )
+
+        # Send grouped emails per patient — one email per patient with all their verified reports
+        from apps.diagnostics.services.notifications import (
+            send_batch_report_ready_email,
+            send_report_ready_email,
+        )
+
+        reports_by_patient: dict[int, list] = {}
+        for report in verified_reports:
+            patient_id = report.test_order.patient_id
+            reports_by_patient.setdefault(patient_id, []).append(report)
+
+        for patient_reports in reports_by_patient.values():
+            first = patient_reports[0]
+            patient = first.test_order.patient
+            email = getattr(patient, "email", None)
+            if not email:
+                continue
+            try:
+                if len(patient_reports) > 1:
+                    send_batch_report_ready_email(patient_reports, email)
+                else:
+                    send_report_ready_email(first, email)
+            except Exception:
+                logger.exception("Failed to send batch report notification email")
+
+        return Response(ReportSerializer(verified_reports, many=True).data)
 
     @extend_schema(
         tags=["Reports"],

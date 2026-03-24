@@ -352,6 +352,19 @@ class ReportCreateSerializer(serializers.Serializer):
         return report
 
 
+# ─── Batch Operations ──────────────────────────────────────────────
+
+
+class BatchReportIdsSerializer(serializers.Serializer):
+    """Validates a list of report IDs for batch operations."""
+
+    report_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1,
+        max_length=50,
+    )
+
+
 # ─── Report Print Data ─────────────────────────────────────────────
 
 

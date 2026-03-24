@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase, override_settings
 
 from apps.diagnostics.services.notifications import (
+    send_batch_report_ready_email,
     send_report_ready_email,
 )
 
@@ -90,3 +91,72 @@ class SendReportReadyEmailTest(SimpleTestCase):
         self.assertTrue(
             context["report_url"].startswith("https://lab.example.com/report/")
         )
+
+
+class SendBatchReportReadyEmailTest(SimpleTestCase):
+    """Tests for send_batch_report_ready_email function."""
+
+    def _make_mock_report(self, test_name="CBC", report_id=42):
+        """Build a mock Report with the necessary attributes."""
+        report = MagicMock()
+        report.id = report_id
+        report.access_token = f"uuid-{report_id}"
+        report.test_type.name = test_name
+        report.created_at.strftime.return_value = "10 March 2026"
+        report.created_at.date.return_value = "2026-03-10"
+
+        report.test_order.center.name = "Popular Diagnostic"
+        report.test_order.patient.get_full_name.return_value = "Fatima Khan"
+        return report
+
+    @patch("apps.diagnostics.services.notifications.send_email")
+    def test_sends_one_email_for_multiple_reports(self, mock_send_email):
+        mock_send_email.return_value = True
+        r1 = self._make_mock_report("CBC", 1)
+        r2 = self._make_mock_report("ESR", 2)
+
+        result = send_batch_report_ready_email([r1, r2], "patient@example.com")
+
+        self.assertTrue(result)
+        mock_send_email.assert_called_once()
+        call_kwargs = mock_send_email.call_args
+        email_type = call_kwargs.kwargs.get(
+            "email_type", call_kwargs[0][0] if call_kwargs[0] else None
+        )
+        self.assertEqual(str(email_type), "batch_report_ready")
+
+    @patch("apps.diagnostics.services.notifications.send_email")
+    def test_context_contains_all_test_names(self, mock_send_email):
+        mock_send_email.return_value = True
+        r1 = self._make_mock_report("CBC", 1)
+        r2 = self._make_mock_report("ESR", 2)
+        r3 = self._make_mock_report("Blood Group", 3)
+
+        send_batch_report_ready_email([r1, r2, r3], "patient@example.com")
+
+        context = mock_send_email.call_args.kwargs.get(
+            "context", mock_send_email.call_args[1].get("context", {})
+        )
+        self.assertIn("CBC", context["test_names"])
+        self.assertIn("ESR", context["test_names"])
+        self.assertIn("Blood Group", context["test_names"])
+
+    @patch("apps.diagnostics.services.notifications.send_email")
+    @patch("apps.diagnostics.services.notifications.send_report_ready_email")
+    def test_falls_back_for_single_report(self, mock_single, mock_send):
+        mock_single.return_value = True
+        r1 = self._make_mock_report("CBC", 1)
+
+        result = send_batch_report_ready_email([r1], "patient@example.com")
+
+        self.assertTrue(result)
+        mock_single.assert_called_once_with(r1, "patient@example.com")
+        # The batch send_email should NOT be called
+        mock_send.assert_not_called()
+
+    def test_returns_false_for_empty_email(self):
+        r1 = self._make_mock_report()
+        self.assertFalse(send_batch_report_ready_email([r1], ""))
+
+    def test_returns_false_for_empty_reports(self):
+        self.assertFalse(send_batch_report_ready_email([], "patient@example.com"))
