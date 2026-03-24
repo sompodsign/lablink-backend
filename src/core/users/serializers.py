@@ -61,7 +61,7 @@ class PatientRegistrationSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=150)
     phone_number = serializers.CharField(max_length=20, required=False, default="")
     email = serializers.EmailField(required=False, allow_blank=True, default="")
-    date_of_birth = serializers.DateField(required=False, allow_null=True, default=None)
+    date_of_birth = serializers.CharField(required=False, allow_blank=True, default="")
     blood_group = serializers.ChoiceField(
         choices=PatientProfile.BloodGroup.choices,
         required=False,
@@ -84,6 +84,20 @@ class PatientRegistrationSerializer(serializers.Serializer):
     emergency_contact_phone = serializers.CharField(
         max_length=20, required=False, allow_blank=True, default=""
     )
+
+    def validate_date_of_birth(self, value):
+        if not value:
+            return None
+        from datetime import date, datetime
+
+        if isinstance(value, date):
+            return value
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            raise serializers.ValidationError(
+                "Date has wrong format. Use YYYY-MM-DD."
+            ) from None
 
     @transaction.atomic
     def create(self, validated_data):
