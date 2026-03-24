@@ -53,6 +53,7 @@ class Subscription(models.Model):
 
     class Status(models.TextChoices):
         TRIAL = "TRIAL", _("Trial")
+        INACTIVE = "INACTIVE", _("Inactive")
         ACTIVE = "ACTIVE", _("Active")
         EXPIRED = "EXPIRED", _("Expired")
         CANCELLED = "CANCELLED", _("Cancelled")
@@ -163,3 +164,90 @@ class Invoice(models.Model):
             f"Invoice #{self.id} - {self.subscription.center.name}"
             f" - ৳{self.amount} ({self.status})"
         )
+
+
+class PaymentInfo(models.Model):
+    """Payment method details shown on the paywall (bKash, bank, etc.)."""
+
+    class Method(models.TextChoices):
+        BKASH = "BKASH", _("bKash")
+        NAGAD = "NAGAD", _("Nagad")
+        ROCKET = "ROCKET", _("Rocket")
+        BANK_TRANSFER = "BANK_TRANSFER", _("Bank Transfer")
+        OTHER = "OTHER", _("Other")
+
+    method = models.CharField(
+        max_length=30,
+        choices=Method.choices,
+    )
+    label = models.CharField(
+        max_length=200,
+        help_text=_("Display label, e.g. 'bKash Send Money'"),
+    )
+    details = models.TextField(
+        help_text=_("Payment details — number, account name, branch, etc."),
+    )
+    icon = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text=_("Emoji or short icon text"),
+    )
+    display_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "apps_payment_info"
+        ordering = ["display_order"]
+        verbose_name = _("payment info")
+        verbose_name_plural = _("payment info")
+
+    def __str__(self) -> str:
+        return f"{self.label} ({self.get_method_display()})"
+
+
+class PaymentSubmission(models.Model):
+    """Payment proof submitted by a center admin for invoice verification."""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Pending Review")
+        VERIFIED = "VERIFIED", _("Verified")
+        REJECTED = "REJECTED", _("Rejected")
+
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.CASCADE,
+        related_name="payment_submissions",
+    )
+    payment_method = models.ForeignKey(
+        PaymentInfo,
+        on_delete=models.SET_NULL,
+        null=True,
+    )
+    transaction_id = models.CharField(max_length=100)
+    submitted_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    admin_notes = models.TextField(
+        blank=True,
+        help_text=_("Rejection reason or admin comments"),
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "apps_payment_submission"
+        ordering = ["-submitted_at"]
+        verbose_name = _("payment submission")
+        verbose_name_plural = _("payment submissions")
+
+    def __str__(self) -> str:
+        return f"Submission #{self.id} - {self.transaction_id} ({self.status})"

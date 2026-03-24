@@ -213,12 +213,12 @@ class CenterRegistrationAPITests(TestCase):
         }
         response = self.client.post("/api/public/register-center/", data, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["subscription"]["status"], "ACTIVE")
+        self.assertEqual(response.data["subscription"]["status"], "INACTIVE")
 
         # Verify invoice created
         center = DiagnosticCenter.objects.get(domain="paid-center")
         sub = Subscription.objects.get(center=center)
-        self.assertEqual(sub.status, "ACTIVE")
+        self.assertEqual(sub.status, "INACTIVE")
         invoice = Invoice.objects.get(subscription=sub)
         self.assertEqual(invoice.amount, Decimal("2499"))
         self.assertEqual(invoice.status, "PENDING")
@@ -909,6 +909,120 @@ class SubscriptionStatusAPITests(TestCase):
         self.assertEqual(response.data["max_reports"], 500)
         self.assertIn("current_report_count", response.data)
         self.assertFalse(response.data["report_limit_reached"])
+
+    def test_inactive_subscription_is_blocked(self):
+        """INACTIVE sub (paid plan, not yet paid) should be blocked."""
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.INACTIVE,
+        )
+        Invoice.objects.create(
+            subscription=sub,
+            amount=Decimal("2499"),
+            due_date=timezone.now().date(),
+            status=Invoice.Status.PENDING,
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        response = self.client.get("/api/subscriptions/status/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_blocked"])
+        self.assertEqual(response.data["block_reason"], "payment_required")
+        self.assertTrue(response.data["has_pending_invoice"])
+        self.assertEqual(response.data["pending_invoice_amount"], "2499.00")
+
+    def test_active_with_pending_invoice_not_blocked(self):
+        """ACTIVE sub with pending renewal invoice should NOT be auto-blocked."""
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.ACTIVE,
+        )
+        Invoice.objects.create(
+            subscription=sub,
+            amount=Decimal("2499"),
+            due_date=timezone.now().date(),
+            status=Invoice.Status.PENDING,
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        response = self.client.get("/api/subscriptions/status/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_blocked"])
+
+    def test_active_with_paid_invoice_not_blocked(self):
+        """ACTIVE sub with only PAID invoices should NOT be blocked."""
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.ACTIVE,
+        )
+        Invoice.objects.create(
+            subscription=sub,
+            amount=Decimal("2499"),
+            due_date=timezone.now().date(),
+            status=Invoice.Status.PAID,
+            paid_at=timezone.now(),
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        response = self.client.get("/api/subscriptions/status/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_blocked"])
+        self.assertEqual(response.data["block_reason"], "")
+        self.assertFalse(response.data["has_pending_invoice"])
+
+    def test_trial_not_blocked_by_invoices(self):
+        """TRIAL subs should NOT be blocked even if they somehow have invoices."""
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.TRIAL,
+            trial_start=timezone.now(),
+            trial_end=timezone.now() + timedelta(days=14),
+        )
+        Invoice.objects.create(
+            subscription=sub,
+            amount=Decimal("2499"),
+            due_date=timezone.now().date(),
+            status=Invoice.Status.PENDING,
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        response = self.client.get("/api/subscriptions/status/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_blocked"])
+
+
+class PaymentInfoAPITests(TestCase):
+    """Tests for public payment info endpoint."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_returns_active_payment_methods(self):
+        from apps.subscriptions.models import PaymentInfo
+
+        PaymentInfo.objects.create(
+            method="BKASH",
+            label="bKash Send Money",
+            details="Send to: 01705569764",
+            icon="💳",
+            display_order=1,
+            is_active=True,
+        )
+        PaymentInfo.objects.create(
+            method="BANK_TRANSFER",
+            label="Bank Transfer",
+            details="Account: 123456",
+            display_order=2,
+            is_active=False,
+        )
+        response = self.client.get("/api/public/payment-info/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["method"], "BKASH")
+
+    def test_no_auth_required(self):
+        response = self.client.get("/api/public/payment-info/")
+        self.assertEqual(response.status_code, 200)
 
 
 class SuperadminExtendTrialTests(TestCase):

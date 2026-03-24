@@ -1,8 +1,11 @@
 from django.urls import path
 
 from .views import (
+    CenterInvoiceListView,
     CenterRegistrationView,
+    CenterSubmitPaymentView,
     CenterSubscriptionView,
+    PaymentInfoListView,
     PublicPlanListView,
     SubscriptionStatusView,
     SuperadminChangePlanView,
@@ -11,13 +14,20 @@ from .views import (
     SuperadminInvoiceListView,
     SuperadminInvoiceMarkPaidView,
     SuperadminInvoiceMarkUnpaidView,
+    SuperadminPaymentSubmissionListView,
     SuperadminSubscriptionDetailView,
     SuperadminSubscriptionListView,
+    SuperadminVerifyPaymentView,
 )
 
 # Public (no auth)
 public_patterns = [
     path("plans/", PublicPlanListView.as_view(), name="public-plans"),
+    path(
+        "payment-info/",
+        PaymentInfoListView.as_view(),
+        name="payment-info",
+    ),
     path(
         "register-center/",
         CenterRegistrationView.as_view(),
@@ -36,6 +46,16 @@ center_patterns = [
         "status/",
         SubscriptionStatusView.as_view(),
         name="subscription-status",
+    ),
+    path(
+        "my-invoices/",
+        CenterInvoiceListView.as_view(),
+        name="center-invoices",
+    ),
+    path(
+        "invoices/<int:invoice_id>/submit-payment/",
+        CenterSubmitPaymentView.as_view(),
+        name="center-submit-payment",
     ),
 ]
 
@@ -80,6 +100,16 @@ superadmin_patterns = [
         "subscriptions/<int:subscription_id>/create-invoice/",
         SuperadminCreateInvoiceView.as_view(),
         name="sa-create-invoice",
+    ),
+    path(
+        "payment-submissions/",
+        SuperadminPaymentSubmissionListView.as_view(),
+        name="sa-payment-submissions",
+    ),
+    path(
+        "payment-submissions/<int:submission_id>/review/",
+        SuperadminVerifyPaymentView.as_view(),
+        name="sa-verify-payment",
     ),
 ]
 

@@ -8,10 +8,19 @@ from rest_framework.views import APIView
 from apps.notifications.emails import EmailType, send_email_async
 from core.tenants.permissions import IsCenterAdmin, IsSuperAdmin
 
-from .models import Invoice, Subscription, SubscriptionPlan
+from .models import (
+    Invoice,
+    PaymentInfo,
+    PaymentSubmission,
+    Subscription,
+    SubscriptionPlan,
+)
 from .serializers import (
     CenterRegistrationSerializer,
     InvoiceSerializer,
+    PaymentInfoSerializer,
+    PaymentSubmissionSerializer,
+    SubmitPaymentSerializer,
     SubscriptionPlanSerializer,
     SubscriptionSerializer,
     SuperadminSubscriptionSerializer,
@@ -32,6 +41,18 @@ class PublicPlanListView(APIView):
     def get(self, request):
         plans = SubscriptionPlan.objects.filter(is_active=True)
         serializer = SubscriptionPlanSerializer(plans, many=True)
+        return Response(serializer.data)
+
+
+class PaymentInfoListView(APIView):
+    """Public: list active payment methods (bKash, bank, etc.)."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        methods = PaymentInfo.objects.filter(is_active=True)
+        serializer = PaymentInfoSerializer(methods, many=True)
         return Response(serializer.data)
 
 
@@ -155,7 +176,49 @@ class SubscriptionStatusView(APIView):
             except Subscription.DoesNotExist:
                 pass
 
-        is_blocked = sub_status in ("EXPIRED", "CANCELLED", "NONE")
+        is_blocked = sub_status in ("EXPIRED", "CANCELLED", "NONE", "INACTIVE")
+        block_reason = ""
+        if sub_status == "INACTIVE":
+            block_reason = "payment_required"
+        elif is_blocked:
+            block_reason = "subscription_inactive"
+
+        # Also block ACTIVE subscriptions with unpaid renewal invoices
+        has_pending_invoice = False
+        pending_invoice_amount = None
+        if sub_status == "ACTIVE" and not is_blocked:
+            pending_inv = (
+                Invoice.objects.filter(
+                    subscription__center=tenant,
+                    status__in=(
+                        Invoice.Status.PENDING,
+                        Invoice.Status.OVERDUE,
+                    ),
+                )
+                .order_by("due_date")
+                .first()
+            )
+            if pending_inv:
+                has_pending_invoice = True
+                pending_invoice_amount = str(pending_inv.amount)
+
+        if sub_status == "INACTIVE":
+            # Fetch invoice amount for the paywall
+            pending_inv = (
+                Invoice.objects.filter(
+                    subscription__center=tenant,
+                    status__in=(
+                        Invoice.Status.PENDING,
+                        Invoice.Status.OVERDUE,
+                    ),
+                )
+                .order_by("due_date")
+                .first()
+            )
+            if pending_inv:
+                has_pending_invoice = True
+                pending_invoice_amount = str(pending_inv.amount)
+
         current_staff_count = Staff.objects.filter(center=tenant).count()
         staff_limit_reached = max_staff != -1 and current_staff_count >= max_staff
 
@@ -181,6 +244,9 @@ class SubscriptionStatusView(APIView):
             {
                 "status": sub_status,
                 "is_blocked": is_blocked,
+                "block_reason": block_reason,
+                "has_pending_invoice": has_pending_invoice,
+                "pending_invoice_amount": pending_invoice_amount,
                 "center_name": tenant.name,
                 "max_staff": max_staff,
                 "current_staff_count": current_staff_count,
@@ -189,6 +255,170 @@ class SubscriptionStatusView(APIView):
                 "current_report_count": current_report_count,
                 "report_limit_reached": report_limit_reached,
             }
+        )
+
+
+class CenterInvoiceListView(APIView):
+    """Center admin: list own invoices with submission status."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    def get(self, request):
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        invoices = Invoice.objects.filter(
+            subscription__center=tenant,
+        ).select_related("subscription__center")
+        data = InvoiceSerializer(invoices, many=True).data
+        # Attach latest submission status per invoice
+        for inv_data in data:
+            latest = (
+                PaymentSubmission.objects.filter(
+                    invoice_id=inv_data["id"],
+                )
+                .order_by("-submitted_at")
+                .first()
+            )
+            if latest:
+                inv_data["submission"] = {
+                    "id": latest.id,
+                    "status": latest.status,
+                    "transaction_id": latest.transaction_id,
+                    "admin_notes": latest.admin_notes,
+                }
+            else:
+                inv_data["submission"] = None
+        return Response(data)
+
+
+class CenterSubmitPaymentView(APIView):
+    """Center admin: submit payment proof for a pending invoice."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    def post(self, request, invoice_id):
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            invoice = Invoice.objects.get(
+                id=invoice_id,
+                subscription__center=tenant,
+            )
+        except Invoice.DoesNotExist:
+            return Response(
+                {"detail": "Invoice not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if invoice.status == Invoice.Status.PAID:
+            return Response(
+                {"detail": "This invoice is already paid."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check for existing pending submission
+        existing = PaymentSubmission.objects.filter(
+            invoice=invoice,
+            status=PaymentSubmission.Status.PENDING,
+        ).first()
+        if existing:
+            return Response(
+                {
+                    "detail": (
+                        "A payment submission is already pending "
+                        "review for this invoice."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = SubmitPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            payment_method = PaymentInfo.objects.get(
+                id=serializer.validated_data["payment_method_id"],
+                is_active=True,
+            )
+        except PaymentInfo.DoesNotExist:
+            return Response(
+                {"detail": "Invalid payment method."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        submission = PaymentSubmission.objects.create(
+            invoice=invoice,
+            payment_method=payment_method,
+            transaction_id=serializer.validated_data["transaction_id"],
+            submitted_by=request.user,
+        )
+
+        return Response(
+            {
+                "detail": ("Payment submitted successfully. Awaiting verification."),
+                "submission": PaymentSubmissionSerializer(
+                    submission,
+                ).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def patch(self, request, invoice_id):
+        """Update transaction_id on a pending submission."""
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            invoice = Invoice.objects.get(
+                id=invoice_id,
+                subscription__center=tenant,
+            )
+        except Invoice.DoesNotExist:
+            return Response(
+                {"detail": "Invoice not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        submission = PaymentSubmission.objects.filter(
+            invoice=invoice,
+            status=PaymentSubmission.Status.PENDING,
+        ).first()
+        if not submission:
+            return Response(
+                {"detail": "No pending submission to edit."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_trx = request.data.get("transaction_id", "").strip()
+        if not new_trx:
+            return Response(
+                {"detail": "Transaction ID is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        submission.transaction_id = new_trx
+        submission.save(update_fields=["transaction_id"])
+
+        return Response(
+            {
+                "detail": "Transaction ID updated.",
+                "submission": PaymentSubmissionSerializer(
+                    submission,
+                ).data,
+            },
         )
 
 
@@ -720,4 +950,125 @@ class SuperadminCreateInvoiceView(APIView):
                 "invoice": InvoiceSerializer(invoice).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class SuperadminPaymentSubmissionListView(APIView):
+    """Superadmin: list all payment submissions."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    def get(self, request):
+        qs = PaymentSubmission.objects.select_related(
+            "invoice__subscription__center",
+            "payment_method",
+            "submitted_by",
+        ).all()
+
+        # Filter by status
+        sub_status = request.query_params.get("status")
+        if sub_status:
+            qs = qs.filter(status=sub_status)
+
+        # Search by center name or transaction ID
+        search = request.query_params.get("search")
+        if search:
+            from django.db.models import Q
+
+            qs = qs.filter(
+                Q(
+                    invoice__subscription__center__name__icontains=search,
+                )
+                | Q(transaction_id__icontains=search)
+            )
+
+        return Response(
+            PaymentSubmissionSerializer(qs[:100], many=True).data,
+        )
+
+
+class SuperadminVerifyPaymentView(APIView):
+    """Superadmin: verify or reject a payment submission."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request, submission_id):
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        try:
+            submission = PaymentSubmission.objects.select_related(
+                "invoice__subscription",
+            ).get(id=submission_id)
+        except PaymentSubmission.DoesNotExist:
+            return Response(
+                {"detail": "Submission not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        action = request.data.get("action")  # 'verify' or 'reject'
+        if action not in ("verify", "reject"):
+            return Response(
+                {"detail": 'Action must be "verify" or "reject".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if submission.status != PaymentSubmission.Status.PENDING:
+            return Response(
+                {
+                    "detail": (
+                        f"This submission has already been {submission.status.lower()}."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if action == "verify":
+            submission.status = PaymentSubmission.Status.VERIFIED
+            submission.reviewed_at = timezone.now()
+            submission.save()
+
+            # Mark invoice as paid
+            invoice = submission.invoice
+            invoice.status = Invoice.Status.PAID
+            invoice.paid_at = timezone.now()
+            invoice.payment_method = (
+                submission.payment_method.method if submission.payment_method else ""
+            )
+            invoice.transaction_id = submission.transaction_id
+            invoice.save()
+
+            # Activate subscription
+            sub = invoice.subscription
+            if sub.status in (
+                Subscription.Status.INACTIVE,
+                Subscription.Status.EXPIRED,
+            ):
+                sub.status = Subscription.Status.ACTIVE
+                sub.save()
+                # Clear cached subscription status
+                cache.delete(f"sub_status:{sub.center_id}")
+
+            return Response(
+                {
+                    "detail": (
+                        f"Payment verified. Invoice #{invoice.id} "
+                        f"marked as paid. Subscription activated."
+                    ),
+                },
+            )
+
+        # Reject
+        submission.status = PaymentSubmission.Status.REJECTED
+        submission.admin_notes = request.data.get(
+            "reason",
+            "",
+        )
+        submission.reviewed_at = timezone.now()
+        submission.save()
+
+        return Response(
+            {
+                "detail": (f"Payment submission #{submission.id} rejected."),
+            },
         )

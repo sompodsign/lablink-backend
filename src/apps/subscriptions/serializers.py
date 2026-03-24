@@ -5,9 +5,79 @@ from datetime import date
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import Invoice, Subscription, SubscriptionPlan
+from .models import (
+    Invoice,
+    PaymentInfo,
+    PaymentSubmission,
+    Subscription,
+    SubscriptionPlan,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class PaymentInfoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentInfo
+        fields = ["id", "method", "label", "details", "icon"]
+
+
+class PaymentSubmissionSerializer(serializers.ModelSerializer):
+    payment_method_label = serializers.CharField(
+        source="payment_method.label",
+        read_only=True,
+    )
+    submitted_by_name = serializers.SerializerMethodField()
+    invoice_amount = serializers.DecimalField(
+        source="invoice.amount",
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
+    center_name = serializers.CharField(
+        source="invoice.subscription.center.name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = PaymentSubmission
+        fields = [
+            "id",
+            "invoice",
+            "invoice_amount",
+            "center_name",
+            "payment_method",
+            "payment_method_label",
+            "transaction_id",
+            "submitted_by",
+            "submitted_by_name",
+            "status",
+            "admin_notes",
+            "submitted_at",
+            "reviewed_at",
+        ]
+        read_only_fields = [
+            "id",
+            "submitted_by",
+            "status",
+            "admin_notes",
+            "submitted_at",
+            "reviewed_at",
+        ]
+
+    def get_submitted_by_name(self, obj):
+        if obj.submitted_by:
+            return (
+                f"{obj.submitted_by.first_name} {obj.submitted_by.last_name}"
+            ).strip() or obj.submitted_by.username
+        return None
+
+
+class SubmitPaymentSerializer(serializers.Serializer):
+    """Center admin: submit payment proof for an invoice."""
+
+    payment_method_id = serializers.IntegerField()
+    transaction_id = serializers.CharField(max_length=100)
 
 
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
@@ -285,7 +355,7 @@ class CenterRegistrationSerializer(serializers.Serializer):
             plan=plan,
             status=Subscription.Status.TRIAL
             if is_trial
-            else Subscription.Status.ACTIVE,
+            else Subscription.Status.INACTIVE,
             trial_start=now if is_trial else None,
             trial_end=(
                 now + timezone.timedelta(days=plan.trial_days) if is_trial else None

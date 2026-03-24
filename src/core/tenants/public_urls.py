@@ -1,6 +1,10 @@
 from django.urls import path
 
-from apps.subscriptions.views import CenterRegistrationView, PublicPlanListView
+from apps.subscriptions.views import (
+    CenterRegistrationView,
+    PaymentInfoListView,
+    PublicPlanListView,
+)
 
 from .public_views import (
     PublicBookView,
@@ -19,6 +23,11 @@ urlpatterns = [
         name="public-platform-settings",
     ),
     path("plans/", PublicPlanListView.as_view(), name="public-plans"),
+    path(
+        "payment-info/",
+        PaymentInfoListView.as_view(),
+        name="public-payment-info",
+    ),
     path(
         "register-center/",
         CenterRegistrationView.as_view(),

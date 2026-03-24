@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import Invoice, Subscription, SubscriptionPlan
+from .models import (
+    Invoice,
+    PaymentInfo,
+    PaymentSubmission,
+    Subscription,
+    SubscriptionPlan,
+)
 
 
 @admin.register(SubscriptionPlan)
@@ -35,3 +41,33 @@ class InvoiceAdmin(admin.ModelAdmin):
     @admin.display(description="Center")
     def get_center(self, obj):
         return obj.subscription.center.name
+
+
+@admin.register(PaymentInfo)
+class PaymentInfoAdmin(admin.ModelAdmin):
+    list_display = ["label", "method", "is_active", "display_order"]
+    list_filter = ["method", "is_active"]
+    list_editable = ["is_active", "display_order"]
+    ordering = ["display_order"]
+
+
+@admin.register(PaymentSubmission)
+class PaymentSubmissionAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "get_center",
+        "transaction_id",
+        "status",
+        "submitted_at",
+        "reviewed_at",
+    ]
+    list_filter = ["status"]
+    search_fields = [
+        "transaction_id",
+        "invoice__subscription__center__name",
+    ]
+    raw_id_fields = ["invoice", "payment_method", "submitted_by"]
+
+    @admin.display(description="Center")
+    def get_center(self, obj):
+        return obj.invoice.subscription.center.name

@@ -26,8 +26,11 @@ _SOFT_BLOCK_EXEMPT_PREFIXES = (
 # HTTP methods considered "write" operations
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-# Subscription statuses that trigger soft-block
-_BLOCKED_STATUSES = {"EXPIRED", "CANCELLED", "NONE"}
+# Subscription statuses that trigger soft-block (writes only)
+_SOFT_BLOCKED_STATUSES = {"EXPIRED", "CANCELLED", "NONE"}
+
+# Subscription statuses that trigger hard-block (ALL methods)
+_HARD_BLOCKED_STATUSES = {"INACTIVE"}
 
 
 def _extract_subdomain(host: str) -> str | None:
@@ -143,32 +146,52 @@ class TenantMiddleware:
                 status=403,
             )
 
-        # ── Subscription soft-block ──────────────────────────────────────
+        # ── Subscription blocking ────────────────────────────────────────
         if request.tenant and user and not user.is_superuser:
             sub_status = _get_subscription_status(request.tenant)
             request.subscription_status = sub_status
 
-            if (
-                sub_status in _BLOCKED_STATUSES
-                and request.method in _WRITE_METHODS
-                and not any(
-                    request.path.startswith(prefix)
-                    for prefix in _SOFT_BLOCK_EXEMPT_PREFIXES
-                )
-            ):
-                from django.http import JsonResponse
+            is_exempt = any(
+                request.path.startswith(prefix)
+                for prefix in _SOFT_BLOCK_EXEMPT_PREFIXES
+            )
 
-                return JsonResponse(
-                    {
-                        "detail": (
-                            "Your subscription has expired. "
-                            "Please upgrade your plan to continue using this feature."
-                        ),
-                        "subscription_status": sub_status,
-                        "code": "subscription_expired",
-                    },
-                    status=402,
-                )
+            if not is_exempt:
+                # Hard-block: INACTIVE blocks ALL methods (reads + writes)
+                if sub_status in _HARD_BLOCKED_STATUSES:
+                    from django.http import JsonResponse
+
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                "Your subscription is inactive. "
+                                "Please complete payment to activate."
+                            ),
+                            "subscription_status": sub_status,
+                            "code": "subscription_inactive",
+                        },
+                        status=402,
+                    )
+
+                # Soft-block: EXPIRED/CANCELLED/NONE blocks writes only
+                if (
+                    sub_status in _SOFT_BLOCKED_STATUSES
+                    and request.method in _WRITE_METHODS
+                ):
+                    from django.http import JsonResponse
+
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                "Your subscription has expired. "
+                                "Please upgrade your plan to continue "
+                                "using this feature."
+                            ),
+                            "subscription_status": sub_status,
+                            "code": "subscription_expired",
+                        },
+                        status=402,
+                    )
 
         response = self.get_response(request)
         return response
