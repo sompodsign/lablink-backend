@@ -4,6 +4,7 @@ import logging
 
 from django.conf import settings
 
+from apps.diagnostics.tokens import make_report_token
 from apps.notifications.emails import EmailType, send_email
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,10 @@ def send_report_ready_email(report, patient_email: str) -> bool:
     center = report.test_order.center
     patient = report.test_order.patient
 
-    # Build the report URL
+    # Build a signed, expiring report URL (30-day token)
+    signed_token = make_report_token(report)
     base_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
-    report_url = f"{base_url}/report/{report.access_token}"
+    report_url = f"{base_url}/report/{signed_token}"
 
     try:
         return send_email(

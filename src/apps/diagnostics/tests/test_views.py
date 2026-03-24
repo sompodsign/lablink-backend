@@ -1,9 +1,12 @@
 """Tests for diagnostics views: PublicReportView, result-history, AnalyticsViewSet."""
 
+from unittest.mock import patch
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.diagnostics.models import Report, TestOrder
+from apps.diagnostics.tokens import make_report_token
 from helpers.test_factories import (
     jwt_auth_header,
     make_center,
@@ -46,12 +49,40 @@ class PublicReportViewTest(TestCase):
         )
 
     def test_get_report_by_access_token(self):
+        """Legacy UUID token still works."""
         url = f"/api/diagnostics/reports/public/{self.report.access_token}/"
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["test_type_name"], "CBC")
         self.assertIn("result_data", resp.data)
         self.assertIn("access_token", resp.data)
+
+    def test_get_report_by_signed_token(self):
+        """Signed token returns 200 and correct report."""
+        signed = make_report_token(self.report)
+        url = f"/api/diagnostics/reports/public/{signed}/"
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["test_type_name"], "CBC")
+
+    def test_expired_signed_token_returns_410(self):
+        """Signed token older than 30 days returns HTTP 410."""
+        with patch("apps.diagnostics.tokens.verify_report_token") as mock_verify:
+            from django.core.signing import SignatureExpired
+
+            mock_verify.side_effect = SignatureExpired()
+            # Use a token that looks signed (contains ':')
+            resp = self.client.get("/api/diagnostics/reports/public/fake:token/")
+        self.assertEqual(resp.status_code, 410)
+
+    def test_tampered_signed_token_returns_403(self):
+        """Tampered token returns HTTP 403."""
+        with patch("apps.diagnostics.tokens.verify_report_token") as mock_verify:
+            from django.core.signing import BadSignature
+
+            mock_verify.side_effect = BadSignature()
+            resp = self.client.get("/api/diagnostics/reports/public/tampered:xyz/")
+        self.assertEqual(resp.status_code, 403)
 
     def test_increments_access_count(self):
         url = f"/api/diagnostics/reports/public/{self.report.access_token}/"

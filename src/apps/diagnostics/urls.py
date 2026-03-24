@@ -26,7 +26,7 @@ router.register(r"analytics", AnalyticsViewSet, basename="analytics")
 urlpatterns = [
     path("", include(router.urls)),
     path(
-        "reports/public/<uuid:access_token>/",
+        "reports/public/<str:token>/",
         PublicReportView.as_view(),
         name="public-report",
     ),

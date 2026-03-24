@@ -59,7 +59,9 @@ class PatientRegistrationSerializer(serializers.Serializer):
 
     first_name = serializers.CharField(max_length=150)
     last_name = serializers.CharField(max_length=150)
-    phone_number = serializers.CharField(max_length=20, required=False, default="")
+    phone_number = serializers.CharField(
+        max_length=20, required=False, allow_blank=True, default=""
+    )
     email = serializers.EmailField(required=False, allow_blank=True, default="")
     date_of_birth = serializers.CharField(required=False, allow_blank=True, default="")
     blood_group = serializers.ChoiceField(
