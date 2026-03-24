@@ -1,5 +1,4 @@
 import logging
-import time
 
 from celery import shared_task
 
@@ -24,13 +23,9 @@ def send_email_task(
     )
 
 
-@shared_task
-def send_sms_notification(phone_number: str, message: str) -> str:
-    logger.info(
-        "Sending SMS notification",
-        extra={"phone_number": phone_number, "message": message[:100]},
-    )
-    # TODO: Replace with real SMS provider integration (e.g., Twilio, bKash SMS)
-    time.sleep(1)  # Simulate network delay
-    logger.info("SMS sent", extra={"phone_number": phone_number})
-    return f"SMS sent to {phone_number}"
+@shared_task(name="notifications.send_sms")
+def send_sms_task(phone_number: str, message: str) -> bool:
+    """Celery task: send SMS via sms.net.bd API."""
+    from .sms import send_sms
+
+    return send_sms(phone_number=phone_number, message=message)

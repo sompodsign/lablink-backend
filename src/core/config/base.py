@@ -167,6 +167,10 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@lablink.com.bd")
 
+# SMS Configuration (sms.net.bd)
+SMS_API_KEY = env("SMS_API_KEY", default="")
+SMS_API_URL = "https://api.sms.net.bd/sendsms"
+
 # drf-spectacular Configuration
 SPECTACULAR_SETTINGS = {
     "TITLE": "LabLink API",

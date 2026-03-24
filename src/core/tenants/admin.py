@@ -11,9 +11,17 @@ class ServiceInline(admin.TabularInline):
 
 @admin.register(DiagnosticCenter)
 class DiagnosticCenterAdmin(admin.ModelAdmin):
-    list_display = ("name", "domain", "contact_number", "email", "created_at")
+    list_display = (
+        "name",
+        "domain",
+        "contact_number",
+        "email",
+        "sms_enabled",
+        "email_notifications_enabled",
+        "created_at",
+    )
     search_fields = ("name", "domain", "email")
-    list_filter = ("created_at",)
+    list_filter = ("sms_enabled", "email_notifications_enabled", "created_at")
     ordering = ("-created_at",)
     inlines = [ServiceInline]
 

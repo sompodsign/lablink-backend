@@ -105,6 +105,16 @@ class DiagnosticCenter(models.Model):
         help_text=_("Bottom margin in mm to skip for pre-printed footer"),
     )
 
+    # ── Notification Settings ─────────────────────────────────────
+    sms_enabled = models.BooleanField(
+        default=False,
+        help_text=_("Send SMS notifications to patients on report verification"),
+    )
+    email_notifications_enabled = models.BooleanField(
+        default=False,
+        help_text=_("Send email notifications to patients on report verification"),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -115,6 +115,9 @@ class CenterSettingsSerializer(serializers.ModelSerializer):
             "use_preprinted_paper",
             "print_header_margin_mm",
             "print_footer_margin_mm",
+            # Notifications
+            "sms_enabled",
+            "email_notifications_enabled",
         ]
         read_only_fields = ["id", "logo_url"]
 

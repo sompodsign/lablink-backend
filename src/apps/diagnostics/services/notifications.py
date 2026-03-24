@@ -1,4 +1,4 @@
-"""Email notification service for report delivery."""
+"""Notification service for report delivery (email + SMS)."""
 
 import logging
 
@@ -6,8 +6,12 @@ from django.conf import settings
 
 from apps.diagnostics.tokens import make_report_token
 from apps.notifications.emails import EmailType, send_email
+from apps.notifications.sms import send_sms
 
 logger = logging.getLogger(__name__)
+
+
+# ── Email Notifications ──────────────────────────────────────────
 
 
 def send_report_ready_email(report, patient_email: str) -> bool:
@@ -97,4 +101,82 @@ def send_batch_report_ready_email(reports, patient_email: str) -> bool:
         )
     except Exception:
         logger.exception("Failed to send batch report-ready email to %s", patient_email)
+        return False
+
+
+# ── SMS Notifications ────────────────────────────────────────────
+
+
+def send_report_ready_sms(report, phone_number: str) -> bool:
+    """Send SMS notification when a single report is verified.
+
+    Args:
+        report: Report instance
+        phone_number: Patient's phone number
+
+    Returns:
+        True if SMS was sent successfully, False otherwise.
+    """
+    if not phone_number:
+        return False
+
+    center = report.test_order.center
+    patient = report.test_order.patient
+
+    signed_token = make_report_token(report)
+    base_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+    report_url = f"{base_url}/report/{signed_token}"
+
+    message = (
+        f"Dear {patient.get_full_name()}, "
+        f"your {report.test_type.name} report is ready. "
+        f"View: {report_url} "
+        f"- {center.name}"
+    )
+
+    try:
+        return send_sms(phone_number, message)
+    except Exception:
+        logger.exception("Failed to send report-ready SMS to %s", phone_number)
+        return False
+
+
+def send_batch_report_ready_sms(reports, phone_number: str) -> bool:
+    """Send a single SMS listing all completed reports for a patient.
+
+    Falls back to send_report_ready_sms when there is only one report.
+
+    Args:
+        reports: Iterable of Report instances (must all belong to same patient).
+        phone_number: Patient's phone number.
+
+    Returns:
+        True if SMS was sent successfully, False otherwise.
+    """
+    if not phone_number:
+        return False
+
+    reports_list = list(reports)
+    if not reports_list:
+        return False
+
+    if len(reports_list) == 1:
+        return send_report_ready_sms(reports_list[0], phone_number)
+
+    first_report = reports_list[0]
+    center = first_report.test_order.center
+    patient = first_report.test_order.patient
+
+    test_names = ", ".join(r.test_type.name for r in reports_list)
+
+    message = (
+        f"Dear {patient.get_full_name()}, "
+        f"your reports are ready: {test_names}. "
+        f"- {center.name}"
+    )
+
+    try:
+        return send_sms(phone_number, message)
+    except Exception:
+        logger.exception("Failed to send batch report-ready SMS to %s", phone_number)
         return False

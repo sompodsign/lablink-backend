@@ -536,28 +536,33 @@ class ReportViewSet(viewsets.ModelViewSet):
             extra={"report_id": report.id, "verified_by": request.user.id},
         )
 
-        self._send_verify_email(report)
+        self._send_verify_notifications(report)
 
         return Response(ReportSerializer(report).data)
 
-    def _send_verify_email(self, report):
-        """Send email after verification — grouped if all same-day reports are done."""
+    def _send_verify_notifications(self, report):
+        """Send email/SMS after verification — grouped if all same-day reports are done."""
+        center = report.test_order.center
+        if not center.email_notifications_enabled and not center.sms_enabled:
+            return
+
         try:
             patient = report.test_order.patient
             email = getattr(patient, "email", None)
-            if not email:
-                return
+            phone = getattr(patient, "phone_number", None)
 
             from apps.diagnostics.services.notifications import (
                 send_batch_report_ready_email,
+                send_batch_report_ready_sms,
                 send_report_ready_email,
+                send_report_ready_sms,
             )
 
             # Find all same-day reports for this patient at this center
             report_date = report.created_at.date()
             same_day_reports = Report.objects.filter(
                 test_order__patient=patient,
-                test_order__center=report.test_order.center,
+                test_order__center=center,
                 created_at__date=report_date,
                 is_deleted=False,
             ).select_related("test_type")
@@ -566,12 +571,23 @@ class ReportViewSet(viewsets.ModelViewSet):
                 status=Report.Status.VERIFIED
             ).exists()
 
-            if all_verified and same_day_reports.count() > 1:
-                send_batch_report_ready_email(same_day_reports, email)
-            else:
-                send_report_ready_email(report, email)
+            is_batch = all_verified and same_day_reports.count() > 1
+
+            # Email
+            if center.email_notifications_enabled and email:
+                if is_batch:
+                    send_batch_report_ready_email(same_day_reports, email)
+                else:
+                    send_report_ready_email(report, email)
+
+            # SMS
+            if center.sms_enabled and phone:
+                if is_batch:
+                    send_batch_report_ready_sms(same_day_reports, phone)
+                else:
+                    send_report_ready_sms(report, phone)
         except Exception:
-            logger.exception("Failed to send report notification email")
+            logger.exception("Failed to send report verification notifications")
 
     @extend_schema(
         tags=["Reports"],
@@ -685,30 +701,40 @@ class ReportViewSet(viewsets.ModelViewSet):
                 extra={"report_id": report.id, "verified_by": request.user.id},
             )
 
-        # Send grouped emails per patient — one email per patient with all their verified reports
-        from apps.diagnostics.services.notifications import (
-            send_batch_report_ready_email,
-            send_report_ready_email,
-        )
+        # Send grouped notifications per patient
+        center = request.tenant
+        if center.email_notifications_enabled or center.sms_enabled:
+            from apps.diagnostics.services.notifications import (
+                send_batch_report_ready_email,
+                send_batch_report_ready_sms,
+                send_report_ready_email,
+                send_report_ready_sms,
+            )
 
-        reports_by_patient: dict[int, list] = {}
-        for report in verified_reports:
-            patient_id = report.test_order.patient_id
-            reports_by_patient.setdefault(patient_id, []).append(report)
+            reports_by_patient: dict[int, list] = {}
+            for report in verified_reports:
+                patient_id = report.test_order.patient_id
+                reports_by_patient.setdefault(patient_id, []).append(report)
 
-        for patient_reports in reports_by_patient.values():
-            first = patient_reports[0]
-            patient = first.test_order.patient
-            email = getattr(patient, "email", None)
-            if not email:
-                continue
-            try:
-                if len(patient_reports) > 1:
-                    send_batch_report_ready_email(patient_reports, email)
-                else:
-                    send_report_ready_email(first, email)
-            except Exception:
-                logger.exception("Failed to send batch report notification email")
+            for patient_reports in reports_by_patient.values():
+                first = patient_reports[0]
+                patient = first.test_order.patient
+                email = getattr(patient, "email", None)
+                phone = getattr(patient, "phone_number", None)
+                is_batch = len(patient_reports) > 1
+                try:
+                    if center.email_notifications_enabled and email:
+                        if is_batch:
+                            send_batch_report_ready_email(patient_reports, email)
+                        else:
+                            send_report_ready_email(first, email)
+                    if center.sms_enabled and phone:
+                        if is_batch:
+                            send_batch_report_ready_sms(patient_reports, phone)
+                        else:
+                            send_report_ready_sms(first, phone)
+                except Exception:
+                    logger.exception("Failed to send batch report notifications")
 
         return Response(ReportSerializer(verified_reports, many=True).data)
 
