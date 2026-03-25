@@ -227,7 +227,6 @@ jobs:
           DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
           SMS_API_KEY=${{ secrets.SMS_API_KEY }}
           GCS_BUCKET_NAME=lablink-static
-          GCS_CREDENTIALS_JSON=${{ secrets.GCS_CREDENTIALS_JSON }}
           ENVEOF
 
       - name: Copy to deploy path
