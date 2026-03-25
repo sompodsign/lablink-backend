@@ -141,11 +141,57 @@ jobs:
           path: coverage.xml
           retention-days: 14
 
-  # ── 3. Deploy (main branch only) ────────────────────────
+  # ── 3. Migrate & Collect Static (main branch only) ───────
+  migrate-and-static:
+    name: Migrate + Collect Static → GCS
+    runs-on: self-hosted
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        run: pip install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: poetry-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-ansi --no-root
+
+      - name: Run migrate + collectstatic
+        run: |
+          mkdir -p /tmp/gcs-secrets
+          printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
+          export DJANGO_SETTINGS_MODULE=core.config.prod
+          export GCS_CREDENTIALS_FILE=/tmp/gcs-secrets/credentials.json
+          export GCS_BUCKET_NAME=lablink-static
+          export SECRET_KEY=${{ secrets.SECRET_KEY }}
+          export POSTGRES_DB=lablink
+          export POSTGRES_USER=lablink_user
+          export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          export POSTGRES_HOST=localhost
+          export POSTGRES_PORT=55436
+          echo "🔄 Running migrations..."
+          poetry run python manage.py migrate --noinput
+          echo "📦 Collecting static files → GCS..."
+          poetry run python manage.py collectstatic --noinput
+          rm -f /tmp/gcs-secrets/credentials.json
+
+  # ── 4. Deploy (main branch only) ────────────────────────
   deploy:
     name: Deploy to Production
     runs-on: self-hosted
-    needs: test
+    needs: migrate-and-static
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     steps:
       - name: Checkout
@@ -174,27 +220,6 @@ jobs:
           GCS_BUCKET_NAME=lablink-static
           GCS_CREDENTIALS_JSON=${{ secrets.GCS_CREDENTIALS_JSON }}
           ENVEOF
-
-      - name: Migrate + Collect static → GCS
-        run: |
-          pip install poetry==${{ env.POETRY_VERSION }} -q
-          poetry install --no-interaction --no-ansi --no-root -q
-          mkdir -p /tmp/gcs-secrets
-          printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
-          export DJANGO_SETTINGS_MODULE=core.config.prod
-          export GCS_CREDENTIALS_FILE=/tmp/gcs-secrets/credentials.json
-          export GCS_BUCKET_NAME=lablink-static
-          export SECRET_KEY=${{ secrets.SECRET_KEY }}
-          export POSTGRES_DB=lablink
-          export POSTGRES_USER=lablink_user
-          export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          export POSTGRES_HOST=localhost
-          export POSTGRES_PORT=55436
-          echo "🔄 Running migrations..."
-          poetry run python manage.py migrate --noinput
-          echo "📦 Collecting static files → GCS..."
-          poetry run python manage.py collectstatic --noinput
-          rm -f /tmp/gcs-secrets/credentials.json
 
       - name: Copy to deploy path
         run: |
