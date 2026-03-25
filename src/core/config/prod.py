@@ -102,7 +102,6 @@ if _os.path.exists(GCS_CREDENTIALS_FILE):
                 "bucket_name": GCS_BUCKET_NAME,
                 "credentials": _gcs_credentials,
                 "location": "static",
-                "default_acl": "publicRead",
                 "querystring_auth": False,
             },
         },
