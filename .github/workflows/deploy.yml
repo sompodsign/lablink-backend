@@ -147,6 +147,19 @@ jobs:
     runs-on: self-hosted
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    env:
+      DJANGO_SETTINGS_MODULE: core.config.prod
+      GCS_CREDENTIALS_FILE: /tmp/gcs-secrets/credentials.json
+      GCS_BUCKET_NAME: lablink-static
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ALLOWED_HOSTS: localhost
+      POSTGRES_DB: lablink
+      POSTGRES_USER: lablink_user
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "55436"
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      CELERY_RESULT_BACKEND: redis://localhost:6379/0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -168,24 +181,20 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --no-ansi --no-root
 
-      - name: Run migrate + collectstatic
+      - name: Write GCS credentials
         run: |
           mkdir -p /tmp/gcs-secrets
           printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
-          export DJANGO_SETTINGS_MODULE=core.config.prod
-          export GCS_CREDENTIALS_FILE=/tmp/gcs-secrets/credentials.json
-          export GCS_BUCKET_NAME=lablink-static
-          export SECRET_KEY=${{ secrets.SECRET_KEY }}
-          export POSTGRES_DB=lablink
-          export POSTGRES_USER=lablink_user
-          export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          export POSTGRES_HOST=localhost
-          export POSTGRES_PORT=55436
-          echo "🔄 Running migrations..."
-          poetry run python manage.py migrate --noinput
-          echo "📦 Collecting static files → GCS..."
-          poetry run python manage.py collectstatic --noinput
-          rm -f /tmp/gcs-secrets/credentials.json
+
+      - name: Run migrate
+        run: poetry run python manage.py migrate --noinput
+
+      - name: Collect static → GCS
+        run: poetry run python manage.py collectstatic --noinput
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f /tmp/gcs-secrets/credentials.json
 
   # ── 4. Deploy (main branch only) ────────────────────────
   deploy:
