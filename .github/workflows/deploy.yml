@@ -31,7 +31,6 @@ jobs:
   # ── 1. Lint ─────────────────────────────────────────────
   lint:
     name: Lint & Format Check
-    if: false  # TODO: re-enable after GCS setup is verified
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +51,6 @@ jobs:
   # ── 2. Test & Coverage ──────────────────────────────────
   test:
     name: Test & Coverage
-    if: false  # TODO: re-enable after GCS setup is verified
     runs-on: self-hosted
     needs: lint
     services:
