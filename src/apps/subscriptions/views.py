@@ -719,7 +719,6 @@ class SuperadminInvoiceMarkPaidView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-
         # Update invoice
         invoice.status = Invoice.Status.PAID
         invoice.paid_at = timezone.now()
