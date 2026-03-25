@@ -89,6 +89,10 @@ GCS_CREDENTIALS_FILE = env(
 import os as _os  # noqa: E402
 
 if _os.path.exists(GCS_CREDENTIALS_FILE):
+    from google.oauth2.service_account import Credentials as _GCSCreds  # noqa: E402
+
+    _gcs_credentials = _GCSCreds.from_service_account_file(GCS_CREDENTIALS_FILE)
+
     INSTALLED_APPS += ["storages"]  # type: ignore[name-defined]  # noqa: F405
 
     STORAGES = {
@@ -96,7 +100,7 @@ if _os.path.exists(GCS_CREDENTIALS_FILE):
             "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
             "OPTIONS": {
                 "bucket_name": GCS_BUCKET_NAME,
-                "credentials": GCS_CREDENTIALS_FILE,
+                "credentials": _gcs_credentials,
                 "location": "static",
                 "default_acl": "publicRead",
                 "querystring_auth": False,

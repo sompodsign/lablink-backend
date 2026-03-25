@@ -186,11 +186,11 @@ jobs:
           mkdir -p /tmp/gcs-secrets
           printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
 
-      - name: Run migrate
-        run: poetry run python manage.py migrate --noinput
-
       - name: Collect static → GCS
         run: poetry run python manage.py collectstatic --noinput
+
+      - name: Run migrate
+        run: poetry run python manage.py migrate --noinput
 
       - name: Cleanup credentials
         if: always()
