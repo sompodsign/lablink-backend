@@ -32,10 +32,15 @@ COPY . /app/
 COPY <<'EOF' /app/entrypoint.sh
 #!/bin/sh
 set -e
+
+# Write GCS service-account credentials from env var (injected at runtime)
+if [ -n "$GCS_CREDENTIALS_JSON" ]; then
+    mkdir -p /run/secrets
+    printf '%s' "$GCS_CREDENTIALS_JSON" > /run/secrets/gcs-credentials.json
+fi
+
 echo "🔄 Running migrations..."
 python manage.py migrate --noinput
-echo "📦 Collecting static files..."
-python manage.py collectstatic --noinput
 echo "🚀 Starting Gunicorn..."
 exec gunicorn core.wsgi:application \
     --bind 0.0.0.0:8000 \

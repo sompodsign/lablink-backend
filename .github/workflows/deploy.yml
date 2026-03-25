@@ -171,7 +171,26 @@ jobs:
           EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
           DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
           SMS_API_KEY=${{ secrets.SMS_API_KEY }}
+          GCS_BUCKET_NAME=lablink-static
+          GCS_CREDENTIALS_JSON=${{ secrets.GCS_CREDENTIALS_JSON }}
           ENVEOF
+
+      - name: Collect static → GCS
+        run: |
+          pip install poetry==${{ env.POETRY_VERSION }} -q
+          poetry install --no-interaction --no-ansi --no-root -q
+          mkdir -p /tmp/gcs-secrets
+          printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
+          GCS_CREDENTIALS_FILE=/tmp/gcs-secrets/credentials.json \
+          GCS_BUCKET_NAME=lablink-static \
+          DJANGO_SETTINGS_MODULE=core.config.prod \
+          SECRET_KEY=ci-collectstatic-placeholder \
+          POSTGRES_DB=placeholder \
+          POSTGRES_USER=placeholder \
+          POSTGRES_PASSWORD=placeholder \
+          POSTGRES_HOST=localhost \
+          poetry run python manage.py collectstatic --noinput
+          rm -f /tmp/gcs-secrets/credentials.json
 
       - name: Copy to deploy path
         run: |

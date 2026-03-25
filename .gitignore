@@ -23,3 +23,6 @@ ENV/
 .idea/
 *.swp
 .DS_Store
+
+# GCS service account keys
+env/service-accounts/

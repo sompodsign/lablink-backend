@@ -78,3 +78,33 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="LabLink <noreply@lablink.bd>")
+
+# ── Google Cloud Storage — Static Files ──────────────────────────
+GCS_BUCKET_NAME = env("GCS_BUCKET_NAME", default="lablink-static")
+GCS_CREDENTIALS_FILE = env(
+    "GCS_CREDENTIALS_FILE", default="/run/secrets/gcs-credentials.json"
+)
+
+# Only activate if the credentials file exists (safety fallback to whitenoise)
+import os as _os  # noqa: E402
+
+if _os.path.exists(GCS_CREDENTIALS_FILE):
+    INSTALLED_APPS += ["storages"]  # type: ignore[name-defined]  # noqa: F405
+
+    STORAGES = {
+        "staticfiles": {
+            "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
+            "OPTIONS": {
+                "bucket_name": GCS_BUCKET_NAME,
+                "credentials": GCS_CREDENTIALS_FILE,
+                "location": "static",
+                "default_acl": "publicRead",
+                "querystring_auth": False,
+            },
+        },
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+    }
+
+    STATIC_URL = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/static/"

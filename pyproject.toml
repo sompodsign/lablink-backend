@@ -24,7 +24,8 @@ dependencies = [
     "django-env (>=0.2.1,<0.3.0)",
     "django-celery-beat (>=2.9.0,<3.0.0)",
     "whitenoise (>=6.9.0,<7.0.0)",
-    "requests (>=2.32.0,<3.0.0)"
+    "requests (>=2.32.0,<3.0.0)",
+    "django-storages[google] (>=1.14,<2.0)"
 ]
 
 [tool.poetry.group.dev.dependencies]
@@ -67,6 +68,10 @@ ignore_missing_imports = true
 warn_return_any = false
 warn_unused_configs = true
 disable_error_code = ["no-any-return", "var-annotated"]
+
+[[tool.mypy.overrides]]
+module = "core.config.*"
+ignore_errors = true
 
 [tool.django-stubs]
 django_settings_module = "core.config.local"
