@@ -175,20 +175,24 @@ jobs:
           GCS_CREDENTIALS_JSON=${{ secrets.GCS_CREDENTIALS_JSON }}
           ENVEOF
 
-      - name: Collect static → GCS
+      - name: Migrate + Collect static → GCS
         run: |
           pip install poetry==${{ env.POETRY_VERSION }} -q
           poetry install --no-interaction --no-ansi --no-root -q
           mkdir -p /tmp/gcs-secrets
           printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
-          GCS_CREDENTIALS_FILE=/tmp/gcs-secrets/credentials.json \
-          GCS_BUCKET_NAME=lablink-static \
-          DJANGO_SETTINGS_MODULE=core.config.prod \
-          SECRET_KEY=ci-collectstatic-placeholder \
-          POSTGRES_DB=placeholder \
-          POSTGRES_USER=placeholder \
-          POSTGRES_PASSWORD=placeholder \
-          POSTGRES_HOST=localhost \
+          export DJANGO_SETTINGS_MODULE=core.config.prod
+          export GCS_CREDENTIALS_FILE=/tmp/gcs-secrets/credentials.json
+          export GCS_BUCKET_NAME=lablink-static
+          export SECRET_KEY=${{ secrets.SECRET_KEY }}
+          export POSTGRES_DB=lablink
+          export POSTGRES_USER=lablink_user
+          export POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          export POSTGRES_HOST=localhost
+          export POSTGRES_PORT=55436
+          echo "🔄 Running migrations..."
+          poetry run python manage.py migrate --noinput
+          echo "📦 Collecting static files → GCS..."
           poetry run python manage.py collectstatic --noinput
           rm -f /tmp/gcs-secrets/credentials.json
 

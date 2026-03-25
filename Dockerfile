@@ -39,9 +39,7 @@ if [ -n "$GCS_CREDENTIALS_JSON" ]; then
     printf '%s' "$GCS_CREDENTIALS_JSON" > /run/secrets/gcs-credentials.json
 fi
 
-echo "🔄 Running migrations..."
-python manage.py migrate --noinput
-echo "🚀 Starting Gunicorn..."
+echo " Starting Gunicorn..."
 exec gunicorn core.wsgi:application \
     --bind 0.0.0.0:8000 \
     --workers 3 \
