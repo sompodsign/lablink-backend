@@ -168,6 +168,25 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
                 ),
             )
 
+            assistant_role, _ = Role.objects.get_or_create(
+                name="Medical Assistant",
+                center=center,
+                defaults={"is_system": True},
+            )
+            assistant_role.permissions.set(
+                Permission.objects.filter(
+                    codename__in=[
+                        "view_patients",
+                        "manage_patients",
+                        "view_appointments",
+                        "manage_appointments",
+                        "view_reports",
+                        "view_test_orders",
+                        "view_payments",
+                    ],
+                ),
+            )
+
             # ── Create admin user ─────────────────────────────────
             username = f"{center.domain}_admin"
             counter = 1

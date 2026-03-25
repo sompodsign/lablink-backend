@@ -1,8 +1,10 @@
 from django.urls import path
 
 from .views import (
+    CenterCancelSubscriptionView,
     CenterInvoiceListView,
     CenterRegistrationView,
+    CenterResumeSubscriptionView,
     CenterSubmitPaymentView,
     CenterSubscriptionView,
     PaymentInfoListView,
@@ -41,6 +43,16 @@ center_patterns = [
         "my-subscription/",
         CenterSubscriptionView.as_view(),
         name="center-subscription",
+    ),
+    path(
+        "my-subscription/cancel/",
+        CenterCancelSubscriptionView.as_view(),
+        name="center-cancel-subscription",
+    ),
+    path(
+        "my-subscription/resume/",
+        CenterResumeSubscriptionView.as_view(),
+        name="center-resume-subscription",
     ),
     path(
         "status/",

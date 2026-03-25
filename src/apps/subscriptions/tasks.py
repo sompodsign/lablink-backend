@@ -108,7 +108,20 @@ def generate_monthly_invoices():
     ).select_related("plan", "center")
 
     created = 0
+    cancelled = 0
     for sub in subs_due:
+        if sub.cancel_at_period_end:
+            sub.status = Subscription.Status.CANCELLED
+            sub.cancelled_at = timezone.now()
+            sub.save(update_fields=["status", "cancelled_at"])
+            cancelled += 1
+            logger.info(
+                "Cancelled subscription for %s (%s) at billing period end.",
+                sub.center.name,
+                sub.center.domain,
+            )
+            continue
+
         # Check if an invoice already exists for this billing cycle
         existing = Invoice.objects.filter(
             subscription=sub,
@@ -147,7 +160,9 @@ def generate_monthly_invoices():
         sub.billing_date = sub.billing_date + timedelta(days=30)
         sub.save(update_fields=["billing_date"])
 
-    logger.info("Generated %d new invoices.", created)
+    logger.info(
+        "Generated %d new invoices. Cancelled %d subscriptions.", created, cancelled
+    )
     return created
 
 

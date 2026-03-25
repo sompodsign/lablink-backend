@@ -163,8 +163,17 @@ class PermissionViewSet(viewsets.ModelViewSet):
     """Superadmin CRUD for permissions. List is available to center admins too."""
 
     serializer_class = PermissionSerializer
-    queryset = Permission.objects.all()
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return Permission.objects.all()
+
+        tenant = getattr(self.request, "tenant", None)
+        if tenant:
+            return tenant.available_permissions.all()
+
+        return Permission.objects.none()
 
     def get_permissions(self):
         if self.action == "list":

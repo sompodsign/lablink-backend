@@ -1114,7 +1114,7 @@ class RolePermissionValidationTests(APITestCase):
 
 
 class DefaultRoleSignalTests(TestCase):
-    """Signal should create 4 default roles when a new center is saved."""
+    """Signal should create 5 default roles when a new center is saved."""
 
     def test_default_roles_created_on_center_save(self):
         from core.tenants.models import Role
@@ -1129,7 +1129,13 @@ class DefaultRoleSignalTests(TestCase):
         role_names = list(roles.values_list("name", flat=True))
         self.assertEqual(
             role_names,
-            ["Admin", "Doctor", "Medical Technologist", "Receptionist"],
+            [
+                "Admin",
+                "Doctor",
+                "Medical Assistant",
+                "Medical Technologist",
+                "Receptionist",
+            ],
         )
 
     def test_admin_role_gets_all_permissions(self):
@@ -1207,6 +1213,28 @@ class DefaultRoleSignalTests(TestCase):
             "manage_test_orders",
         }
         actual = set(tech_role.permissions.values_list("codename", flat=True))
+        self.assertEqual(actual, expected)
+
+    def test_medical_assistant_role_permissions(self):
+        from core.tenants.models import Role
+
+        center = DiagnosticCenter.objects.create(
+            name="Asst Perm Lab",
+            domain="asst-perm",
+            address="123 Test St",
+            contact_number="01700000007",
+        )
+        asst_role = Role.objects.get(center=center, name="Medical Assistant")
+        expected = {
+            "view_patients",
+            "manage_patients",
+            "view_appointments",
+            "manage_appointments",
+            "view_reports",
+            "view_test_orders",
+            "view_payments",
+        }
+        actual = set(asst_role.permissions.values_list("codename", flat=True))
         self.assertEqual(actual, expected)
 
     def test_all_roles_are_system_roles(self):

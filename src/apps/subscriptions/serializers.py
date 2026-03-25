@@ -129,6 +129,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "billing_date",
             "started_at",
             "cancelled_at",
+            "cancel_at_period_end",
             "days_remaining_trial",
             "is_trial_expired",
             "invoices",
@@ -326,6 +327,26 @@ class CenterRegistrationSerializer(serializers.Serializer):
             category__in=["Reports", "Test Orders", "Patients"],
         )
         lab_role.permissions.set(lab_perms)
+
+        # 5b. Create medical assistant role
+        assistant_role, _created = Role.objects.get_or_create(
+            name="Medical Assistant",
+            center=center,
+            defaults={"is_system": True},
+        )
+        assistant_role.permissions.set(
+            Permission.objects.filter(
+                codename__in=[
+                    "view_patients",
+                    "manage_patients",
+                    "view_appointments",
+                    "manage_appointments",
+                    "view_reports",
+                    "view_test_orders",
+                    "view_payments",
+                ],
+            ),
+        )
 
         # 6. Create admin user
         username = f"{validated_data['domain']}_admin"

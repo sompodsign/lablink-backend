@@ -228,6 +228,7 @@ jobs:
           EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
           DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
           SMS_API_KEY=${{ secrets.SMS_API_KEY }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
           GCS_BUCKET_NAME=lablink-static
           ENVEOF
 

@@ -59,6 +59,8 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
             "lab_support_availability",
             "allow_online_appointments",
             "services",
+            "sms_enabled",
+            "email_notifications_enabled",
         ]
 
     def get_logo_url(self, obj) -> str | None:

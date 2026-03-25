@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.tenants.permissions import (
+    HasCenterPermission,
     IsCenterAdmin,
     IsCenterDoctor,
     IsCenterMedicalTechnologist,
@@ -426,6 +427,10 @@ class ReportViewSet(viewsets.ModelViewSet):
             qs = qs.filter(test_order__referring_doctor_name__icontains=doctor)
         if status_val := params.get("status"):
             qs = qs.filter(status=status_val)
+        if date_from := params.get("date_from"):
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to := params.get("date_to"):
+            qs = qs.filter(created_at__date__lte=date_to)
 
         return qs
 
@@ -444,9 +449,19 @@ class ReportViewSet(viewsets.ModelViewSet):
         if self.action == "destroy":
             return [permissions.IsAuthenticated(), IsCenterMedicalTechnologist()]
         if self.action in ("verify", "batch_verify"):
-            return [permissions.IsAuthenticated(), IsCenterAdmin()]
+            perm = HasCenterPermission()
+            perm.required_permission = "verify_reports"
+            return [permissions.IsAuthenticated(), perm]
         if self.action == "mark_delivered":
             return [permissions.IsAuthenticated(), IsCenterStaff()]
+        if self.action == "resend_email":
+            perm = HasCenterPermission()
+            perm.required_permission = "resend_email"
+            return [permissions.IsAuthenticated(), perm]
+        if self.action == "resend_sms":
+            perm = HasCenterPermission()
+            perm.required_permission = "resend_sms"
+            return [permissions.IsAuthenticated(), perm]
         # print_data, batch_print_data: any authenticated user
         return [permissions.IsAuthenticated()]
 

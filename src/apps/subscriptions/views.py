@@ -1,6 +1,7 @@
 import contextlib
 import logging
 
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -123,6 +124,84 @@ class CenterSubscriptionView(APIView):
 
         serializer = SubscriptionSerializer(subscription)
         return Response(serializer.data)
+
+
+class CenterCancelSubscriptionView(APIView):
+    """Center admin: cancel subscription at the end of the current billing cycle."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    def post(self, request):
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center context."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            subscription = Subscription.objects.get(center=tenant)
+        except Subscription.DoesNotExist:
+            return Response(
+                {"detail": "No subscription found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if subscription.status == Subscription.Status.CANCELLED:
+            return Response(
+                {"detail": "Subscription is already cancelled."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        subscription.cancel_at_period_end = True
+        subscription.save(update_fields=["cancel_at_period_end"])
+
+        return Response(
+            {
+                "detail": "Subscription will be cancelled at the end of the billing cycle."
+            }
+        )
+
+
+class CenterResumeSubscriptionView(APIView):
+    """Center admin: resume a cancelled subscription before the billing cycle ends."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    def post(self, request):
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center context."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            subscription = Subscription.objects.get(center=tenant)
+        except Subscription.DoesNotExist:
+            return Response(
+                {"detail": "No subscription found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not subscription.cancel_at_period_end:
+            return Response(
+                {"detail": "Subscription is not scheduled for cancellation."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if subscription.status == Subscription.Status.CANCELLED:
+            return Response(
+                {
+                    "detail": "Subscription is already cancelled. Please start a new subscription."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        subscription.cancel_at_period_end = False
+        subscription.save(update_fields=["cancel_at_period_end"])
+
+        return Response({"detail": "Subscription has been resumed."})
 
 
 class SubscriptionStatusView(APIView):
@@ -640,7 +719,6 @@ class SuperadminInvoiceMarkPaidView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from django.utils import timezone
 
         # Update invoice
         invoice.status = Invoice.Status.PAID
@@ -753,7 +831,6 @@ class SuperadminExtendTrialView(APIView):
         from datetime import timedelta
 
         from django.core.cache import cache
-        from django.utils import timezone
 
         # If trial already expired, reset trial_end from now
         if sub.trial_end and sub.trial_end < timezone.now():
@@ -827,7 +904,6 @@ class SuperadminChangePlanView(APIView):
         from datetime import timedelta
 
         from django.core.cache import cache
-        from django.utils import timezone
 
         old_plan_name = sub.plan.name
         sub.plan = new_plan
@@ -994,7 +1070,6 @@ class SuperadminVerifyPaymentView(APIView):
 
     def post(self, request, submission_id):
         from django.core.cache import cache
-        from django.utils import timezone
 
         try:
             submission = PaymentSubmission.objects.select_related(

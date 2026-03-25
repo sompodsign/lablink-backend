@@ -583,6 +583,28 @@ class GenerateMonthlyInvoicesTaskTests(TestCase):
         count = generate_monthly_invoices()
         self.assertEqual(count, 0)
 
+    def test_cancels_subscription_at_period_end(self):
+        center = DiagnosticCenter.objects.create(
+            name="Cancel Task Center", domain="cancel-task"
+        )
+        today = timezone.now().date()
+        sub = Subscription.objects.create(
+            center=center,
+            plan=self.plan,
+            status=Subscription.Status.ACTIVE,
+            billing_date=today,
+            cancel_at_period_end=True,
+        )
+
+        count = generate_monthly_invoices()
+        self.assertEqual(count, 0)
+        self.assertEqual(Invoice.objects.filter(subscription=sub).count(), 0)
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "CANCELLED")
+        self.assertIsNotNone(sub.cancelled_at)
+        self.assertTrue(sub.cancel_at_period_end)
+
 
 class MarkOverdueInvoicesTaskTests(TestCase):
     """Tests for mark_overdue_invoices Celery task."""
@@ -804,6 +826,67 @@ class SoftBlockMiddlewareTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 402)
+
+
+class CenterCancelSubscriptionAPITests(TestCase):
+    """Tests for canceling a subscription."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.plan = SubscriptionPlan.objects.create(
+            name="Cancel Plan", slug="cancel-plan", price=999
+        )
+        self.center = DiagnosticCenter.objects.create(
+            name="Cancel Center API", domain="cancel-center-api"
+        )
+        self.user = User.objects.create_user(
+            username="cancel_user", email="cancel@test.com", password="test123"
+        )
+        self.user.center = self.center
+        self.user.is_center_admin = True
+        self.user.save()
+
+        from core.tenants.models import Permission, Role, Staff
+
+        perm, _ = Permission.objects.get_or_create(
+            codename="manage_staff",
+            defaults={"name": "Manage Staff", "category": "Admin"},
+        )
+        role = Role.objects.get(center=self.center, name="Admin")
+        role.permissions.add(perm)
+        Staff.objects.create(user=self.user, center=self.center, role=role)
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        token = RefreshToken.for_user(self.user)
+        self.auth_header = f"Bearer {token.access_token}"
+
+    def test_cancel_subscription_success(self):
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.ACTIVE,
+        )
+        self.assertFalse(sub.cancel_at_period_end)
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        response = self.client.post("/api/subscriptions/my-subscription/cancel/")
+
+        self.assertEqual(response.status_code, 200)
+
+        sub.refresh_from_db()
+        self.assertTrue(sub.cancel_at_period_end)
+
+    def test_cancel_already_cancelled_subscription(self):
+        Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.CANCELLED,
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        response = self.client.post("/api/subscriptions/my-subscription/cancel/")
+
+        self.assertEqual(response.status_code, 400)
 
 
 class SubscriptionStatusAPITests(TestCase):

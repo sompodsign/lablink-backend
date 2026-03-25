@@ -22,8 +22,11 @@ DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
         "view_reports",
         "create_reports",
         "manage_reports",
+        "verify_reports",
         "view_test_orders",
         "manage_test_orders",
+        "resend_email",
+        "resend_sms",
     ],
     "Receptionist": [
         "view_patients",
@@ -33,6 +36,8 @@ DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
         "view_reports",
         "view_payments",
         "manage_payments",
+        "resend_email",
+        "resend_sms",
     ],
     "Doctor": [
         "view_patients",
@@ -41,6 +46,15 @@ DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
         "view_test_orders",
         "view_reports",
         "create_reports",
+    ],
+    "Medical Assistant": [
+        "view_patients",
+        "manage_patients",
+        "view_appointments",
+        "manage_appointments",
+        "view_reports",
+        "view_test_orders",
+        "view_payments",
     ],
 }
 

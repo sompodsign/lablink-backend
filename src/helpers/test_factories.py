@@ -110,7 +110,8 @@ def _get_or_create_role(center, role_name, permissions=None):
         name=role_name,
         center=center,
         defaults={
-            "is_system": role_name in ("Admin", "Medical Technologist", "Receptionist")
+            "is_system": role_name
+            in ("Admin", "Medical Technologist", "Receptionist", "Medical Assistant")
         },
     )
     if created or permissions is not None:

@@ -89,6 +89,10 @@ class Subscription(models.Model):
         help_text=_("Next billing date"),
     )
     started_at = models.DateTimeField(auto_now_add=True)
+    cancel_at_period_end = models.BooleanField(
+        default=False,
+        help_text=_("If true, subscription will be cancelled at next billing date"),
+    )
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

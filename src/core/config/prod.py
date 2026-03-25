@@ -79,6 +79,9 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="LabLink <noreply@lablink.bd>")
 
+# ── Frontend URL (for notification links) ────────────────────────
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+
 # ── Google Cloud Storage — Static Files ──────────────────────────
 GCS_BUCKET_NAME = env("GCS_BUCKET_NAME", default="")
 GCS_CREDENTIALS_FILE = env(
