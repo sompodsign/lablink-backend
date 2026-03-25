@@ -80,15 +80,19 @@ EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="LabLink <noreply@lablink.bd>")
 
 # ── Google Cloud Storage — Static Files ──────────────────────────
-GCS_BUCKET_NAME = env("GCS_BUCKET_NAME", default="lablink-static")
+GCS_BUCKET_NAME = env("GCS_BUCKET_NAME", default="")
 GCS_CREDENTIALS_FILE = env(
     "GCS_CREDENTIALS_FILE", default="/run/secrets/gcs-credentials.json"
 )
 
-# Only activate if the credentials file exists (safety fallback to whitenoise)
+# Always serve static from GCS when bucket is configured
+if GCS_BUCKET_NAME:
+    STATIC_URL = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/static/"
+
+# Only activate GCS upload backend if credentials file exists (CI only)
 import os as _os  # noqa: E402
 
-if _os.path.exists(GCS_CREDENTIALS_FILE):
+if GCS_BUCKET_NAME and _os.path.exists(GCS_CREDENTIALS_FILE):
     from google.oauth2.service_account import Credentials as _GCSCreds  # noqa: E402
 
     _gcs_credentials = _GCSCreds.from_service_account_file(GCS_CREDENTIALS_FILE)
@@ -109,5 +113,3 @@ if _os.path.exists(GCS_CREDENTIALS_FILE):
             "BACKEND": "django.core.files.storage.FileSystemStorage",
         },
     }
-
-    STATIC_URL = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/static/"
