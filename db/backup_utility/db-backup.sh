@@ -110,9 +110,15 @@ create_archive() {
 # Pre-flight Checks - Verify all requirements are met
 # ============================================================================
 
-# Check if database data directory exists
+# Check if database data directory exists.
+# Use sudo -n as a fallback when the directory is not readable/traversable by the
+# current user (e.g. /var/lib/docker/volumes/ is root-owned).
 if [[ ! -d "${DATA_DIR}" ]]; then
-  fail "Expected database data directory '${DATA_DIR}' does not exist"
+  if command -v sudo >/dev/null 2>&1 && sudo -n test -d "${DATA_DIR}" 2>/dev/null; then
+    log "DATA_DIR not accessible without sudo, but it exists — will use sudo for archive"
+  else
+    fail "Expected database data directory '${DATA_DIR}' does not exist"
+  fi
 fi
 
 # Create local backup directory if it doesn't exist
