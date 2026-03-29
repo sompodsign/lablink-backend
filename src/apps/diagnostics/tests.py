@@ -743,3 +743,18 @@ class ReportTemplateViewTests(APITestCase):
         # Every template returned must belong to center A, not center B
         for template in response.data["results"]:
             self.assertEqual(template["center"], self.center.id)
+
+    def test_report_templates_are_returned_in_stable_order(self):
+        second_test_type = make_test_type("ZZZ Panel", "150.00")
+        make_report_template(second_test_type, self.center)
+
+        self._auth()
+        response = self.client.get("/api/diagnostics/report-templates/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data["results"]
+        ordered = sorted(
+            results,
+            key=lambda template: (template["test_type_name"], template["id"]),
+        )
+        self.assertEqual(results, ordered)

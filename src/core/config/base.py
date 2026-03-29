@@ -252,6 +252,10 @@ SPECTACULAR_SETTINGS = {
         "ReportStatusEnum": "apps.diagnostics.models.Report.Status",
         "PaymentMethodEnum": "apps.payments.models.Payment.Method",
         "PaymentStatusEnum": "apps.payments.models.Payment.Status",
+        "ReferrerTypeEnum": "apps.payments.models.Referrer.Type",
+        "ReferrerSettlementPaymentMethodEnum": (
+            "apps.payments.models.ReferrerSettlement.PaymentMethod"
+        ),
         "AppointmentStatusEnum": [
             ("PENDING", "Pending"),
             ("CONFIRMED", "Confirmed"),

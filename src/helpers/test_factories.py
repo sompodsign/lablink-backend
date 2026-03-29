@@ -1,6 +1,7 @@
 """Shared test factory helpers for LabLink backend tests."""
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.appointments.models import Appointment
@@ -11,7 +12,13 @@ from apps.diagnostics.models import (
     TestOrder,
     TestType,
 )
-from apps.payments.models import Invoice, InvoiceItem
+from apps.payments.models import (
+    Invoice,
+    InvoiceItem,
+    Referrer,
+    ReferrerSettlement,
+    ReferrerSettlementItem,
+)
 from apps.subscriptions.models import Subscription, SubscriptionPlan
 from core.tenants.models import DiagnosticCenter, Doctor, Permission, Role, Staff
 from core.users.models import PatientProfile
@@ -257,16 +264,22 @@ def make_report_template(test_type, center, fields=None):
 
 
 def make_invoice(patient, center, created_by=None, **kwargs):
+    if "referral_doctor" in kwargs and "referrer" not in kwargs:
+        kwargs["referrer"] = kwargs.pop("referral_doctor")
     defaults = {
         "status": Invoice.Status.ISSUED,
     }
     defaults.update(kwargs)
-    return Invoice.objects.create(
+    invoice = Invoice.objects.create(
         patient=patient,
         center=center,
         created_by=created_by,
         **defaults,
     )
+    if invoice.status == Invoice.Status.PAID and invoice.paid_at is None:
+        invoice.paid_at = timezone.now()
+        invoice.save(update_fields=["paid_at"])
+    return invoice
 
 
 def make_invoice_item(invoice, **kwargs):
@@ -280,6 +293,54 @@ def make_invoice_item(invoice, **kwargs):
     return InvoiceItem.objects.create(
         invoice=invoice,
         **defaults,
+    )
+
+
+def make_referrer(center, name="Dr. Referral", commission_pct="10.00", **kwargs):
+    defaults = {
+        "phone": "01700000099",
+        "type": Referrer.Type.DOCTOR,
+        "is_active": True,
+        "notes": "",
+    }
+    defaults.update(kwargs)
+    return Referrer.objects.create(
+        center=center,
+        name=name,
+        commission_pct=commission_pct,
+        **defaults,
+    )
+
+
+def make_referral_doctor(center, name="Dr. Referral", commission_pct="10.00", **kwargs):
+    return make_referrer(
+        center,
+        name=name,
+        commission_pct=commission_pct,
+        **kwargs,
+    )
+
+
+def make_referrer_settlement(referrer, center, amount_paid="100.00", **kwargs):
+    defaults = {
+        "payment_method": ReferrerSettlement.PaymentMethod.CASH,
+        "paid_at": timezone.now(),
+        "notes": "",
+    }
+    defaults.update(kwargs)
+    return ReferrerSettlement.objects.create(
+        referrer=referrer,
+        center=center,
+        amount_paid=amount_paid,
+        **defaults,
+    )
+
+
+def make_referrer_settlement_item(settlement, invoice, allocated_amount="100.00"):
+    return ReferrerSettlementItem.objects.create(
+        settlement=settlement,
+        invoice=invoice,
+        allocated_amount=allocated_amount,
     )
 
 

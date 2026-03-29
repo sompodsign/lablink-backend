@@ -141,7 +141,7 @@ class ReportTemplateViewSet(viewsets.ModelViewSet):
         test_type = self.request.query_params.get("test_type")
         if test_type:
             qs = qs.filter(test_type_id=test_type)
-        return qs
+        return qs.order_by("test_type__name", "id")
 
     def perform_create(self, serializer):
         serializer.save(center=self.request.tenant)

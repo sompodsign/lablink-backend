@@ -1,6 +1,7 @@
 import logging
 
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from django.utils import timezone
+from drf_spectacular.utils import OpenApiExample, extend_schema, extend_schema_view
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -40,10 +41,23 @@ logger = logging.getLogger(__name__)
         description=(
             "Create an itemized invoice for a patient. "
             "Test prices are auto-resolved from center pricing. "
-            "Optionally include doctor visit fee and apply a discount."
+            "Optionally include doctor visit fee, attach one referrer, "
+            "and apply a discount."
         ),
         request=InvoiceCreateSerializer,
         responses={201: InvoiceSerializer},
+        examples=[
+            OpenApiExample(
+                "Invoice with referrer",
+                value={
+                    "patient": 42,
+                    "items": [{"test_type_id": 3}],
+                    "discount_percentage": "10.00",
+                    "referrer_id": 5,
+                },
+                request_only=True,
+            ),
+        ],
     ),
 )
 class InvoiceViewSet(viewsets.ModelViewSet):
@@ -59,7 +73,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         tenant = self.request.tenant
         return (
             Invoice.objects.filter(center=tenant)
-            .select_related("patient", "center", "appointment")
+            .select_related("patient", "center", "appointment", "referrer")
             .prefetch_related("items__test_order__test_type")
             .order_by("-created_at")
         )
@@ -92,11 +106,22 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         summary="Update an invoice",
         description=(
             "Partially update an invoice (items, discount, notes). "
-            "Only DRAFT and ISSUED invoices can be edited. "
+            "Only ISSUED invoices can be edited. "
             "A reason is required for the audit trail."
         ),
         request=InvoiceUpdateSerializer,
         responses={200: InvoiceSerializer},
+        examples=[
+            OpenApiExample(
+                "Change referrer and discount",
+                value={
+                    "referrer_id": 7,
+                    "discount_percentage": "5.00",
+                    "reason": "Referral desk correction",
+                },
+                request_only=True,
+            ),
+        ],
     )
     def partial_update(self, request, *args, **kwargs):
         invoice = self.get_object()
@@ -147,12 +172,21 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             )
         old_status = invoice.status
         invoice.status = Invoice.Status.PAID
-        invoice.save(update_fields=["status", "updated_at"])
+        if invoice.paid_at is None:
+            invoice.paid_at = timezone.now()
+            invoice.save(update_fields=["status", "paid_at", "updated_at"])
+        else:
+            invoice.save(update_fields=["status", "updated_at"])
         InvoiceAuditLog.objects.create(
             invoice=invoice,
             changed_by=request.user,
             action=InvoiceAuditLog.Action.STATUS_CHANGED,
-            changes={"status": {"old": old_status, "new": "PAID"}},
+            changes={
+                "status": {"old": old_status, "new": "PAID"},
+                "paid_at": {"old": None, "new": invoice.paid_at.isoformat()},
+            }
+            if old_status != Invoice.Status.PAID and invoice.paid_at
+            else {"status": {"old": old_status, "new": "PAID"}},
         )
         return Response(InvoiceSerializer(invoice).data)
 

@@ -1,12 +1,37 @@
 import logging
 from decimal import Decimal
 
+from django.db import transaction
 from rest_framework import serializers
 
 from apps.diagnostics.models import CenterTestPricing, TestOrder, TestType
-from apps.payments.models import Invoice, InvoiceAuditLog, InvoiceItem
+from apps.payments.models import Invoice, InvoiceAuditLog, InvoiceItem, Referrer
 
 logger = logging.getLogger(__name__)
+
+
+def _build_referrer_snapshot(referrer):
+    if not referrer:
+        return {
+            "referrer": None,
+            "referrer_name_snapshot": "",
+            "commission_pct_snapshot": Decimal("0.00"),
+        }
+    return {
+        "referrer": referrer,
+        "referrer_name_snapshot": referrer.name,
+        "commission_pct_snapshot": referrer.commission_pct,
+    }
+
+
+def _extract_referrer_id(data):
+    referrer_id = data.get("referrer_id")
+    alias_id = data.get("referral_doctor_id")
+    if referrer_id is not None and alias_id is not None and referrer_id != alias_id:
+        raise serializers.ValidationError(
+            {"referrer_id": "referrer_id and referral_doctor_id must match."}
+        )
+    return referrer_id if referrer_id is not None else alias_id
 
 
 # ─── Read Serializers ─────────────────────────────────────────────
@@ -36,6 +61,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True, read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     patient_name = serializers.SerializerMethodField()
+    referrer_name = serializers.CharField(
+        source="referrer_name_snapshot", read_only=True
+    )
+    referral_doctor = serializers.IntegerField(source="referrer_id", read_only=True)
+    referral_doctor_name = serializers.CharField(
+        source="referrer_name_snapshot", read_only=True
+    )
 
     class Meta:
         model = Invoice
@@ -48,6 +80,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "walk_in_phone",
             "center",
             "appointment",
+            "referrer",
+            "referrer_name",
+            "referral_doctor",
+            "referral_doctor_name",
+            "commission_amount",
             "subtotal",
             "discount_percentage",
             "discount_amount",
@@ -55,6 +92,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "notes",
+            "paid_at",
             "created_by",
             "items",
             "created_at",
@@ -67,6 +105,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "subtotal",
             "discount_amount",
             "total",
+            "commission_amount",
+            "paid_at",
             "created_by",
             "created_at",
             "updated_at",
@@ -115,7 +155,7 @@ class InvoiceItemInputSerializer(serializers.Serializer):
 
 
 class InvoiceCreateSerializer(serializers.Serializer):
-    """Create an invoice with line items, optional visit fee, and discount."""
+    """Create an invoice with line items, optional visit fee, and referrer."""
 
     patient = serializers.IntegerField(
         required=False,
@@ -165,6 +205,16 @@ class InvoiceCreateSerializer(serializers.Serializer):
         max_value=Decimal("100"),
     )
     notes = serializers.CharField(required=False, allow_blank=True, default="")
+    referrer_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Referrer ID (canonical field)",
+    )
+    referral_doctor_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Deprecated alias for referrer_id",
+    )
 
     def validate(self, attrs):
         patient = attrs.get("patient")
@@ -173,6 +223,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Either patient or walk_in_name is required."
             )
+        _extract_referrer_id(attrs)
         return attrs
 
     def validate_patient(self, value):
@@ -193,50 +244,38 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         tenant = self.context["request"].tenant
         try:
-            appt = Appointment.objects.get(pk=value)
+            appointment = Appointment.objects.get(pk=value)
         except Appointment.DoesNotExist:
             raise serializers.ValidationError("Appointment not found.") from None
-        if appt.center_id != tenant.id:
+        if appointment.center_id != tenant.id:
             raise serializers.ValidationError(
                 "Appointment does not belong to this center."
             )
-        return appt
+        return appointment
 
     def _resolve_test_price(self, test_type, center):
-        """Resolve price: CenterTestPricing → TestType.base_price fallback."""
         try:
             pricing = CenterTestPricing.objects.get(center=center, test_type=test_type)
             return pricing.price
         except CenterTestPricing.DoesNotExist:
             return test_type.base_price
 
-    def create(self, validated_data):
-        request = self.context["request"]
-        tenant = request.tenant
+    def _resolve_referrer(self, validated_data, tenant):
+        referrer_id = _extract_referrer_id(validated_data)
+        if not referrer_id:
+            return None
+        try:
+            return Referrer.objects.get(
+                pk=referrer_id,
+                center=tenant,
+                is_active=True,
+            )
+        except Referrer.DoesNotExist:
+            raise serializers.ValidationError(
+                {"referrer_id": "Referrer not found in this center."}
+            ) from None
 
-        patient = validated_data.get("patient")
-        walk_in_name = validated_data.get("walk_in_name", "")
-        walk_in_phone = validated_data.get("walk_in_phone", "")
-        appointment = validated_data.get("appointment")
-        items_data = validated_data.get("items", [])
-        include_visit_fee = validated_data["include_visit_fee"]
-        discount_pct = validated_data["discount_percentage"]
-        notes = validated_data.get("notes", "")
-
-        # Create the invoice
-        invoice = Invoice.objects.create(
-            patient=patient,
-            walk_in_name=walk_in_name,
-            walk_in_phone=walk_in_phone,
-            center=tenant,
-            appointment=appointment,
-            discount_percentage=discount_pct,
-            notes=notes,
-            created_by=request.user,
-            status=Invoice.Status.ISSUED,
-        )
-
-        # Add test / other items
+    def _create_invoice_items(self, invoice, items_data, tenant):
         for item_data in items_data:
             item_type = item_data.get("item_type", InvoiceItem.ItemType.TEST)
             test_order_id = item_data.get("test_order_id")
@@ -247,27 +286,27 @@ class InvoiceCreateSerializer(serializers.Serializer):
             quantity = item_data.get("quantity", 1)
 
             if item_type == InvoiceItem.ItemType.TEST:
-                # Option A: from existing test order
                 if test_order_id:
                     try:
                         test_order = TestOrder.objects.select_related("test_type").get(
-                            pk=test_order_id, center=tenant
+                            pk=test_order_id,
+                            center=tenant,
                         )
                     except TestOrder.DoesNotExist:
                         raise serializers.ValidationError(
                             {
-                                "items": f"Test order {test_order_id} not "
-                                f"found in this center."
+                                "items": (
+                                    f"Test order {test_order_id} not found in this center."
+                                )
                             }
                         ) from None
                     if not description:
                         description = test_order.test_type.name
                     if unit_price is None:
                         unit_price = self._resolve_test_price(
-                            test_order.test_type, tenant
+                            test_order.test_type,
+                            tenant,
                         )
-
-                # Option B: from test catalog (no test order)
                 elif test_type_id:
                     try:
                         test_type = TestType.objects.get(pk=test_type_id)
@@ -294,43 +333,77 @@ class InvoiceCreateSerializer(serializers.Serializer):
                 unit_price=unit_price,
             )
 
-        # Add visit fee(s) if requested (multi-doctor support)
+    def _create_visit_fee_items(self, invoice, validated_data, tenant):
         include_visit_fee = validated_data["include_visit_fee"]
-        if include_visit_fee:
-            from core.tenants.models import Doctor
+        if not include_visit_fee:
+            return
 
-            # Merge doctor_id (backward compat) into doctor_ids
-            doctor_ids = list(validated_data.get("doctor_ids") or [])
-            single_id = validated_data.get("doctor_id")
-            if single_id and single_id not in doctor_ids:
-                doctor_ids.append(single_id)
+        from core.tenants.models import Doctor
 
-            if not doctor_ids:
+        doctor_ids = list(validated_data.get("doctor_ids") or [])
+        single_id = validated_data.get("doctor_id")
+        if single_id and single_id not in doctor_ids:
+            doctor_ids.append(single_id)
+
+        if not doctor_ids:
+            raise serializers.ValidationError(
+                {
+                    "doctor_ids": (
+                        "At least one doctor is required when including visit fee."
+                    )
+                }
+            )
+
+        for doctor_id in doctor_ids:
+            try:
+                doctor = Doctor.objects.select_related("user").get(
+                    pk=doctor_id,
+                    user__center=tenant,
+                )
+            except Doctor.DoesNotExist:
                 raise serializers.ValidationError(
-                    {
-                        "doctor_ids": "At least one doctor is required when including visit fee."
-                    }
+                    {"doctor_ids": f"Doctor {doctor_id} not found in this center."}
+                ) from None
+            if doctor.visit_fee > 0:
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    item_type=InvoiceItem.ItemType.VISIT_FEE,
+                    description=f"Consultation Fee — {doctor}",
+                    quantity=1,
+                    unit_price=doctor.visit_fee,
                 )
 
-            for did in doctor_ids:
-                try:
-                    doctor = Doctor.objects.select_related("user").get(
-                        pk=did, user__center=tenant
-                    )
-                except Doctor.DoesNotExist:
-                    raise serializers.ValidationError(
-                        {"doctor_ids": f"Doctor {did} not found in this center."}
-                    ) from None
-                if doctor.visit_fee > 0:
-                    InvoiceItem.objects.create(
-                        invoice=invoice,
-                        item_type=InvoiceItem.ItemType.VISIT_FEE,
-                        description=f"Consultation Fee — {doctor}",
-                        quantity=1,
-                        unit_price=doctor.visit_fee,
-                    )
+    @transaction.atomic
+    def create(self, validated_data):
+        request = self.context["request"]
+        tenant = request.tenant
 
-        # Recalculate totals
+        patient = validated_data.get("patient")
+        walk_in_name = validated_data.get("walk_in_name", "")
+        walk_in_phone = validated_data.get("walk_in_phone", "")
+        appointment = validated_data.get("appointment")
+        items_data = validated_data.get("items", [])
+        discount_pct = validated_data["discount_percentage"]
+        notes = validated_data.get("notes", "")
+        referrer = self._resolve_referrer(validated_data, tenant)
+        snapshot = _build_referrer_snapshot(referrer)
+
+        invoice = Invoice.objects.create(
+            patient=patient,
+            walk_in_name=walk_in_name,
+            walk_in_phone=walk_in_phone,
+            center=tenant,
+            appointment=appointment,
+            discount_percentage=discount_pct,
+            notes=notes,
+            created_by=request.user,
+            status=Invoice.Status.ISSUED,
+            **snapshot,
+        )
+
+        self._create_invoice_items(invoice, items_data, tenant)
+        self._create_visit_fee_items(invoice, validated_data, tenant)
+
         invoice.recalculate_totals()
         return invoice
 
@@ -354,7 +427,6 @@ class InvoicePrintSerializer(serializers.ModelSerializer):
     center_primary_color = serializers.CharField(
         source="center.primary_color", read_only=True
     )
-    # Print layout
     paper_size = serializers.CharField(source="center.paper_size", read_only=True)
     use_preprinted_paper = serializers.BooleanField(
         source="center.use_preprinted_paper", read_only=True
@@ -440,10 +512,12 @@ class InvoiceAuditLogSerializer(serializers.ModelSerializer):
 # ─── Update Serializer (PATCH) ────────────────────────────────────
 
 
-class InvoiceUpdateSerializer(serializers.Serializer):
-    """Update an existing invoice — items, discount, notes — with audit trail."""
+class InvoiceUpdateSerializer(InvoiceCreateSerializer):
+    """Update an issued invoice with audit trail support."""
 
     items = InvoiceItemInputSerializer(many=True, required=False)
+    include_visit_fee = serializers.BooleanField(required=False, default=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
     discount_percentage = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -451,14 +525,16 @@ class InvoiceUpdateSerializer(serializers.Serializer):
         min_value=Decimal("0"),
         max_value=Decimal("100"),
     )
-    notes = serializers.CharField(required=False, allow_blank=True)
     reason = serializers.CharField(
         required=True,
         help_text="Reason for this edit (required for audit trail)",
     )
 
+    def validate(self, attrs):
+        _extract_referrer_id(attrs)
+        return attrs
+
     def _snapshot_items(self, invoice):
-        """Snapshot current items for diffing."""
         return [
             {
                 "id": item.id,
@@ -471,25 +547,20 @@ class InvoiceUpdateSerializer(serializers.Serializer):
             for item in invoice.items.all()
         ]
 
-    def _resolve_test_price(self, test_type, center):
-        try:
-            pricing = CenterTestPricing.objects.get(center=center, test_type=test_type)
-            return pricing.price
-        except CenterTestPricing.DoesNotExist:
-            return test_type.base_price
-
+    @transaction.atomic
     def update(self, invoice, validated_data):
         request = self.context["request"]
         tenant = request.tenant
         changes = {}
+        update_fields = ["updated_at"]
 
-        # Track field changes
         if "discount_percentage" in validated_data:
             old_val = str(invoice.discount_percentage)
             new_val = str(validated_data["discount_percentage"])
             if old_val != new_val:
                 changes["discount_percentage"] = {"old": old_val, "new": new_val}
                 invoice.discount_percentage = validated_data["discount_percentage"]
+                update_fields.append("discount_percentage")
 
         if "notes" in validated_data:
             old_val = invoice.notes
@@ -497,92 +568,54 @@ class InvoiceUpdateSerializer(serializers.Serializer):
             if old_val != new_val:
                 changes["notes"] = {"old": old_val, "new": new_val}
                 invoice.notes = new_val
+                update_fields.append("notes")
 
-        # Track item changes
+        requested_referrer_id = _extract_referrer_id(validated_data)
+        if "referrer_id" in validated_data or "referral_doctor_id" in validated_data:
+            referrer = None
+            if requested_referrer_id:
+                referrer = self._resolve_referrer(validated_data, tenant)
+            old_val = str(invoice.referrer_id) if invoice.referrer_id else None
+            new_val = str(referrer.id) if referrer else None
+            if old_val != new_val:
+                changes["referrer"] = {"old": old_val, "new": new_val}
+            snapshot = _build_referrer_snapshot(referrer)
+            invoice.referrer = snapshot["referrer"]
+            invoice.referrer_name_snapshot = snapshot["referrer_name_snapshot"]
+            invoice.commission_pct_snapshot = snapshot["commission_pct_snapshot"]
+            update_fields.extend(
+                ["referrer", "referrer_name_snapshot", "commission_pct_snapshot"]
+            )
+
         if "items" in validated_data:
             old_items = self._snapshot_items(invoice)
-
-            # Delete old items and create new ones
             invoice.items.all().delete()
-
-            for item_data in validated_data["items"]:
-                item_type = item_data.get("item_type", InvoiceItem.ItemType.TEST)
-                test_order_id = item_data.get("test_order_id")
-                test_type_id = item_data.get("test_type_id")
-                test_order = None
-                description = item_data.get("description", "")
-                unit_price = item_data.get("unit_price")
-                quantity = item_data.get("quantity", 1)
-
-                if item_type == InvoiceItem.ItemType.TEST:
-                    if test_order_id:
-                        try:
-                            test_order = TestOrder.objects.select_related(
-                                "test_type"
-                            ).get(pk=test_order_id, center=tenant)
-                        except TestOrder.DoesNotExist:
-                            raise serializers.ValidationError(
-                                {"items": f"Test order {test_order_id} not found."}
-                            ) from None
-                        if not description:
-                            description = test_order.test_type.name
-                        if unit_price is None:
-                            unit_price = self._resolve_test_price(
-                                test_order.test_type, tenant
-                            )
-                    elif test_type_id:
-                        try:
-                            test_type = TestType.objects.get(pk=test_type_id)
-                        except TestType.DoesNotExist:
-                            raise serializers.ValidationError(
-                                {"items": f"Test type {test_type_id} not found."}
-                            ) from None
-                        if not description:
-                            description = test_type.name
-                        if unit_price is None:
-                            unit_price = self._resolve_test_price(test_type, tenant)
-
-                if unit_price is None:
-                    raise serializers.ValidationError(
-                        {"items": "unit_price is required for non-test items."}
-                    )
-
-                InvoiceItem.objects.create(
-                    invoice=invoice,
-                    item_type=item_type,
-                    description=description,
-                    test_order=test_order,
-                    quantity=quantity,
-                    unit_price=unit_price,
-                )
-
+            self._create_invoice_items(invoice, validated_data["items"], tenant)
+            if validated_data.get("include_visit_fee"):
+                self._create_visit_fee_items(invoice, validated_data, tenant)
             new_items = self._snapshot_items(invoice)
             if old_items != new_items:
                 changes["items"] = {"old": old_items, "new": new_items}
 
-        # Save field changes
-        if "discount_percentage" in validated_data or "notes" in validated_data:
-            update_fields = ["updated_at"]
-            if "discount_percentage" in validated_data:
-                update_fields.append("discount_percentage")
-            if "notes" in validated_data:
-                update_fields.append("notes")
-            invoice.save(update_fields=update_fields)
+        if len(update_fields) > 1:
+            invoice.save(update_fields=list(dict.fromkeys(update_fields)))
 
-        # Recalculate totals
         old_totals = {
             "subtotal": str(invoice.subtotal),
+            "discount_amount": str(invoice.discount_amount),
             "total": str(invoice.total),
+            "commission_amount": str(invoice.commission_amount),
         }
         invoice.recalculate_totals()
         new_totals = {
             "subtotal": str(invoice.subtotal),
+            "discount_amount": str(invoice.discount_amount),
             "total": str(invoice.total),
+            "commission_amount": str(invoice.commission_amount),
         }
         if old_totals != new_totals:
             changes["totals"] = {"old": old_totals, "new": new_totals}
 
-        # Create audit log
         if changes:
             InvoiceAuditLog.objects.create(
                 invoice=invoice,

@@ -10,6 +10,64 @@ from apps.appointments.models import Appointment
 logger = logging.getLogger(__name__)
 
 
+# ─── Referrer ────────────────────────────────────────────────────
+
+
+class Referrer(models.Model):
+    """External party who earns commission on referred invoices."""
+
+    class Type(models.TextChoices):
+        DOCTOR = "DOCTOR", _("Doctor")
+        AGENT = "AGENT", _("Agent")
+        CORPORATE = "CORPORATE", _("Corporate")
+        OTHER = "OTHER", _("Other")
+
+    center = models.ForeignKey(
+        "tenants.DiagnosticCenter",
+        on_delete=models.CASCADE,
+        related_name="referrers",
+    )
+    name = models.CharField(
+        max_length=200,
+        help_text=_("Display name of the referrer"),
+    )
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text=_("Contact phone number"),
+    )
+    type = models.CharField(
+        max_length=20,
+        choices=Type.choices,
+        default=Type.DOCTOR,
+        help_text=_("Classification of the referrer"),
+    )
+    commission_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Default commission percentage (0-100)"),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_("Inactive doctors are hidden from the dropdown"),
+    )
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "apps_referrer"
+        ordering = ["name"]
+        verbose_name = _("referrer")
+        verbose_name_plural = _("referrers")
+        unique_together = [("center", "name", "phone")]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.commission_pct}%)"
+
+
 # ─── Invoice ──────────────────────────────────────────────────────
 
 
@@ -56,6 +114,32 @@ class Invoice(models.Model):
         blank=True,
         related_name="invoices",
     )
+    referrer = models.ForeignKey(
+        Referrer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="invoices",
+        help_text=_("External referrer who earns commission"),
+    )
+    referrer_name_snapshot = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        help_text=_("Frozen referrer name copied to the invoice"),
+    )
+    commission_pct_snapshot = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Frozen commission percentage copied to the invoice"),
+    )
+    commission_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Computed: total × commission_pct_snapshot / 100"),
+    )
 
     subtotal = models.DecimalField(
         max_digits=10,
@@ -88,6 +172,11 @@ class Invoice(models.Model):
         default=Status.DRAFT,
     )
     notes = models.TextField(blank=True)
+    paid_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("When the invoice became paid and commission-eligible"),
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -141,7 +230,7 @@ class Invoice(models.Model):
         return f"{prefix}{seq:04d}"
 
     def recalculate_totals(self):
-        """Recalculate subtotal, discount_amount, and total from items."""
+        """Recalculate subtotal, discount_amount, total, and commission."""
         self.subtotal = sum(item.total_price for item in self.items.all()) or Decimal(
             "0.00"
         )
@@ -149,7 +238,21 @@ class Invoice(models.Model):
             self.subtotal * self.discount_percentage / Decimal("100")
         ).quantize(Decimal("0.01"))
         self.total = self.subtotal - self.discount_amount
-        self.save(update_fields=["subtotal", "discount_amount", "total"])
+        pct = Decimal(str(self.commission_pct_snapshot or Decimal("0.00")))
+        if self.referrer_id and pct > Decimal("0"):
+            self.commission_amount = (self.total * pct / Decimal("100")).quantize(
+                Decimal("0.01")
+            )
+        else:
+            self.commission_amount = Decimal("0.00")
+        self.save(
+            update_fields=[
+                "subtotal",
+                "discount_amount",
+                "total",
+                "commission_amount",
+            ]
+        )
 
 
 # ─── Invoice Items ────────────────────────────────────────────────
@@ -300,3 +403,123 @@ class InvoiceAuditLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.invoice.invoice_number} — {self.action} by {self.changed_by}"
+
+
+# ─── Referrer Settlement ────────────────────────────────────────
+
+
+class ReferrerSettlement(models.Model):
+    """Ledger entry for commission paid out to a referrer."""
+
+    class PaymentMethod(models.TextChoices):
+        CASH = "CASH", _("Cash")
+        BKASH = "BKASH", _("bKash")
+        NAGAD = "NAGAD", _("Nagad")
+        BANK = "BANK", _("Bank")
+        OTHER = "OTHER", _("Other")
+
+    referrer = models.ForeignKey(
+        Referrer,
+        on_delete=models.CASCADE,
+        related_name="settlements",
+    )
+    center = models.ForeignKey(
+        "tenants.DiagnosticCenter",
+        on_delete=models.CASCADE,
+        related_name="referrer_settlements",
+    )
+    settlement_number = models.CharField(
+        max_length=50,
+        unique=True,
+        editable=False,
+        help_text=_("Auto-generated settlement number"),
+    )
+    amount_paid = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Total amount paid in this settlement"),
+    )
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PaymentMethod.choices,
+        default=PaymentMethod.CASH,
+    )
+    notes = models.TextField(blank=True, default="")
+    paid_at = models.DateTimeField(
+        help_text=_("When the payment was made"),
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="referrer_settlements_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "apps_referrer_settlement"
+        ordering = ["-paid_at", "-created_at"]
+        verbose_name = _("referrer settlement")
+        verbose_name_plural = _("referrer settlements")
+
+    def __str__(self) -> str:
+        return f"{self.referrer.name} — {self.settlement_number} — ৳{self.amount_paid}"
+
+    def save(self, *args, **kwargs):
+        if not self.settlement_number:
+            self.settlement_number = self._generate_settlement_number()
+        super().save(*args, **kwargs)
+
+    def _generate_settlement_number(self) -> str:
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        prefix = f"RST-{today:%Y%m%d}-"
+        last = (
+            ReferrerSettlement.objects.filter(settlement_number__startswith=prefix)
+            .order_by("-settlement_number")
+            .values_list("settlement_number", flat=True)
+            .first()
+        )
+        seq = int(last.split("-")[-1]) + 1 if last else 1
+        return f"{prefix}{seq:04d}"
+
+
+class ReferrerSettlementItem(models.Model):
+    """Invoice-level allocation inside a referrer settlement."""
+
+    settlement = models.ForeignKey(
+        ReferrerSettlement,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.CASCADE,
+        related_name="referrer_settlement_items",
+    )
+    allocated_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "apps_referrer_settlement_item"
+        ordering = ["created_at", "id"]
+        verbose_name = _("referrer settlement item")
+        verbose_name_plural = _("referrer settlement items")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["settlement", "invoice"],
+                name="unique_settlement_invoice_allocation",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(allocated_amount__gt=Decimal("0.00")),
+                name="referrer_allocated_amount_gt_zero",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.settlement.settlement_number} — "
+            f"{self.invoice.invoice_number} — ৳{self.allocated_amount}"
+        )

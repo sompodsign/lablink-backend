@@ -2,6 +2,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from django.db.models import Q
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiExample, extend_schema, extend_schema_view
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
@@ -279,6 +280,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             notes="Auto-generated on appointment completion",
             created_by=self.request.user,
             status=Invoice.Status.PAID,
+            paid_at=timezone.now(),
         )
 
         # Add visit fee if doctor is assigned
@@ -364,7 +366,11 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         invoice.status = "PAID"
-        invoice.save(update_fields=["status"])
+        if invoice.paid_at is None:
+            invoice.paid_at = timezone.now()
+            invoice.save(update_fields=["status", "paid_at"])
+        else:
+            invoice.save(update_fields=["status"])
         logger.info(
             "Invoice %s marked as PAID for appointment %s",
             invoice.invoice_number,
