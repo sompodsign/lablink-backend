@@ -11,41 +11,13 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.subscriptions.models import Subscription, SubscriptionPlan
 from core.tenants.models import DiagnosticCenter, Doctor, Permission, Role, Staff
+from core.tenants.signals import DEFAULT_ROLE_PERMS as TENANT_DEFAULT_ROLE_PERMS
 from core.users.models import PatientProfile
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
-
-# Permissions each role should have (None = all permissions)
-DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
-    "Admin": None,
-    "Medical Technologist": [
-        "view_patients",
-        "view_reports",
-        "create_reports",
-        "manage_reports",
-        "view_test_orders",
-        "manage_test_orders",
-    ],
-    "Receptionist": [
-        "view_patients",
-        "manage_patients",
-        "view_appointments",
-        "manage_appointments",
-        "view_reports",
-        "view_payments",
-        "manage_payments",
-    ],
-    "Doctor": [
-        "view_patients",
-        "view_appointments",
-        "manage_appointments",
-        "view_test_orders",
-        "view_reports",
-        "create_reports",
-    ],
-}
 
 PASSWORD = "TestPass123!"
 
@@ -216,6 +188,16 @@ class Command(BaseCommand):
     def _create_centers(self):
         self.stdout.write("--- Centers ---")
         centers = {}
+        plan, _ = SubscriptionPlan.objects.get_or_create(
+            slug="professional",
+            defaults={
+                "name": "Professional",
+                "price": "4999.00",
+                "trial_days": 0,
+                "max_staff": -1,
+                "max_reports": -1,
+            },
+        )
         for cfg in CENTERS:
             center, created = DiagnosticCenter.objects.get_or_create(
                 domain=cfg["domain"],
@@ -223,6 +205,10 @@ class Command(BaseCommand):
             )
             tag = "CREATED" if created else "EXISTS"
             self.stdout.write(f"  [{tag}] {center.name}")
+            Subscription.objects.get_or_create(
+                center=center,
+                defaults={"plan": plan, "status": "ACTIVE"},
+            )
             centers[cfg["domain"]] = center
         return centers
 
@@ -231,7 +217,7 @@ class Command(BaseCommand):
         self.stdout.write("--- Roles ---")
         all_perms = {p.codename: p for p in Permission.objects.all()}
         for center in centers.values():
-            for role_name, perm_codenames in DEFAULT_ROLE_PERMS.items():
+            for role_name, perm_codenames in TENANT_DEFAULT_ROLE_PERMS.items():
                 role, created = Role.objects.get_or_create(
                     name=role_name,
                     center=center,
@@ -246,6 +232,7 @@ class Command(BaseCommand):
                     )
                 tag = "CREATED" if created else "SYNCED"
                 self.stdout.write(f"  [{tag}] {role_name} → {center.name}")
+            center.available_permissions.set(all_perms.values())
 
     def _create_users(self, centers):
         self.stdout.write("--- Users ---")
@@ -294,7 +281,7 @@ class Command(BaseCommand):
                     defaults={"is_system": True},
                 )
                 # Assign permissions (always sync to match DEFAULT_ROLE_PERMS)
-                perm_codenames = DEFAULT_ROLE_PERMS.get(mapped_name)
+                perm_codenames = TENANT_DEFAULT_ROLE_PERMS.get(mapped_name)
                 if perm_codenames is None:
                     # Admin → all permissions
                     role_obj.permissions.set(Permission.objects.all())

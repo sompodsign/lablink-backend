@@ -1,10 +1,14 @@
 import logging
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.core.management import call_command
+from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.subscriptions.models import Subscription
+from core.tenants.models import DiagnosticCenter, Role
+from core.tenants.signals import DEFAULT_ROLE_PERMS
 from core.users.models import PatientProfile
 from core.users.serializers import (
     PatientProfileSerializer,
@@ -52,6 +56,23 @@ class UserModelTests(TestCase):
         self.assertIn("M", choices)
         self.assertIn("F", choices)
         self.assertIn("O", choices)
+
+
+class SeedE2ECommandTests(TestCase):
+    @override_settings(DEBUG=True)
+    def test_seed_e2e_creates_active_subscription_and_syncs_roles(self):
+        call_command("seed_e2e")
+
+        center = DiagnosticCenter.objects.get(domain="alpha-lab")
+        subscription = Subscription.objects.get(center=center)
+        medtech_role = Role.objects.get(center=center, name="Medical Technologist")
+
+        self.assertEqual(subscription.status, "ACTIVE")
+        self.assertEqual(subscription.plan.slug, "professional")
+        self.assertEqual(
+            set(medtech_role.permissions.values_list("codename", flat=True)),
+            set(DEFAULT_ROLE_PERMS["Medical Technologist"]),
+        )
 
 
 # ---------------------------------------------------------------------------

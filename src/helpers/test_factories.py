@@ -21,43 +21,16 @@ from apps.payments.models import (
 )
 from apps.subscriptions.models import Subscription, SubscriptionPlan
 from core.tenants.models import DiagnosticCenter, Doctor, Permission, Role, Staff
+from core.tenants.signals import DEFAULT_ROLE_PERMS
 from core.users.models import PatientProfile
 
 User = get_user_model()
 
 # ── Default permission sets ───────────────────────────────────────
 
-ALL_PERMISSIONS = None  # sentinel — means "all available permissions"
+ALL_PERMISSIONS = object()  # sentinel — means "all available permissions"
 
 ADMIN_PERMISSIONS = ALL_PERMISSIONS
-
-LAB_TECH_PERMISSIONS = [
-    "view_patients",
-    "view_reports",
-    "create_reports",
-    "manage_reports",
-    "view_test_orders",
-    "manage_test_orders",
-]
-
-RECEPTIONIST_PERMISSIONS = [
-    "view_patients",
-    "manage_patients",
-    "view_appointments",
-    "manage_appointments",
-    "view_reports",
-    "view_payments",
-    "manage_payments",
-]
-
-DOCTOR_PERMISSIONS = [
-    "view_patients",
-    "view_appointments",
-    "manage_appointments",
-    "view_test_orders",
-    "view_reports",
-    "create_reports",
-]
 
 
 # ── Object Factories ──────────────────────────────────────────────
@@ -130,6 +103,18 @@ def _get_or_create_role(center, role_name, permissions=None):
     return role
 
 
+def _resolve_role_permissions(center, role_name):
+    """Use the center's current role permissions when available."""
+    if role_name == "Admin":
+        return ALL_PERMISSIONS
+
+    existing_role = Role.objects.filter(center=center, name=role_name).first()
+    if existing_role:
+        return list(existing_role.permissions.values_list("codename", flat=True))
+
+    return DEFAULT_ROLE_PERMS.get(role_name, [])
+
+
 def make_staff(user, center, role_name="Receptionist", permissions=None, role=None):
     """Create a staff member with a named role.
 
@@ -153,13 +138,7 @@ def make_staff(user, center, role_name="Receptionist", permissions=None, role=No
     role_name = role_name_map.get(role_name, role_name)
 
     if permissions is None:
-        perm_map = {
-            "Admin": ALL_PERMISSIONS,
-            "Medical Technologist": LAB_TECH_PERMISSIONS,
-            "Receptionist": RECEPTIONIST_PERMISSIONS,
-            "Doctor": DOCTOR_PERMISSIONS,
-        }
-        permissions = perm_map.get(role_name, [])
+        permissions = _resolve_role_permissions(center, role_name)
 
     role = _get_or_create_role(center, role_name, permissions)
 

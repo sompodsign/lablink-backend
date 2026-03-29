@@ -29,6 +29,7 @@ from core.tenants.serializers import (
     ServiceSerializer,
     StaffSerializer,
 )
+from core.tenants.signals import DEFAULT_ROLE_PERMS
 from core.users.models import User
 from helpers.test_factories import (
     FakeRequest,
@@ -1182,15 +1183,7 @@ class DefaultRoleSignalTests(TestCase):
             contact_number="01700000004",
         )
         recep_role = Role.objects.get(center=center, name="Receptionist")
-        expected = {
-            "view_patients",
-            "manage_patients",
-            "view_appointments",
-            "manage_appointments",
-            "view_reports",
-            "view_payments",
-            "manage_payments",
-        }
+        expected = set(DEFAULT_ROLE_PERMS["Receptionist"])
         actual = set(recep_role.permissions.values_list("codename", flat=True))
         self.assertEqual(actual, expected)
 
@@ -1204,14 +1197,7 @@ class DefaultRoleSignalTests(TestCase):
             contact_number="01700000005",
         )
         tech_role = Role.objects.get(center=center, name="Medical Technologist")
-        expected = {
-            "view_patients",
-            "view_reports",
-            "create_reports",
-            "manage_reports",
-            "view_test_orders",
-            "manage_test_orders",
-        }
+        expected = set(DEFAULT_ROLE_PERMS["Medical Technologist"])
         actual = set(tech_role.permissions.values_list("codename", flat=True))
         self.assertEqual(actual, expected)
 
