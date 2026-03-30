@@ -172,6 +172,11 @@ class DiagnosticCenter(models.Model):
         )
 
     @property
+    def is_ai_active(self) -> bool:
+        """Returns True if both superadmin and center admin have toggled AI on."""
+        return bool(self.can_use_ai and self.use_ai)
+
+    @property
     def is_sms_invoice_active(self) -> bool:
         return bool(self.can_use_sms and self.use_sms and self.send_sms_invoice)
 
