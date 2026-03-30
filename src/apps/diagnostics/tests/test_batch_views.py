@@ -121,7 +121,7 @@ class BatchVerifyTest(TestCase):
         make_pricing(self.center, self.tt2, "300.00")
         self.patient = make_patient("p1", self.center)
 
-        # Admin user (required for verify permission)
+        # Admin user is one role that has verify permission by default.
         self.admin_user = make_user("admin1")
         make_staff(self.admin_user, self.center, role="Admin")
         self.auth = jwt_auth_header(self.admin_user)
@@ -199,7 +199,7 @@ class BatchVerifyTest(TestCase):
         # Both reports are for the same patient, so batch notification method called once
         mock_batch_email.assert_called_once()
 
-    def test_non_admin_denied(self):
+    def test_medical_technologist_allowed(self):
         tech_user = make_user("tech1")
         make_staff(tech_user, self.center, role="Medical Technologist")
         tech_auth = jwt_auth_header(tech_user)
@@ -209,6 +209,19 @@ class BatchVerifyTest(TestCase):
             {"report_ids": [self.report1.id]},
             format="json",
             **tech_auth,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+    def test_staff_without_verify_permission_denied(self):
+        recep_user = make_user("recep1")
+        make_staff(recep_user, self.center, role="Receptionist")
+        recep_auth = jwt_auth_header(recep_user)
+
+        resp = self.client.post(
+            "/api/diagnostics/reports/batch-verify/",
+            {"report_ids": [self.report1.id]},
+            format="json",
+            **recep_auth,
         )
         self.assertEqual(resp.status_code, 403)
 
