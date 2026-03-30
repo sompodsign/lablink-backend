@@ -272,6 +272,9 @@ class UserSerializer(serializers.ModelSerializer):
                 "logo_url": center.logo.url if center.logo else None,
                 "tagline": center.tagline,
                 "allow_online_appointments": center.allow_online_appointments,
+                "is_sms_active": center.is_sms_active,
+                "is_email_active": center.is_email_active,
+                "is_ai_active": center.is_ai_active,
             }
         return None
 
