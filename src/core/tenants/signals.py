@@ -27,6 +27,7 @@ DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
         "manage_test_orders",
         "resend_email",
         "resend_sms",
+        "use_ai_features",
     ],
     "Receptionist": [
         "view_patients",
@@ -46,6 +47,7 @@ DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
         "view_test_orders",
         "view_reports",
         "create_reports",
+        "use_ai_features",
     ],
     "Medical Assistant": [
         "view_patients",
@@ -80,11 +82,23 @@ def create_default_roles(
             defaults={"is_system": True},
         )
         if perm_codenames is None:
-            role.permissions.set(all_perms)
+            # Grant all standard permissions, skip premium ones unless explicit
+            standard_perms = [
+                p
+                for p in all_perms
+                if p.codename not in ("send_sms", "send_email", "use_ai_features")
+            ]
+            role.permissions.set(standard_perms)
         else:
             role.permissions.set([perm_map[c] for c in perm_codenames if c in perm_map])
-    # Grant all permissions as available for this center
-    instance.available_permissions.set(all_perms)
+
+    # Grant standard permissions as available for this center
+    standard_available_perms = [
+        p
+        for p in all_perms
+        if p.codename not in ("send_sms", "send_email", "use_ai_features")
+    ]
+    instance.available_permissions.set(standard_available_perms)
 
     logger.info(
         "Created default roles for center %s (id=%s)",

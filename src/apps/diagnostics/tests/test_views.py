@@ -484,6 +484,8 @@ class ResendNotificationTests(TestCase):
         self.center = make_center()
         self.center.email_notifications_enabled = True
         self.center.sms_enabled = True
+        self.center.can_use_email = True
+        self.center.can_use_sms = True
         self.center.save()
 
         self.tt = make_test_type("CBC", "500.00")

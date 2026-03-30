@@ -19,7 +19,7 @@ def test_order_created_notification(
         return
 
     center = instance.center
-    if not center.sms_enabled:
+    if not center.is_sms_active:
         return
 
     patient = instance.patient

@@ -16,12 +16,22 @@ class DiagnosticCenterAdmin(admin.ModelAdmin):
         "domain",
         "contact_number",
         "email",
+        "can_use_sms",
+        "can_use_email",
+        "can_use_ai",
         "sms_enabled",
         "email_notifications_enabled",
         "created_at",
     )
     search_fields = ("name", "domain", "email")
-    list_filter = ("sms_enabled", "email_notifications_enabled", "created_at")
+    list_filter = (
+        "can_use_sms",
+        "can_use_email",
+        "can_use_ai",
+        "sms_enabled",
+        "email_notifications_enabled",
+        "created_at",
+    )
     ordering = ("-created_at",)
     inlines = [ServiceInline]
 

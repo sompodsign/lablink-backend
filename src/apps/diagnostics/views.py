@@ -556,9 +556,8 @@ class ReportViewSet(viewsets.ModelViewSet):
         return Response(ReportSerializer(report).data)
 
     def _send_verify_notifications(self, report):
-        """Send email/SMS after single-report verification."""
         center = report.test_order.center
-        if not center.email_notifications_enabled and not center.sms_enabled:
+        if not center.is_email_active and not center.is_sms_active:
             return
 
         try:
@@ -572,10 +571,10 @@ class ReportViewSet(viewsets.ModelViewSet):
             )
 
             # Single verify → notify for this report only
-            if center.email_notifications_enabled and email:
+            if center.is_email_active and email:
                 send_report_ready_email(report, email)
 
-            if center.sms_enabled and phone:
+            if center.is_sms_active and phone:
                 send_report_ready_sms(report, phone)
         except Exception:
             logger.exception("Failed to send report verification notifications")
@@ -613,7 +612,7 @@ class ReportViewSet(viewsets.ModelViewSet):
             )
 
         center = report.test_order.center
-        if not center.email_notifications_enabled:
+        if not center.is_email_active:
             return Response(
                 {"detail": "Email notifications are not enabled for this center."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -672,7 +671,7 @@ class ReportViewSet(viewsets.ModelViewSet):
             )
 
         center = report.test_order.center
-        if not center.sms_enabled:
+        if not center.is_sms_active:
             return Response(
                 {"detail": "SMS notifications are not enabled for this center."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -814,7 +813,7 @@ class ReportViewSet(viewsets.ModelViewSet):
 
         # Send grouped notifications per patient
         center = request.tenant
-        if center.email_notifications_enabled or center.sms_enabled:
+        if center.is_email_active or center.is_sms_active:
             from apps.diagnostics.services.notifications import (
                 send_batch_report_ready_email,
                 send_batch_report_ready_sms,
@@ -834,12 +833,12 @@ class ReportViewSet(viewsets.ModelViewSet):
                 phone = getattr(patient, "phone_number", None)
                 is_batch = len(patient_reports) > 1
                 try:
-                    if center.email_notifications_enabled and email:
+                    if center.is_email_active and email:
                         if is_batch:
                             send_batch_report_ready_email(patient_reports, email)
                         else:
                             send_report_ready_email(first, email)
-                    if center.sms_enabled and phone:
+                    if center.is_sms_active and phone:
                         if is_batch:
                             send_batch_report_ready_sms(patient_reports, phone)
                         else:

@@ -105,7 +105,40 @@ class DiagnosticCenter(models.Model):
         help_text=_("Bottom margin in mm to skip for pre-printed footer"),
     )
 
-    # ── Notification Settings ─────────────────────────────────────
+    # ── Superadmin Master Switches ──────────────────────────────────
+    # Set by Superadmin only. If False, all corresponding Lab Admin
+    # toggles below are ignored by the system at runtime.
+    can_use_sms = models.BooleanField(
+        default=False,
+        help_text=_("Superadmin: unlock SMS capability for this center"),
+    )
+    can_use_email = models.BooleanField(
+        default=False,
+        help_text=_("Superadmin: unlock Email capability for this center"),
+    )
+    can_use_ai = models.BooleanField(
+        default=False,
+        help_text=_("Superadmin: unlock AI features for this center"),
+    )
+
+    # ── Center Admin Master Toggles ────────────────────────────────
+    # Center admin can activate/deactivate features that the
+    # Superadmin has unlocked. Only effective when can_use_* is True.
+    use_sms = models.BooleanField(
+        default=True,
+        help_text=_("Center admin: activate SMS features for this center"),
+    )
+    use_email = models.BooleanField(
+        default=True,
+        help_text=_("Center admin: activate Email features for this center"),
+    )
+    use_ai = models.BooleanField(
+        default=True,
+        help_text=_("Center admin: activate AI features for this center"),
+    )
+
+    # ── Lab Admin Notification Preferences ─────────────────────────
+    # These only take effect when BOTH can_use_* AND use_* are True.
     sms_enabled = models.BooleanField(
         default=False,
         help_text=_("Send SMS notifications to patients on report verification"),
@@ -114,9 +147,37 @@ class DiagnosticCenter(models.Model):
         default=False,
         help_text=_("Send email notifications to patients on report verification"),
     )
+    send_sms_invoice = models.BooleanField(
+        default=False,
+        help_text=_("Send SMS receipt to patient when invoice is created"),
+    )
+    send_email_invoice = models.BooleanField(
+        default=False,
+        help_text=_("Send email receipt to patient when invoice is created"),
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_sms_active(self) -> bool:
+        """Returns True if superadmin, center admin, and the specific toggle are all ON."""
+        return bool(self.can_use_sms and self.use_sms and self.sms_enabled)
+
+    @property
+    def is_email_active(self) -> bool:
+        """Returns True if superadmin, center admin, and the specific toggle are all ON."""
+        return bool(
+            self.can_use_email and self.use_email and self.email_notifications_enabled
+        )
+
+    @property
+    def is_sms_invoice_active(self) -> bool:
+        return bool(self.can_use_sms and self.use_sms and self.send_sms_invoice)
+
+    @property
+    def is_email_invoice_active(self) -> bool:
+        return bool(self.can_use_email and self.use_email and self.send_email_invoice)
 
     class Meta:
         db_table = "core_diagnostic_center"

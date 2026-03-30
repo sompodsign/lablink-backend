@@ -29,6 +29,10 @@ class SubscriptionPlan(models.Model):
         default=list,
         help_text=_("List of feature strings for display"),
     )
+    monthly_ai_credits = models.IntegerField(
+        default=0,
+        help_text=_("AI credits included per month, 0 means no AI access"),
+    )
     is_active = models.BooleanField(
         default=True,
         help_text=_("Available for new subscriptions"),
@@ -94,6 +98,10 @@ class Subscription(models.Model):
         help_text=_("If true, subscription will be cancelled at next billing date"),
     )
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    available_ai_credits = models.IntegerField(
+        default=0,
+        help_text=_("Remaining AI credits for the current billing period"),
+    )
 
     class Meta:
         db_table = "apps_subscription"

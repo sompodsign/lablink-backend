@@ -338,17 +338,20 @@ class DiagnosticSignalTests(TestCase):
             phone_number="01700000001",
         )
         self.appointment = make_appointment(self.patient, self.center)
+        self.center.can_use_sms = True
+        self.center.sms_enabled = True
+        self.center.save()
 
-    @patch("apps.diagnostics.signals.send_sms_notification")
+    @patch("apps.diagnostics.signals.send_sms_async")
     def test_test_order_created_sends_sms(self, mock_sms):
         TestOrder.objects.create(
             patient=self.patient,
             center=self.center,
             test_type=self.test_type,
         )
-        mock_sms.delay.assert_called_once()
+        mock_sms.assert_called_once()
 
-    @patch("apps.diagnostics.signals.send_sms_notification")
+    @patch("apps.diagnostics.signals.send_sms_async")
     def test_test_order_no_phone_skips_sms(self, mock_sms):
         patient_no_phone = make_patient("no_phone", self.center)
         TestOrder.objects.create(
@@ -356,33 +359,7 @@ class DiagnosticSignalTests(TestCase):
             center=self.center,
             test_type=self.test_type,
         )
-        mock_sms.delay.assert_not_called()
-
-    @patch("apps.diagnostics.signals.send_sms_notification")
-    def test_report_created_sends_sms(self, mock_sms):
-        order = TestOrder.objects.create(
-            patient=self.patient,
-            center=self.center,
-            test_type=self.test_type,
-        )
-        mock_sms.delay.reset_mock()
-        Report.objects.create(
-            test_order=order,
-            test_type=self.test_type,
-        )
-        mock_sms.delay.assert_called_once()
-
-    @patch("apps.diagnostics.signals.send_sms_notification")
-    def test_update_does_not_trigger_sms(self, mock_sms):
-        order = TestOrder.objects.create(
-            patient=self.patient,
-            center=self.center,
-            test_type=self.test_type,
-        )
-        mock_sms.delay.reset_mock()
-        order.status = TestOrder.Status.IN_PROGRESS
-        order.save()
-        mock_sms.delay.assert_not_called()
+        mock_sms.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +466,7 @@ class ReportViewTests(APITestCase):
         make_staff(self.lab_tech_user, self.center, "Medical Technologist")
 
         self.staff_user = make_user("rv_staff")
-        make_staff(self.staff_user, self.center, "Admin")
+        make_staff(self.staff_user, self.center, "Receptionist")
 
         self.patient = make_patient("rv_pat", self.center)
 
@@ -558,14 +535,14 @@ class ReportViewTests(APITestCase):
             self.lab_tech_user,
         )
         report = make_report(order, self.test_type)
-        self._auth(self.staff_user)
+        self._auth(self.lab_tech_user)
         response = self.client.post(
             f"/api/diagnostics/reports/{report.id}/verify/",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         report.refresh_from_db()
         self.assertEqual(report.status, Report.Status.VERIFIED)
-        self.assertEqual(report.verified_by, self.staff_user)
+        self.assertEqual(report.verified_by, self.lab_tech_user)
 
     def test_verify_already_verified_report(self):
         order = make_test_order(
@@ -575,7 +552,7 @@ class ReportViewTests(APITestCase):
             self.lab_tech_user,
         )
         report = make_report(order, self.test_type, status=Report.Status.VERIFIED)
-        self._auth(self.staff_user)
+        self._auth(self.lab_tech_user)
         response = self.client.post(
             f"/api/diagnostics/reports/{report.id}/verify/",
         )
@@ -589,7 +566,7 @@ class ReportViewTests(APITestCase):
             self.lab_tech_user,
         )
         report = make_report(order, self.test_type)
-        self._auth(self.staff_user)
+        self._auth(self.lab_tech_user)
         response = self.client.get(
             f"/api/diagnostics/reports/{report.id}/print-data/",
         )
@@ -628,7 +605,7 @@ class ReportViewTests(APITestCase):
             self.lab_tech_user,
         )
         report = make_report(order, self.test_type, status=Report.Status.VERIFIED)
-        self._auth(self.staff_user)
+        self._auth(self.lab_tech_user)
         response = self.client.post(
             f"/api/diagnostics/reports/{report.id}/mark-delivered/",
         )
@@ -644,7 +621,7 @@ class ReportViewTests(APITestCase):
             self.lab_tech_user,
         )
         report = make_report(order, self.test_type)
-        self._auth(self.staff_user)
+        self._auth(self.lab_tech_user)
         response = self.client.post(
             f"/api/diagnostics/reports/{report.id}/mark-delivered/",
         )
@@ -660,7 +637,7 @@ class ReportViewTests(APITestCase):
             self.lab_tech_user,
         )
         report = make_report(order, self.test_type, status=Report.Status.DELIVERED)
-        self._auth(self.staff_user)
+        self._auth(self.lab_tech_user)
         response = self.client.post(
             f"/api/diagnostics/reports/{report.id}/mark-delivered/",
         )

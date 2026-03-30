@@ -54,6 +54,22 @@ class SuperadminCenterSerializer(serializers.ModelSerializer):
             "staff_count",
             "doctor_count",
             "patient_count",
+            "use_preprinted_paper",
+            "print_header_margin_mm",
+            "print_footer_margin_mm",
+            # Superadmin master switches (writable by Superadmin)
+            "can_use_sms",
+            "can_use_email",
+            "can_use_ai",
+            # Center Admin master toggles (read-only here)
+            "use_sms",
+            "use_email",
+            "use_ai",
+            # Lab Admin operational toggles (read-only here)
+            "sms_enabled",
+            "email_notifications_enabled",
+            "send_sms_invoice",
+            "send_email_invoice",
             "created_at",
             "updated_at",
         ]
@@ -106,6 +122,9 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
             "happy_patients_count",
             "test_types_available_count",
             "lab_support_availability",
+            "can_use_sms",
+            "can_use_email",
+            "can_use_ai",
             "admin_email",
         ]
 

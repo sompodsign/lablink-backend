@@ -6,6 +6,10 @@ from rest_framework import serializers
 
 from apps.diagnostics.models import CenterTestPricing, TestOrder, TestType
 from apps.payments.models import Invoice, InvoiceAuditLog, InvoiceItem, Referrer
+from apps.payments.notifications import (
+    send_invoice_created_email,
+    send_invoice_created_sms,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -405,6 +409,13 @@ class InvoiceCreateSerializer(serializers.Serializer):
         self._create_visit_fee_items(invoice, validated_data, tenant)
 
         invoice.recalculate_totals()
+
+        # Trigger automated notifications based on Center Settings
+        if tenant.can_use_sms and tenant.send_sms_invoice:
+            send_invoice_created_sms(invoice)
+        if tenant.can_use_email and tenant.send_email_invoice:
+            send_invoice_created_email(invoice)
+
         return invoice
 
 

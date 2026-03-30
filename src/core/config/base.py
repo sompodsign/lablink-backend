@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.subscriptions",
     "apps.followups",
+    "apps.ai",
 ]
 
 MIDDLEWARE = [

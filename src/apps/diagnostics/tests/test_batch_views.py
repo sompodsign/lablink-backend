@@ -184,8 +184,12 @@ class BatchVerifyTest(TestCase):
 
     @patch("apps.diagnostics.services.notifications.send_batch_report_ready_email")
     def test_sends_email_per_patient(self, mock_batch_email):
+        self.center.can_use_email = True
+        self.center.use_email = True
         self.center.email_notifications_enabled = True
-        self.center.save(update_fields=["email_notifications_enabled"])
+        self.center.save(
+            update_fields=["can_use_email", "use_email", "email_notifications_enabled"]
+        )
         self.patient.email = "test@example.com"
         self.patient.save(update_fields=["email"])
 

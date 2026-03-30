@@ -59,8 +59,15 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
             "lab_support_availability",
             "allow_online_appointments",
             "services",
+            # Superadmin master switches (read-only for all)
+            "can_use_sms",
+            "can_use_email",
+            "can_use_ai",
+            # Lab Admin operational toggles
             "sms_enabled",
             "email_notifications_enabled",
+            "send_sms_invoice",
+            "send_email_invoice",
         ]
 
     def get_logo_url(self, obj) -> str | None:
@@ -87,7 +94,13 @@ class DiagnosticCenterSerializer(serializers.ModelSerializer):
 
 
 class CenterSettingsSerializer(serializers.ModelSerializer):
-    """Admin-editable center settings."""
+    """Lab-Admin-editable center settings.
+
+    can_use_sms / can_use_email / can_use_ai are read-only here —
+    only Superadmin can write them (via the superadmin center API).
+    Backend enforces: if can_use_* is False, the corresponding
+    operational toggles are coerced to False regardless of input.
+    """
 
     logo_url = serializers.SerializerMethodField(read_only=True)
 
@@ -117,11 +130,64 @@ class CenterSettingsSerializer(serializers.ModelSerializer):
             "use_preprinted_paper",
             "print_header_margin_mm",
             "print_footer_margin_mm",
-            # Notifications
+            # Superadmin master switches (read-only)
+            "can_use_sms",
+            "can_use_email",
+            "can_use_ai",
+            # Center Admin master toggles
+            "use_sms",
+            "use_email",
+            "use_ai",
+            # Lab Admin operational toggles
             "sms_enabled",
             "email_notifications_enabled",
+            "send_sms_invoice",
+            "send_email_invoice",
         ]
-        read_only_fields = ["id", "logo_url"]
+        read_only_fields = [
+            "id",
+            "logo_url",
+            # Only Superadmin may change these via superadmin API
+            "can_use_sms",
+            "can_use_email",
+            "can_use_ai",
+        ]
+
+    def validate(self, attrs):
+        """Enforce master switch gates on operational toggles."""
+        instance = self.instance
+
+        def can_use(flag: str) -> bool:
+            """Return True if the superadmin master switch is on."""
+            return getattr(instance, flag, False) if instance else False
+
+        # ── SMS gate ──────────────────────────────────────────────
+        if not can_use("can_use_sms"):
+            attrs.pop("use_sms", None)
+            attrs["sms_enabled"] = False
+            attrs["send_sms_invoice"] = False
+        else:
+            # If center admin turns off SMS master toggle, disable sub-toggles
+            use_sms = attrs.get("use_sms", getattr(instance, "use_sms", True))
+            if not use_sms:
+                attrs["sms_enabled"] = False
+                attrs["send_sms_invoice"] = False
+
+        # ── Email gate ────────────────────────────────────────────
+        if not can_use("can_use_email"):
+            attrs.pop("use_email", None)
+            attrs["email_notifications_enabled"] = False
+            attrs["send_email_invoice"] = False
+        else:
+            use_email = attrs.get("use_email", getattr(instance, "use_email", True))
+            if not use_email:
+                attrs["email_notifications_enabled"] = False
+                attrs["send_email_invoice"] = False
+
+        # ── AI gate ───────────────────────────────────────────────
+        if not can_use("can_use_ai"):
+            attrs.pop("use_ai", None)
+        return attrs
 
     def get_logo_url(self, obj) -> str | None:
         if obj.logo:
