@@ -113,6 +113,40 @@ class SubscriptionModelTests(TestCase):
         self.assertIn("Starter", str(sub))
         self.assertIn("TRIAL", str(sub))
 
+    def test_subscription_creation_disables_center_flags_for_unentitled_plan(self):
+        trial_plan = SubscriptionPlan.objects.create(
+            name="Trial",
+            slug="trial-unentitled-model",
+            price=Decimal("0"),
+            trial_days=14,
+        )
+        center = DiagnosticCenter.objects.create(
+            name="Trial Center",
+            domain="trial-center-model",
+            use_sms=True,
+            use_email=True,
+            use_ai=True,
+            sms_enabled=True,
+            email_notifications_enabled=True,
+            send_sms_invoice=True,
+            send_email_invoice=True,
+        )
+
+        Subscription.objects.create(
+            center=center,
+            plan=trial_plan,
+            status=Subscription.Status.TRIAL,
+        )
+
+        center.refresh_from_db()
+        self.assertFalse(center.use_sms)
+        self.assertFalse(center.use_email)
+        self.assertFalse(center.use_ai)
+        self.assertFalse(center.sms_enabled)
+        self.assertFalse(center.email_notifications_enabled)
+        self.assertFalse(center.send_sms_invoice)
+        self.assertFalse(center.send_email_invoice)
+
 
 class InvoiceModelTests(TestCase):
     """Tests for Invoice model."""

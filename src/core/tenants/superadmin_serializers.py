@@ -14,6 +14,12 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def _persist_feature_gate_constraints(center: DiagnosticCenter) -> None:
+    fields_to_update = center.apply_feature_gate_constraints()
+    if fields_to_update:
+        center.save(update_fields=list(dict.fromkeys(fields_to_update)))
+
+
 class SuperadminStatsSerializer(serializers.Serializer):
     """Aggregate platform stats for the superadmin overview."""
 
@@ -73,7 +79,18 @@ class SuperadminCenterSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "use_sms",
+            "use_email",
+            "use_ai",
+            "sms_enabled",
+            "email_notifications_enabled",
+            "send_sms_invoice",
+            "send_email_invoice",
+            "created_at",
+            "updated_at",
+        ]
 
     def get_logo_url(self, obj):
         if obj.logo:
@@ -82,6 +99,11 @@ class SuperadminCenterSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.logo.url)
             return obj.logo.url
         return None
+
+    def update(self, instance, validated_data):
+        center = super().update(instance, validated_data)
+        _persist_feature_gate_constraints(center)
+        return center
 
 
 class SuperadminCenterDetailSerializer(SuperadminCenterSerializer):
@@ -155,6 +177,7 @@ class SuperadminCenterCreateSerializer(serializers.ModelSerializer):
 
         with transaction.atomic():
             center = super().create(validated_data)
+            _persist_feature_gate_constraints(center)
             # Grant all existing permissions to the new center
             all_permissions = Permission.objects.all()
             center.available_permissions.set(all_permissions)

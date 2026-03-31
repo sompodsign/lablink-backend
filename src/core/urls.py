@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/payments/", include("apps.payments.urls")),
     path("api/subscriptions/", include("apps.subscriptions.urls")),
     path("api/followups/", include("apps.followups.urls")),
+    path("api/ai/", include("apps.ai.urls")),
     # Auth
     path("api/auth/", include("core.users.urls")),
     path("api/token/", CustomTokenObtainView.as_view(), name="token_obtain_pair"),

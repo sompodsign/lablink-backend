@@ -163,7 +163,7 @@ class CenterSettingsSerializer(serializers.ModelSerializer):
 
         # ── SMS gate ──────────────────────────────────────────────
         if not can_use("can_use_sms"):
-            attrs.pop("use_sms", None)
+            attrs["use_sms"] = False
             attrs["sms_enabled"] = False
             attrs["send_sms_invoice"] = False
         else:
@@ -175,7 +175,7 @@ class CenterSettingsSerializer(serializers.ModelSerializer):
 
         # ── Email gate ────────────────────────────────────────────
         if not can_use("can_use_email"):
-            attrs.pop("use_email", None)
+            attrs["use_email"] = False
             attrs["email_notifications_enabled"] = False
             attrs["send_email_invoice"] = False
         else:
@@ -186,7 +186,7 @@ class CenterSettingsSerializer(serializers.ModelSerializer):
 
         # ── AI gate ───────────────────────────────────────────────
         if not can_use("can_use_ai"):
-            attrs.pop("use_ai", None)
+            attrs["use_ai"] = False
         return attrs
 
     def get_logo_url(self, obj) -> str | None:

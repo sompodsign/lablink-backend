@@ -175,6 +175,9 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@lablink.com.bd")
 SMS_API_KEY = env("SMS_API_KEY", default="")
 SMS_API_URL = "https://api.sms.net.bd/sendsms"
 
+# AI Configuration (Anthropic Claude)
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+
 # drf-spectacular Configuration
 SPECTACULAR_SETTINGS = {
     "TITLE": "LabLink API",

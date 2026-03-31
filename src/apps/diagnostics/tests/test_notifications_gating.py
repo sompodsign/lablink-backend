@@ -194,10 +194,12 @@ class NotificationGatesTests(APITestCase):
         validated = serializer.validated_data
 
         # Because superadmin disabled them, everything should be forced False
+        self.assertFalse(validated.get("use_sms"))
         self.assertFalse(validated.get("sms_enabled"))
+        self.assertFalse(validated.get("send_sms_invoice"))
+        self.assertFalse(validated.get("use_email"))
         self.assertFalse(validated.get("email_notifications_enabled"))
-        self.assertNotIn("use_sms", validated)
-        self.assertNotIn("use_email", validated)
+        self.assertFalse(validated.get("send_email_invoice"))
 
     def test_settings_serializer_forces_sub_toggles_off_when_center_admin_disables(
         self,

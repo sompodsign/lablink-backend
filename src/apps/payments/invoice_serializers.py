@@ -411,9 +411,9 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice.recalculate_totals()
 
         # Trigger automated notifications based on Center Settings
-        if tenant.can_use_sms and tenant.send_sms_invoice:
+        if tenant.is_sms_invoice_active:
             send_invoice_created_sms(invoice)
-        if tenant.can_use_email and tenant.send_email_invoice:
+        if tenant.is_email_invoice_active:
             send_invoice_created_email(invoice)
 
         return invoice

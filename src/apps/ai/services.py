@@ -22,10 +22,10 @@ def check_ai_access(center) -> Subscription:
     Returns the active subscription if access is granted.
     Raises AIFeatureDisabledError or InsufficientAICreditsError otherwise.
     """
-    if not center.can_use_ai:
+    if not center.is_ai_active:
         raise AIFeatureDisabledError(
-            "AI features are not enabled for this center. "
-            "Contact LabLink support to activate."
+            'AI features are not enabled for this center. '
+            'Contact your administrator to activate them.'
         )
 
     try:

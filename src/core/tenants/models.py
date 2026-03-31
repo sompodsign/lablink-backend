@@ -184,6 +184,31 @@ class DiagnosticCenter(models.Model):
     def is_email_invoice_active(self) -> bool:
         return bool(self.can_use_email and self.use_email and self.send_email_invoice)
 
+    def apply_feature_gate_constraints(self) -> list[str]:
+        """Force dependent feature flags off when a parent gate is disabled."""
+        fields_to_update: list[str] = []
+
+        def disable(*field_names: str) -> None:
+            for field_name in field_names:
+                if getattr(self, field_name):
+                    setattr(self, field_name, False)
+                    fields_to_update.append(field_name)
+
+        if not self.can_use_sms:
+            disable('use_sms', 'sms_enabled', 'send_sms_invoice')
+        elif not self.use_sms:
+            disable('sms_enabled', 'send_sms_invoice')
+
+        if not self.can_use_email:
+            disable('use_email', 'email_notifications_enabled', 'send_email_invoice')
+        elif not self.use_email:
+            disable('email_notifications_enabled', 'send_email_invoice')
+
+        if not self.can_use_ai:
+            disable('use_ai')
+
+        return fields_to_update
+
     class Meta:
         db_table = "core_diagnostic_center"
         verbose_name = _("diagnostic center")

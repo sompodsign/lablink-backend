@@ -132,6 +132,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "cancel_at_period_end",
             "days_remaining_trial",
             "is_trial_expired",
+            "available_ai_credits",
             "invoices",
         ]
 
@@ -160,8 +161,9 @@ class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
             "billing_date",
             "started_at",
             "cancelled_at",
+            "available_ai_credits",
         ]
-        read_only_fields = ["id", "started_at", "cancelled_at"]
+        read_only_fields = ["id", "started_at", "cancelled_at", "available_ai_credits"]
 
     def validate_center_id(self, value):
         from core.tenants.models import DiagnosticCenter

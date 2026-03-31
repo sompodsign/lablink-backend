@@ -125,6 +125,43 @@ class SuperadminCenterViewTests(APITestCase):
         self.center.refresh_from_db()
         self.assertEqual(self.center.name, "Updated Center")
 
+    def test_patch_center_disabling_capabilities_clears_center_flags(self):
+        self.center.can_use_sms = True
+        self.center.can_use_email = True
+        self.center.can_use_ai = True
+        self.center.use_sms = True
+        self.center.use_email = True
+        self.center.use_ai = True
+        self.center.sms_enabled = True
+        self.center.email_notifications_enabled = True
+        self.center.send_sms_invoice = True
+        self.center.send_email_invoice = True
+        self.center.save()
+
+        self._auth()
+        response = self.client.patch(
+            f"/api/tenants/superadmin/centers/{self.center.id}/",
+            {
+                "can_use_sms": False,
+                "can_use_email": False,
+                "can_use_ai": False,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.center.refresh_from_db()
+        self.assertFalse(self.center.can_use_sms)
+        self.assertFalse(self.center.can_use_email)
+        self.assertFalse(self.center.can_use_ai)
+        self.assertFalse(self.center.use_sms)
+        self.assertFalse(self.center.use_email)
+        self.assertFalse(self.center.use_ai)
+        self.assertFalse(self.center.sms_enabled)
+        self.assertFalse(self.center.email_notifications_enabled)
+        self.assertFalse(self.center.send_sms_invoice)
+        self.assertFalse(self.center.send_email_invoice)
+
     def test_toggle_center_deactivates(self):
         self._auth()
         self.assertTrue(self.center.is_active)

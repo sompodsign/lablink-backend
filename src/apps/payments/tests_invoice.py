@@ -1,5 +1,6 @@
 import logging
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from rest_framework import status
@@ -218,6 +219,44 @@ class InvoiceViewTests(APITestCase):
         }
         response = self.client.post("/api/payments/invoices/", payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("apps.payments.invoice_serializers.send_invoice_created_email")
+    @patch("apps.payments.invoice_serializers.send_invoice_created_sms")
+    def test_create_invoice_skips_notifications_when_center_admin_gate_is_off(
+        self,
+        mock_sms,
+        mock_email,
+    ):
+        self.center.can_use_sms = True
+        self.center.can_use_email = True
+        self.center.use_sms = False
+        self.center.use_email = False
+        self.center.send_sms_invoice = True
+        self.center.send_email_invoice = True
+        self.center.save(
+            update_fields=[
+                "can_use_sms",
+                "can_use_email",
+                "use_sms",
+                "use_email",
+                "send_sms_invoice",
+                "send_email_invoice",
+            ]
+        )
+
+        self._auth(self.staff_user)
+        payload = {
+            "patient": self.patient.id,
+            "items": [
+                {"test_order_id": self.test_order.id, "item_type": "TEST"},
+            ],
+            "include_visit_fee": False,
+            "discount_percentage": "0",
+        }
+        response = self.client.post("/api/payments/invoices/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mock_sms.assert_not_called()
+        mock_email.assert_not_called()
 
     # ── Print ───────────────────────────────────────────────────────
 
