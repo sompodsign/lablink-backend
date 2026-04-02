@@ -28,8 +28,8 @@ MONTHLY_RETENTION_MONTHS="${GCS_MONTHLY_RETENTION_MONTHS:-12}"
 # Path to GCS service account key JSON file for authentication.
 # Priority:
 # 1) Explicit GCS_SERVICE_ACCOUNT_KEY from env
-# 2) Repo standard path: env/service_accounts/gcs_sa.json
-DEFAULT_SERVICE_ACCOUNT_KEY="${PROJECT_ROOT}/env/service_accounts/gcs/gcs_sa.json"
+# 2) Repo standard path: env/service-accounts/gcs_sa.json
+DEFAULT_SERVICE_ACCOUNT_KEY="${PROJECT_ROOT}/env/service-accounts/gcs_sa.json"
 
 if [[ -n "${GCS_SERVICE_ACCOUNT_KEY:-}" ]]; then
   SERVICE_ACCOUNT_KEY="${GCS_SERVICE_ACCOUNT_KEY}"

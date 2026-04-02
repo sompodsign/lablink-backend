@@ -239,6 +239,8 @@ jobs:
             --exclude '__pycache__' \
             --exclude '*.pyc' \
             --exclude '.venv' \
+            --exclude 'env' \
+            --exclude 'backups' \
             --exclude '.ruff_cache' \
             --exclude '.mypy_cache' \
             --exclude '.pytest_cache' \
