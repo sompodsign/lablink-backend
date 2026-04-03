@@ -117,32 +117,45 @@ def extract_report_data(
     # Encode image as base64
     image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
 
+    from typing import Any
+
+    messages_payload: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime_type,
+                        "data": image_b64,
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": prompt_text,
+                },
+            ],
+        }
+    ]
+
     message = client.messages.create(
         model=model,
         max_tokens=MAX_TOKENS,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": mime_type,
-                            "data": image_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt_text,
-                    },
-                ],
-            }
-        ],
+        messages=messages_payload,  # type: ignore
     )
 
-    # Extract text from the response
-    raw_text = message.content[0].text.strip()
+    # Extract text from the response safely handling different block types
+    content_block = message.content[0]
+    raw_text = getattr(content_block, "text", "")
+    if hasattr(content_block, "text"):
+        raw_text = content_block.text
+    elif hasattr(content_block, "content") and isinstance(content_block.content, str):
+        raw_text = content_block.content
+    else:
+        raw_text = str(content_block)
+
+    raw_text = raw_text.strip()
 
     # Strip markdown code fences if present
     if raw_text.startswith("```"):

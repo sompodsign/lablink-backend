@@ -71,9 +71,17 @@ class InitiateChargeView(APIView):
             full_name = invoice.walk_in_name or "Walk-in Customer"
             email = "noreply@lablink.bd"
 
+        if not invoice.appointment_id:
+            return Response(
+                {
+                    "detail": "Online payments for walk-in invoices (no appointment) are not supported yet."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # ── Create a PENDING Payment record ────────────────────
         payment = Payment.objects.create(
-            appointment=invoice.appointment,
+            appointment_id=invoice.appointment_id,
             invoice=invoice,
             amount=invoice.total,
             method=Payment.Method.ONLINE,
