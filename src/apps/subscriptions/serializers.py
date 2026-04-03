@@ -117,6 +117,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     days_remaining_trial = serializers.IntegerField(read_only=True)
     is_trial_expired = serializers.BooleanField(read_only=True)
     invoices = InvoiceSerializer(many=True, read_only=True)
+    current_report_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
@@ -134,7 +135,22 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "is_trial_expired",
             "available_ai_credits",
             "invoices",
+            "current_report_count",
         ]
+
+    def get_current_report_count(self, obj):
+        from django.utils import timezone as tz
+
+        from apps.diagnostics.models import Report
+
+        now = tz.now()
+        return Report.objects.filter(
+            test_order__center=obj.center,
+            created_at__year=now.year,
+            created_at__month=now.month,
+            is_deleted=False,
+        ).count()
+
 
 
 class SuperadminSubscriptionSerializer(serializers.ModelSerializer):

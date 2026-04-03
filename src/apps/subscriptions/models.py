@@ -148,6 +148,14 @@ class Invoice(models.Model):
         on_delete=models.CASCADE,
         related_name="invoices",
     )
+    target_plan = models.ForeignKey(
+        "SubscriptionPlan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_("If set, subscription upgrades to this plan upon payment"),
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(
         max_length=20,
@@ -162,6 +170,13 @@ class Invoice(models.Model):
     due_date = models.DateField()
     paid_at = models.DateTimeField(null=True, blank=True)
     transaction_id = models.CharField(max_length=100, blank=True)
+    gateway_invoice_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        db_index=True,
+        help_text=_('Invoice ID returned by UddoktaPay'),
+    )
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

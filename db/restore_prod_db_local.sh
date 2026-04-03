@@ -28,8 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ── LabLink local defaults ────────────────────────────────────────────────────
-# Local Docker volume name (matches docker-compose.yml: postgres_data)
-DB_VOLUME="${LL_DB_VOLUME:-lablink-backend_postgres_data}"
+# Local bind-mount path for Postgres data (matches docker-compose.yml)
+DB_DATA_DIR="${LL_DB_DATA_DIR:-$HOME/user/shampad/lablink-local-db}"
 ARCHIVE_PREFIX="${LL_ARCHIVE_PREFIX:-lablink-db}"
 BUCKET_NAME="${GCS_BUCKET_NAME:-home-server-ss}"
 BUCKET_PATH="${GCS_BUCKET_PATH:-lablink-backup}"
@@ -136,11 +136,10 @@ SERVICE_ACCOUNT_KEY="$(resolve_service_account_key)"
 [[ -f "${SERVICE_ACCOUNT_KEY}" ]] || fail "Service account key not found: ${SERVICE_ACCOUNT_KEY}"
 log "Using service account key: ${SERVICE_ACCOUNT_KEY}"
 
-log "Verifying Docker volume: ${DB_VOLUME}"
-# Verify the local Docker volume exists
-docker volume inspect "${DB_VOLUME}" > /dev/null 2>&1 || \
-  fail "Local Docker volume not found: ${DB_VOLUME}. Is the dev stack running? (docker compose up -d db)"
-log "Volume found: ${DB_VOLUME}"
+log "Verifying local data directory: ${DB_DATA_DIR}"
+[[ -d "${DB_DATA_DIR}" ]] || \
+  fail "Local data directory not found: ${DB_DATA_DIR}. Create it or run 'docker compose up -d db' first."
+log "Directory found: ${DB_DATA_DIR}"
 
 # ── Resolve backup URI ─────────────────────────────────────────────────────
 step 2 6 'Resolving backup URI'
@@ -163,7 +162,7 @@ if [[ "${FORCE_RESTORE}" != "true" && "${FORCE_RESTORE}" != "1" ]]; then
   if [[ ! -t 0 ]]; then
     fail "Non-interactive shell detected. Re-run with --yes or FORCE_RESTORE=true."
   fi
-  echo "WARNING: This will DELETE and replace data in Docker volume: ${DB_VOLUME}"
+  echo "WARNING: This will DELETE and replace data in local directory: ${DB_DATA_DIR}"
   echo "Backup source: ${backup_uri}"
   read -r -p "Type RESTORE to continue: " confirm
   [[ "${confirm}" == "RESTORE" ]] || fail "Confirmation failed. Aborting."
@@ -200,11 +199,8 @@ else
 fi
 log "Using source data dir: ${source_data_dir}"
 
-# ── Stop container, swap data via helper container, restart ───────────────────
-# Mac Docker Desktop volumes live inside a Linux VM; we cannot access them from
-# the macOS host. Instead, we mount the volume into a temporary Alpine container
-# and perform the wipe + copy there (no sudo required).
-step 6 6 'Restoring data into Docker volume'
+# ── Stop container, swap data directly on local filesystem, restart ───────────
+step 6 6 'Restoring data into local directory'
 db_was_running="false"
 if docker inspect "${DB_CONTAINER}" > /dev/null 2>&1; then
   if [[ "$(docker inspect -f '{{.State.Running}}' "${DB_CONTAINER}")" == "true" ]]; then
@@ -214,19 +210,13 @@ if docker inspect "${DB_CONTAINER}" > /dev/null 2>&1; then
     log "Container stopped"
   fi
 else
-  log "DB container '${DB_CONTAINER}' not found; will restore into volume directly."
+  log "DB container '${DB_CONTAINER}' not found; will restore into directory directly."
 fi
 
-log "Wiping volume and copying backup (this may take a moment...)"
-docker run --rm \
-  -v "${source_data_dir}:/restore_src:ro" \
-  -v "${DB_VOLUME}:/pgdata" \
-  alpine sh -c '
-    find /pgdata -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-    cp -a /restore_src/. /pgdata/
-    chown -R 999:999 /pgdata
-  '
-log "Volume restore complete"
+log "Wiping local data directory and copying backup (this may take a moment...)"
+find "${DB_DATA_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+cp -a "${source_data_dir}/." "${DB_DATA_DIR}/"
+log "Local directory restore complete"
 
 if [[ "${db_was_running}" == "true" ]]; then
   log "Starting DB container: ${DB_CONTAINER}"

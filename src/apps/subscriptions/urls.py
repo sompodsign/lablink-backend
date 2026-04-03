@@ -1,7 +1,14 @@
 from django.urls import path
 
+from .subscription_gateway_views import (
+    SubscriptionInitiateChargeView,
+)
+from .subscription_gateway_views import (
+    SubscriptionVerifyPaymentView as GatewayVerifyView,
+)
 from .views import (
     CenterCancelSubscriptionView,
+    CenterChangePlanView,
     CenterInvoiceListView,
     CenterRegistrationView,
     CenterResumeSubscriptionView,
@@ -45,6 +52,11 @@ center_patterns = [
         name="center-subscription",
     ),
     path(
+        "my-subscription/change-plan/",
+        CenterChangePlanView.as_view(),
+        name="center-change-plan",
+    ),
+    path(
         "my-subscription/cancel/",
         CenterCancelSubscriptionView.as_view(),
         name="center-cancel-subscription",
@@ -68,6 +80,17 @@ center_patterns = [
         "invoices/<int:invoice_id>/submit-payment/",
         CenterSubmitPaymentView.as_view(),
         name="center-submit-payment",
+    ),
+    # UddoktaPay gateway for subscription payments
+    path(
+        "gateway/initiate-charge/",
+        SubscriptionInitiateChargeView.as_view(),
+        name="subscription-gateway-initiate",
+    ),
+    path(
+        "gateway/verify-payment/",
+        GatewayVerifyView.as_view(),
+        name="subscription-gateway-verify",
     ),
 ]
 

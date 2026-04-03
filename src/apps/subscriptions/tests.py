@@ -1551,3 +1551,194 @@ class SuperadminSubscriptionCRUDTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class CenterChangePlanAPITests(TestCase):
+    """Tests for upgrading and downgrading plans."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.center = DiagnosticCenter.objects.create(
+            name="Upgrade Center", domain="upgrade"
+        )
+        self.admin = User.objects.create_user(
+            username="up_admin", email="up@test.com", password="test"
+        )
+        self.admin.center = self.center
+        self.admin.save()
+
+        from core.tenants.models import Role
+        admin_role, _ = Role.objects.get_or_create(name="Admin", center=self.center, is_system=True)
+        Staff.objects.create(user=self.admin, center=self.center, role=admin_role)
+
+        self.starter_plan, _ = SubscriptionPlan.objects.get_or_create(
+            slug="starter-change-plan",
+            defaults={"name": "Starter", "price": 1000, "max_staff": 2, "max_reports": 10}
+        )
+        self.pro_plan, _ = SubscriptionPlan.objects.get_or_create(
+            slug="pro-change-plan",
+            defaults={"name": "Pro", "price": 3000, "max_staff": 10, "max_reports": -1}
+        )
+
+        self.sub = Subscription.objects.create(
+            center=self.center, plan=self.starter_plan, status=Subscription.Status.ACTIVE
+        )
+        self.invoice = Invoice.objects.create(
+            subscription=self.sub, amount=1000, due_date=timezone.now().date(), status=Invoice.Status.PENDING
+        )
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+        token = RefreshToken.for_user(self.admin)
+        self.auth_header = f"Bearer {token.access_token}"
+
+    def test_upgrade_plan_success(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+        response = self.client.post("/api/subscriptions/my-subscription/change-plan/", {"plan_id": self.pro_plan.id}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        # Verify plan IS NOT updated yet because of deferral
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.plan_id, self.starter_plan.id)
+
+        # Verify pending invoice updated with target_plan
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.amount, self.pro_plan.price)
+        self.assertEqual(self.invoice.target_plan_id, self.pro_plan.id)
+        self.assertTrue(response.data["require_payment"])
+        self.assertEqual(response.data["invoice_id"], self.invoice.id)
+
+    def test_upgrade_plan_creates_invoice_if_previously_paid(self):
+        # Mark current invoice as PAID
+        self.invoice.status = Invoice.Status.PAID
+        self.invoice.save()
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+        response = self.client.post("/api/subscriptions/my-subscription/change-plan/", {"plan_id": self.pro_plan.id}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        self.assertTrue(response.data["require_payment"])
+        new_inv_id = response.data["invoice_id"]
+        self.assertNotEqual(new_inv_id, self.invoice.id)
+
+        new_inv = Invoice.objects.get(id=new_inv_id)
+        # Should be the difference
+        self.assertEqual(new_inv.amount, self.pro_plan.price - self.starter_plan.price)
+        self.assertEqual(new_inv.status, Invoice.Status.PENDING)
+        self.assertEqual(new_inv.target_plan_id, self.pro_plan.id)
+
+        # Verify plan not updated yet
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.plan_id, self.starter_plan.id)
+
+    def test_downgrade_fails_staff_constraint(self):
+        self.sub.plan = self.pro_plan
+        self.sub.save()
+
+        # Add 3 staff members (which exceeds 2 limit for starter plan)
+        from core.tenants.models import Role
+        role, _ = Role.objects.get_or_create(name="Tech", center=self.center)
+        for i in range(3):
+            u = User.objects.create_user(username=f"s{i}", password="123")
+            Staff.objects.create(user=u, center=self.center, role=role)
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+        response = self.client.post("/api/subscriptions/my-subscription/change-plan/", {"plan_id": self.starter_plan.id}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("staff members", response.data["detail"])
+
+        # Verify plan not updated
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.plan_id, self.pro_plan.id)
+
+    def test_downgrade_fails_report_constraint(self):
+        self.sub.plan = self.pro_plan
+        self.sub.save()
+
+        # Simulate 15 reports this month (exceeds 10 limit for starter plan)
+        from apps.diagnostics.models import Report, TestOrder, TestType
+        tt, _ = TestType.objects.get_or_create(name="TT", defaults={"base_price": 500})
+        patient_user = User.objects.create_user(username="p1", password="123")
+        for _ in range(15):
+            order = TestOrder.objects.create(center=self.center, test_type=tt, patient=patient_user)
+            Report.objects.create(test_order=order, test_type=tt, is_deleted=False)
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+        response = self.client.post("/api/subscriptions/my-subscription/change-plan/", {"plan_id": self.starter_plan.id}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("reports this month", response.data["detail"])
+
+    def test_trial_upgrade_creates_invoice(self):
+        """Trial center upgrading to paid plan should create invoice, not change plan."""
+        trial_plan, _ = SubscriptionPlan.objects.get_or_create(
+            slug='trial-change-plan',
+            defaults={'name': 'Trial', 'price': 0, 'trial_days': 14},
+        )
+        # Switch sub to trial
+        self.sub.plan = trial_plan
+        self.sub.status = Subscription.Status.TRIAL
+        self.sub.save()
+        # Remove pre-existing invoice
+        self.invoice.delete()
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        response = self.client.post(
+            '/api/subscriptions/my-subscription/change-plan/',
+            {'plan_id': self.pro_plan.id},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['require_payment'])
+        self.assertIsNotNone(response.data['invoice_id'])
+
+        # Plan should NOT be updated yet
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.plan_id, trial_plan.id)
+
+        # Invoice should exist with full price and target_plan set
+        inv = Invoice.objects.get(id=response.data['invoice_id'])
+        self.assertEqual(inv.amount, self.pro_plan.price)
+        self.assertEqual(inv.target_plan_id, self.pro_plan.id)
+        self.assertEqual(inv.status, Invoice.Status.PENDING)
+
+    def test_trial_upgrade_applies_on_payment_verified(self):
+        """Superadmin marking invoice paid should apply the target plan."""
+        trial_plan, _ = SubscriptionPlan.objects.get_or_create(
+            slug='trial-change-plan-v',
+            defaults={'name': 'Trial V', 'price': 0, 'trial_days': 14},
+        )
+        self.sub.plan = trial_plan
+        self.sub.status = Subscription.Status.TRIAL
+        self.sub.save()
+        self.invoice.delete()
+
+        # Upgrade via center admin
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        response = self.client.post(
+            '/api/subscriptions/my-subscription/change-plan/',
+            {'plan_id': self.pro_plan.id},
+            format='json',
+        )
+        invoice_id = response.data['invoice_id']
+
+        # Now superadmin marks it paid
+        superadmin = User.objects.create_superuser(
+            username='su_trial', email='su_trial@test.com', password='admin123',
+        )
+        self.client.force_authenticate(superadmin)
+        response = self.client.post(
+            f'/api/subscriptions/invoices/{invoice_id}/mark-paid/',
+            {'payment_method': 'BKASH'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.plan_id, self.pro_plan.id)
+        self.assertEqual(self.sub.status, Subscription.Status.ACTIVE)
+

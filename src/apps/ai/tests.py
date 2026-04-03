@@ -26,7 +26,6 @@ from helpers.test_factories import (
     make_user,
 )
 
-
 # ── Existing credit system tests (unchanged) ─────────────────────
 
 
@@ -197,7 +196,6 @@ class AICreditUsageLogModelTests(AIServiceTestBase):
 
 def _make_test_image(content_type='image/jpeg'):
     """Create a valid in-memory image file using PIL."""
-    from io import BytesIO
 
     from django.core.files.uploadedfile import SimpleUploadedFile
     from PIL import Image

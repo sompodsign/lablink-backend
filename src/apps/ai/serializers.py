@@ -2,7 +2,6 @@
 
 from rest_framework import serializers
 
-
 ALLOWED_IMAGE_TYPES = frozenset({
     'image/jpeg',
     'image/png',

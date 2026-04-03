@@ -9,7 +9,7 @@ services:
     ports:
       - "5434:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ~/user/shampad/lablink-local-db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lablink_user -d lablink"]
       interval: 5s
@@ -68,5 +68,4 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
   redis_data:

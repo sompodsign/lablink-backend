@@ -343,6 +343,18 @@ class Payment(models.Model):
     )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     transaction_id = models.CharField(max_length=100, blank=True, null=True)
+    gateway_invoice_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        db_index=True,
+        help_text=_('Invoice ID returned by UddoktaPay'),
+    )
+    gateway_response = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_('Raw JSON response from the payment gateway'),
+    )
     method = models.CharField(max_length=50, choices=Method.choices)
     status = models.CharField(
         max_length=20,
