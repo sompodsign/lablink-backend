@@ -228,6 +228,8 @@ jobs:
           SMS_API_KEY=${{ secrets.SMS_API_KEY }}
           FRONTEND_URL=${{ secrets.FRONTEND_URL }}
           GCS_BUCKET_NAME=lablink-static
+          UDDOKTAPAY_BASE_URL=${{ secrets.UDDOKTAPAY_BASE_URL }}
+          UDDOKTAPAY_API_KEY=${{ secrets.UDDOKTAPAY_API_KEY }}
           ENVEOF
 
       - name: Copy to deploy path
