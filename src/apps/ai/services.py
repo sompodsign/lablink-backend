@@ -24,8 +24,8 @@ def check_ai_access(center) -> Subscription:
     """
     if not center.is_ai_active:
         raise AIFeatureDisabledError(
-            'AI features are not enabled for this center. '
-            'Contact your administrator to activate them.'
+            "AI features are not enabled for this center. "
+            "Contact your administrator to activate them."
         )
 
     try:

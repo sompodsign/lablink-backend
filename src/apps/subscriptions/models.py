@@ -173,9 +173,9 @@ class Invoice(models.Model):
     gateway_invoice_id = models.CharField(
         max_length=100,
         blank=True,
-        default='',
+        default="",
         db_index=True,
-        help_text=_('Invoice ID returned by UddoktaPay'),
+        help_text=_("Invoice ID returned by UddoktaPay"),
     )
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

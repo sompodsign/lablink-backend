@@ -12,14 +12,14 @@ class InitiateChargeSerializer(serializers.Serializer):
     """Input for the *initiate-charge* endpoint."""
 
     invoice_id = serializers.IntegerField(
-        help_text='PK of the local Invoice to pay.',
+        help_text="PK of the local Invoice to pay.",
     )
     redirect_url = serializers.URLField(
-        help_text='URL the customer returns to after payment.',
+        help_text="URL the customer returns to after payment.",
     )
     cancel_url = serializers.URLField(
         required=False,
-        help_text='URL the customer returns to on cancellation.',
+        help_text="URL the customer returns to on cancellation.",
     )
 
 
@@ -28,5 +28,5 @@ class ChargeResponseSerializer(serializers.Serializer):
 
     payment_url = serializers.URLField()
     payment_id = serializers.IntegerField(
-        help_text='PK of the local Payment record created.',
+        help_text="PK of the local Payment record created.",
     )

@@ -179,7 +179,9 @@ SMS_API_URL = "https://api.sms.net.bd/sendsms"
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 
 # UddoktaPay Configuration
-UDDOKTAPAY_BASE_URL = env("UDDOKTAPAY_BASE_URL", default="https://sandbox.uddoktapay.com")
+UDDOKTAPAY_BASE_URL = env(
+    "UDDOKTAPAY_BASE_URL", default="https://sandbox.uddoktapay.com"
+)
 UDDOKTAPAY_API_KEY = env("UDDOKTAPAY_API_KEY", default="")
 
 # drf-spectacular Configuration

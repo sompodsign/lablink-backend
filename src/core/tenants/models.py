@@ -195,17 +195,17 @@ class DiagnosticCenter(models.Model):
                     fields_to_update.append(field_name)
 
         if not self.can_use_sms:
-            disable('use_sms', 'sms_enabled', 'send_sms_invoice')
+            disable("use_sms", "sms_enabled", "send_sms_invoice")
         elif not self.use_sms:
-            disable('sms_enabled', 'send_sms_invoice')
+            disable("sms_enabled", "send_sms_invoice")
 
         if not self.can_use_email:
-            disable('use_email', 'email_notifications_enabled', 'send_email_invoice')
+            disable("use_email", "email_notifications_enabled", "send_email_invoice")
         elif not self.use_email:
-            disable('email_notifications_enabled', 'send_email_invoice')
+            disable("email_notifications_enabled", "send_email_invoice")
 
         if not self.can_use_ai:
-            disable('use_ai')
+            disable("use_ai")
 
         return fields_to_update
 

@@ -34,24 +34,24 @@ class AIServiceTestBase(TestCase):
 
     def setUp(self):
         self.center = DiagnosticCenter.objects.create(
-            name='Test Lab',
-            domain='testlab',
-            address='123 Test St',
-            contact_number='01700000000',
+            name="Test Lab",
+            domain="testlab",
+            address="123 Test St",
+            contact_number="01700000000",
             can_use_ai=True,
         )
         self.plan, _ = SubscriptionPlan.objects.get_or_create(
-            slug='professional',
+            slug="professional",
             defaults={
-                'name': 'Professional',
-                'price': Decimal('2000.00'),
-                'monthly_ai_credits': 500,
+                "name": "Professional",
+                "price": Decimal("2000.00"),
+                "monthly_ai_credits": 500,
             },
         )
         # Ensure AI credits are set even if plan already existed
         if self.plan.monthly_ai_credits != 500:
             self.plan.monthly_ai_credits = 500
-            self.plan.save(update_fields=['monthly_ai_credits'])
+            self.plan.save(update_fields=["monthly_ai_credits"])
         self.subscription = Subscription.objects.create(
             center=self.center,
             plan=self.plan,
@@ -59,8 +59,8 @@ class AIServiceTestBase(TestCase):
             available_ai_credits=500,
         )
         self.user = User.objects.create_user(
-            username='tech_user',
-            password='testpass123',
+            username="tech_user",
+            password="testpass123",
             center=self.center,
         )
 
@@ -74,31 +74,31 @@ class CheckAIAccessTests(AIServiceTestBase):
 
     def test_ai_disabled_raises_error(self):
         self.center.can_use_ai = False
-        self.center.save(update_fields=['can_use_ai'])
+        self.center.save(update_fields=["can_use_ai"])
         with self.assertRaises(AIFeatureDisabledError):
             check_ai_access(self.center)
 
     def test_center_admin_toggle_disabled_raises_error(self):
         self.center.use_ai = False
-        self.center.save(update_fields=['use_ai'])
+        self.center.save(update_fields=["use_ai"])
         with self.assertRaises(AIFeatureDisabledError):
             check_ai_access(self.center)
 
     def test_no_active_subscription_raises_error(self):
         self.subscription.status = Subscription.Status.EXPIRED
-        self.subscription.save(update_fields=['status'])
+        self.subscription.save(update_fields=["status"])
         with self.assertRaises(AIFeatureDisabledError):
             check_ai_access(self.center)
 
     def test_zero_credits_raises_error(self):
         self.subscription.available_ai_credits = 0
-        self.subscription.save(update_fields=['available_ai_credits'])
+        self.subscription.save(update_fields=["available_ai_credits"])
         with self.assertRaises(InsufficientAICreditsError):
             check_ai_access(self.center)
 
     def test_trial_subscription_allows_access(self):
         self.subscription.status = Subscription.Status.TRIAL
-        self.subscription.save(update_fields=['status'])
+        self.subscription.save(update_fields=["status"])
         result = check_ai_access(self.center)
         self.assertEqual(result.id, self.subscription.id)
 
@@ -127,15 +127,15 @@ class DeductAICreditTests(AIServiceTestBase):
             performed_by=self.user,
             input_tokens=150,
             output_tokens=200,
-            metadata={'session_id': 'abc123'},
+            metadata={"session_id": "abc123"},
         )
         self.assertEqual(log.input_tokens, 150)
         self.assertEqual(log.output_tokens, 200)
-        self.assertEqual(log.metadata, {'session_id': 'abc123'})
+        self.assertEqual(log.metadata, {"session_id": "abc123"})
 
     def test_deduct_fails_with_zero_credits(self):
         self.subscription.available_ai_credits = 0
-        self.subscription.save(update_fields=['available_ai_credits'])
+        self.subscription.save(update_fields=["available_ai_credits"])
         with self.assertRaises(InsufficientAICreditsError):
             deduct_ai_credit(
                 center=self.center,
@@ -167,7 +167,7 @@ class DeductAICreditTests(AIServiceTestBase):
     def test_deduct_atomicity_no_partial_deduction(self):
         """If deduction fails, credits should not change."""
         self.subscription.available_ai_credits = 3
-        self.subscription.save(update_fields=['available_ai_credits'])
+        self.subscription.save(update_fields=["available_ai_credits"])
         with self.assertRaises(InsufficientAICreditsError):
             deduct_ai_credit(
                 center=self.center,
@@ -187,35 +187,35 @@ class AICreditUsageLogModelTests(AIServiceTestBase):
             task_type=AICreditUsageLog.TaskType.REPORT_EXTRACTION,
             credits_used=1,
         )
-        self.assertIn('Report Extraction', str(log))
-        self.assertIn('1 credit(s)', str(log))
+        self.assertIn("Report Extraction", str(log))
+        self.assertIn("1 credit(s)", str(log))
 
 
 # ── Extract endpoint tests ───────────────────────────────────────
 
 
-def _make_test_image(content_type='image/jpeg'):
+def _make_test_image(content_type="image/jpeg"):
     """Create a valid in-memory image file using PIL."""
 
     from django.core.files.uploadedfile import SimpleUploadedFile
     from PIL import Image
 
-    img = Image.new('RGB', (10, 10), color='red')
+    img = Image.new("RGB", (10, 10), color="red")
     buf = BytesIO()
-    fmt = 'JPEG' if 'jpeg' in content_type else 'PNG'
+    fmt = "JPEG" if "jpeg" in content_type else "PNG"
     img.save(buf, format=fmt)
     buf.seek(0)
-    ext = 'jpg' if fmt == 'JPEG' else 'png'
+    ext = "jpg" if fmt == "JPEG" else "png"
     return SimpleUploadedFile(
-        f'test_report.{ext}',
+        f"test_report.{ext}",
         buf.read(),
         content_type=content_type,
     )
 
 
 MOCK_EXTRACTION_RESULT = {
-    'Hemoglobin': {'value': '14.5', 'unit': 'g/dL', 'finding': 'Normal'},
-    'Total WBC Count': {'value': '8500', 'unit': '/cumm', 'finding': 'Normal'},
+    "Hemoglobin": {"value": "14.5", "unit": "g/dL", "finding": "Normal"},
+    "Total WBC Count": {"value": "8500", "unit": "/cumm", "finding": "Normal"},
 }
 
 
@@ -225,32 +225,32 @@ class ReportExtractionEndpointTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.center = make_center()
-        self.tt = make_test_type('CBC', '500.00')
+        self.tt = make_test_type("CBC", "500.00")
         self.template = make_report_template(
             self.tt,
             self.center,
             fields=[
-                {'name': 'Hemoglobin', 'unit': 'g/dL', 'ref_range': '13.5-17.5'},
-                {'name': 'Total WBC Count', 'unit': '/cumm', 'ref_range': '4000-11000'},
+                {"name": "Hemoglobin", "unit": "g/dL", "ref_range": "13.5-17.5"},
+                {"name": "Total WBC Count", "unit": "/cumm", "ref_range": "4000-11000"},
             ],
         )
 
         # Staff user
-        self.staff_user = make_user('staff1')
-        make_staff(self.staff_user, self.center, role='Medical Technologist')
+        self.staff_user = make_user("staff1")
+        make_staff(self.staff_user, self.center, role="Medical Technologist")
         self.auth = jwt_auth_header(self.staff_user)
 
         # Enable AI flags AFTER center creation (signals reset use_ai)
         self.center.can_use_ai = True
         self.center.use_ai = True
-        self.center.save(update_fields=['can_use_ai', 'use_ai'])
+        self.center.save(update_fields=["can_use_ai", "use_ai"])
 
         # Ensure subscription has AI credits
         sub = Subscription.objects.filter(center=self.center).first()
         sub.available_ai_credits = 100
-        sub.save(update_fields=['available_ai_credits'])
+        sub.save(update_fields=["available_ai_credits"])
 
-    @patch('apps.ai.views.extract_report_data')
+    @patch("apps.ai.views.extract_report_data")
     def test_extract_success(self, mock_extract):
         from apps.ai.client import ExtractionResult
 
@@ -258,38 +258,39 @@ class ReportExtractionEndpointTests(TestCase):
             result_data=MOCK_EXTRACTION_RESULT,
             input_tokens=500,
             output_tokens=200,
-            model='claude-3-5-haiku-latest',
+            model="claude-3-5-haiku-latest",
         )
 
         image = _make_test_image()
         resp = self.client.post(
-            '/api/ai/extract-report/',
-            {'image': image, 'test_type_id': self.tt.id},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"image": image, "test_type_id": self.tt.id},
+            format="multipart",
             **self.auth,
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertIn('result_data', resp.data)
-        self.assertIn('Hemoglobin', resp.data['result_data'])
-        self.assertIn('credits_remaining', resp.data)
-        self.assertEqual(resp.data['credits_remaining'], 99)
+        self.assertIn("result_data", resp.data)
+        self.assertIn("Hemoglobin", resp.data["result_data"])
+        self.assertIn("credits_remaining", resp.data)
+        self.assertEqual(resp.data["credits_remaining"], 99)
         mock_extract.assert_called_once()
 
-    @patch('apps.ai.views.extract_report_data')
+    @patch("apps.ai.views.extract_report_data")
     def test_extract_deducts_credit(self, mock_extract):
         from apps.ai.client import ExtractionResult
 
         mock_extract.return_value = ExtractionResult(
             result_data=MOCK_EXTRACTION_RESULT,
-            input_tokens=500, output_tokens=200,
-            model='claude-3-5-haiku-latest',
+            input_tokens=500,
+            output_tokens=200,
+            model="claude-3-5-haiku-latest",
         )
 
         image = _make_test_image()
         self.client.post(
-            '/api/ai/extract-report/',
-            {'image': image, 'test_type_id': self.tt.id},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"image": image, "test_type_id": self.tt.id},
+            format="multipart",
             **self.auth,
         )
 
@@ -307,60 +308,60 @@ class ReportExtractionEndpointTests(TestCase):
 
     def test_extract_fails_when_ai_disabled(self):
         self.center.can_use_ai = False
-        self.center.save(update_fields=['can_use_ai'])
+        self.center.save(update_fields=["can_use_ai"])
 
         image = _make_test_image()
         resp = self.client.post(
-            '/api/ai/extract-report/',
-            {'image': image, 'test_type_id': self.tt.id},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"image": image, "test_type_id": self.tt.id},
+            format="multipart",
             **self.auth,
         )
         self.assertEqual(resp.status_code, 403)
-        self.assertIn('not enabled', resp.data['detail'])
+        self.assertIn("not enabled", resp.data["detail"])
 
     def test_extract_fails_with_no_credits(self):
         sub = Subscription.objects.get(center=self.center)
         sub.available_ai_credits = 0
-        sub.save(update_fields=['available_ai_credits'])
+        sub.save(update_fields=["available_ai_credits"])
 
         image = _make_test_image()
         resp = self.client.post(
-            '/api/ai/extract-report/',
-            {'image': image, 'test_type_id': self.tt.id},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"image": image, "test_type_id": self.tt.id},
+            format="multipart",
             **self.auth,
         )
         self.assertEqual(resp.status_code, 402)
-        self.assertIn('credit', resp.data['detail'].lower())
+        self.assertIn("credit", resp.data["detail"].lower())
 
     def test_extract_fails_without_template(self):
         self.template.delete()
 
         image = _make_test_image()
         resp = self.client.post(
-            '/api/ai/extract-report/',
-            {'image': image, 'test_type_id': self.tt.id},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"image": image, "test_type_id": self.tt.id},
+            format="multipart",
             **self.auth,
         )
         self.assertEqual(resp.status_code, 404)
-        self.assertIn('template', resp.data['detail'].lower())
+        self.assertIn("template", resp.data["detail"].lower())
 
     def test_extract_rejects_unauthenticated(self):
         image = _make_test_image()
         resp = self.client.post(
-            '/api/ai/extract-report/',
-            {'image': image, 'test_type_id': self.tt.id},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"image": image, "test_type_id": self.tt.id},
+            format="multipart",
         )
         self.assertEqual(resp.status_code, 401)
 
     def test_extract_rejects_missing_image(self):
         resp = self.client.post(
-            '/api/ai/extract-report/',
-            {'test_type_id': self.tt.id},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"test_type_id": self.tt.id},
+            format="multipart",
             **self.auth,
         )
         self.assertEqual(resp.status_code, 400)
@@ -368,9 +369,9 @@ class ReportExtractionEndpointTests(TestCase):
     def test_extract_rejects_missing_test_type(self):
         image = _make_test_image()
         resp = self.client.post(
-            '/api/ai/extract-report/',
-            {'image': image},
-            format='multipart',
+            "/api/ai/extract-report/",
+            {"image": image},
+            format="multipart",
             **self.auth,
         )
         self.assertEqual(resp.status_code, 400)

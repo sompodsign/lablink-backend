@@ -13,8 +13,8 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-CHECKOUT_PATH = '/api/checkout-v2'
-VERIFY_PATH = '/api/verify-payment'
+CHECKOUT_PATH = "/api/checkout-v2"
+VERIFY_PATH = "/api/verify-payment"
 REQUEST_TIMEOUT = 30  # seconds
 
 
@@ -51,15 +51,15 @@ class VerifyResult:
 
 def _headers() -> dict[str, str]:
     return {
-        'RT-UDDOKTAPAY-API-KEY': settings.UDDOKTAPAY_API_KEY,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'LabLink/1.0',
+        "RT-UDDOKTAPAY-API-KEY": settings.UDDOKTAPAY_API_KEY,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "LabLink/1.0",
     }
 
 
 def _base_url() -> str:
-    return settings.UDDOKTAPAY_BASE_URL.rstrip('/')
+    return settings.UDDOKTAPAY_BASE_URL.rstrip("/")
 
 
 def create_charge(
@@ -71,7 +71,7 @@ def create_charge(
     cancel_url: str | None = None,
     webhook_url: str | None = None,
     metadata: dict | None = None,
-    return_type: str = 'GET',
+    return_type: str = "GET",
 ) -> CheckoutResult:
     """
     Create a payment charge via UddoktaPay checkout-v2 API.
@@ -79,19 +79,19 @@ def create_charge(
     Returns a ``CheckoutResult`` containing the ``payment_url``
     that the customer should be redirected to.
     """
-    url = f'{_base_url()}{CHECKOUT_PATH}'
+    url = f"{_base_url()}{CHECKOUT_PATH}"
     payload: dict = {
-        'full_name': full_name,
-        'email': email,
-        'amount': str(amount),
-        'redirect_url': redirect_url,
-        'return_type': return_type,
-        'cancel_url': cancel_url or redirect_url,
-        'webhook_url': webhook_url or '',
-        'metadata': metadata or {},
+        "full_name": full_name,
+        "email": email,
+        "amount": str(amount),
+        "redirect_url": redirect_url,
+        "return_type": return_type,
+        "cancel_url": cancel_url or redirect_url,
+        "webhook_url": webhook_url or "",
+        "metadata": metadata or {},
     }
 
-    logger.info('UddoktaPay create_charge → %s', url)
+    logger.info("UddoktaPay create_charge → %s", url)
 
     try:
         resp = requests.post(
@@ -99,18 +99,18 @@ def create_charge(
         )
         resp.raise_for_status()
     except requests.RequestException as exc:
-        logger.exception('UddoktaPay create_charge failed')
-        raise UddoktaPayError(f'Network error: {exc}') from exc
+        logger.exception("UddoktaPay create_charge failed")
+        raise UddoktaPayError(f"Network error: {exc}") from exc
 
     data = resp.json()
-    if not data.get('status'):
-        msg = data.get('message', 'Unknown error')
-        raise UddoktaPayError(f'UddoktaPay error: {msg}')
+    if not data.get("status"):
+        msg = data.get("message", "Unknown error")
+        raise UddoktaPayError(f"UddoktaPay error: {msg}")
 
     return CheckoutResult(
-        status=data['status'],
-        message=data.get('message', ''),
-        payment_url=data['payment_url'],
+        status=data["status"],
+        message=data.get("message", ""),
+        payment_url=data["payment_url"],
     )
 
 
@@ -120,10 +120,10 @@ def verify_payment(*, invoice_id: str) -> VerifyResult:
 
     Returns a ``VerifyResult`` with all payment details.
     """
-    url = f'{_base_url()}{VERIFY_PATH}'
-    payload = {'invoice_id': invoice_id}
+    url = f"{_base_url()}{VERIFY_PATH}"
+    payload = {"invoice_id": invoice_id}
 
-    logger.info('UddoktaPay verify_payment → %s (invoice=%s)', url, invoice_id)
+    logger.info("UddoktaPay verify_payment → %s (invoice=%s)", url, invoice_id)
 
     try:
         resp = requests.post(
@@ -131,27 +131,27 @@ def verify_payment(*, invoice_id: str) -> VerifyResult:
         )
         resp.raise_for_status()
     except requests.RequestException as exc:
-        logger.exception('UddoktaPay verify_payment failed')
-        raise UddoktaPayError(f'Network error: {exc}') from exc
+        logger.exception("UddoktaPay verify_payment failed")
+        raise UddoktaPayError(f"Network error: {exc}") from exc
 
     data = resp.json()
 
     # Error responses have a "message" key and no "status" field
-    if 'status' not in data:
-        msg = data.get('message', 'Unknown error')
-        raise UddoktaPayError(f'UddoktaPay error: {msg}')
+    if "status" not in data:
+        msg = data.get("message", "Unknown error")
+        raise UddoktaPayError(f"UddoktaPay error: {msg}")
 
     return VerifyResult(
-        full_name=data.get('full_name', ''),
-        email=data.get('email', ''),
-        amount=data.get('amount', ''),
-        fee=data.get('fee', ''),
-        charged_amount=data.get('charged_amount', ''),
-        invoice_id=data.get('invoice_id', ''),
-        metadata=data.get('metadata', {}),
-        payment_method=data.get('payment_method', ''),
-        sender_number=data.get('sender_number', ''),
-        transaction_id=data.get('transaction_id', ''),
-        date=data.get('date', ''),
-        status=data['status'],
+        full_name=data.get("full_name", ""),
+        email=data.get("email", ""),
+        amount=data.get("amount", ""),
+        fee=data.get("fee", ""),
+        charged_amount=data.get("charged_amount", ""),
+        invoice_id=data.get("invoice_id", ""),
+        metadata=data.get("metadata", {}),
+        payment_method=data.get("payment_method", ""),
+        sender_number=data.get("sender_number", ""),
+        transaction_id=data.get("transaction_id", ""),
+        date=data.get("date", ""),
+        status=data["status"],
     )

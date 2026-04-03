@@ -4,20 +4,29 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('payments', '0009_drop_legacy_referrer_doctor_columns'),
+        ("payments", "0009_drop_legacy_referrer_doctor_columns"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='payment',
-            name='gateway_invoice_id',
-            field=models.CharField(blank=True, db_index=True, default='', help_text='Invoice ID returned by UddoktaPay', max_length=100),
+            model_name="payment",
+            name="gateway_invoice_id",
+            field=models.CharField(
+                blank=True,
+                db_index=True,
+                default="",
+                help_text="Invoice ID returned by UddoktaPay",
+                max_length=100,
+            ),
         ),
         migrations.AddField(
-            model_name='payment',
-            name='gateway_response',
-            field=models.JSONField(blank=True, default=dict, help_text='Raw JSON response from the payment gateway'),
+            model_name="payment",
+            name="gateway_response",
+            field=models.JSONField(
+                blank=True,
+                default=dict,
+                help_text="Raw JSON response from the payment gateway",
+            ),
         ),
     ]

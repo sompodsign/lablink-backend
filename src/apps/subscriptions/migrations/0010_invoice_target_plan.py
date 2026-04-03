@@ -5,15 +5,21 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subscriptions', '0009_subscription_available_ai_credits_and_more'),
+        ("subscriptions", "0009_subscription_available_ai_credits_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='invoice',
-            name='target_plan',
-            field=models.ForeignKey(blank=True, help_text='If set, subscription upgrades to this plan upon payment', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='subscriptions.subscriptionplan'),
+            model_name="invoice",
+            name="target_plan",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="If set, subscription upgrades to this plan upon payment",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to="subscriptions.subscriptionplan",
+            ),
         ),
     ]

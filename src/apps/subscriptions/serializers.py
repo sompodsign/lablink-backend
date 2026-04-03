@@ -152,7 +152,6 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         ).count()
 
 
-
 class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
     """Superadmin: create / update subscriptions for any center."""
 

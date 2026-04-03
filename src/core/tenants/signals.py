@@ -16,41 +16,41 @@ logger = logging.getLogger(__name__)
 
 # role_name → list of permission codenames (None = all permissions)
 DEFAULT_ROLE_PERMS: dict[str, list[str] | None] = {
-    'Admin': None,
-    'Medical Technologist': [
-        'view_patients',
-        'view_reports',
-        'create_reports',
-        'manage_reports',
-        'verify_reports',
-        'view_test_orders',
-        'manage_test_orders',
+    "Admin": None,
+    "Medical Technologist": [
+        "view_patients",
+        "view_reports",
+        "create_reports",
+        "manage_reports",
+        "verify_reports",
+        "view_test_orders",
+        "manage_test_orders",
     ],
-    'Receptionist': [
-        'view_patients',
-        'manage_patients',
-        'view_appointments',
-        'manage_appointments',
-        'view_reports',
-        'view_payments',
-        'manage_payments',
+    "Receptionist": [
+        "view_patients",
+        "manage_patients",
+        "view_appointments",
+        "manage_appointments",
+        "view_reports",
+        "view_payments",
+        "manage_payments",
     ],
-    'Doctor': [
-        'view_patients',
-        'view_appointments',
-        'manage_appointments',
-        'view_test_orders',
-        'view_reports',
-        'create_reports',
+    "Doctor": [
+        "view_patients",
+        "view_appointments",
+        "manage_appointments",
+        "view_test_orders",
+        "view_reports",
+        "create_reports",
     ],
-    'Medical Assistant': [
-        'view_patients',
-        'manage_patients',
-        'view_appointments',
-        'manage_appointments',
-        'view_reports',
-        'view_test_orders',
-        'view_payments',
+    "Medical Assistant": [
+        "view_patients",
+        "manage_patients",
+        "view_appointments",
+        "manage_appointments",
+        "view_reports",
+        "view_test_orders",
+        "view_payments",
     ],
 }
 
@@ -73,7 +73,7 @@ def create_default_roles(
         role, _ = Role.objects.get_or_create(
             name=role_name,
             center=instance,
-            defaults={'is_system': True},
+            defaults={"is_system": True},
         )
         if perm_codenames is None:
             role.permissions.set(all_perms)

@@ -8,10 +8,10 @@ from .models import Subscription
 logger = logging.getLogger(__name__)
 
 # Plan slugs that include SMS/Email notifications
-NOTIFICATION_PLAN_SLUGS = frozenset({'professional', 'enterprise'})
+NOTIFICATION_PLAN_SLUGS = frozenset({"professional", "enterprise"})
 
 # Plan slugs that include AI features
-AI_PLAN_SLUGS = frozenset({'professional', 'enterprise'})
+AI_PLAN_SLUGS = frozenset({"professional", "enterprise"})
 
 
 @receiver(post_save, sender=Subscription)
@@ -23,7 +23,7 @@ def sync_center_notification_flags(sender, instance: Subscription, **kwargs) -> 
     center edit UI, so we never override their manual toggles.
     Syncs AI entitlements and credits based on plan.
     """
-    created = kwargs.get('created', False)
+    created = kwargs.get("created", False)
     center = instance.center
     plan_slug = instance.plan.slug
     should_enable_notifications = plan_slug in NOTIFICATION_PLAN_SLUGS
@@ -35,15 +35,15 @@ def sync_center_notification_flags(sender, instance: Subscription, **kwargs) -> 
 
         if center.can_use_sms != should_enable_notifications:
             center.can_use_sms = should_enable_notifications
-            fields_to_update.append('can_use_sms')
+            fields_to_update.append("can_use_sms")
 
         if center.can_use_email != should_enable_notifications:
             center.can_use_email = should_enable_notifications
-            fields_to_update.append('can_use_email')
+            fields_to_update.append("can_use_email")
 
         if center.can_use_ai != should_enable_ai:
             center.can_use_ai = should_enable_ai
-            fields_to_update.append('can_use_ai')
+            fields_to_update.append("can_use_ai")
 
         fields_to_update.extend(center.apply_feature_gate_constraints())
 
@@ -54,11 +54,10 @@ def sync_center_notification_flags(sender, instance: Subscription, **kwargs) -> 
         monthly_credits = instance.plan.monthly_ai_credits
         if instance.available_ai_credits != monthly_credits:
             instance.available_ai_credits = monthly_credits
-            instance.save(update_fields=['available_ai_credits'])
+            instance.save(update_fields=["available_ai_credits"])
 
     logger.info(
-        'Center %s flags updated: sms=%s, email=%s, ai=%s, ai_credits=%d '
-        '(plan=%s)',
+        "Center %s flags updated: sms=%s, email=%s, ai=%s, ai_credits=%d (plan=%s)",
         center.name,
         center.is_sms_active,
         center.is_email_active,

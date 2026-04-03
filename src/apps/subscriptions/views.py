@@ -218,7 +218,9 @@ class CenterChangePlanView(APIView):
             )
 
         try:
-            subscription = Subscription.objects.select_related("plan").get(center=tenant)
+            subscription = Subscription.objects.select_related("plan").get(
+                center=tenant
+            )
         except Subscription.DoesNotExist:
             return Response(
                 {"detail": "No subscription found."},
@@ -251,10 +253,13 @@ class CenterChangePlanView(APIView):
         # Validations against constraints
         if new_plan.max_staff != -1:
             from core.tenants.models import Staff
+
             current_staff = Staff.objects.filter(center=tenant).count()
             if current_staff > new_plan.max_staff:
                 return Response(
-                    {"detail": f"Cannot downgrade. You have {current_staff} staff members, but this plan allows only {new_plan.max_staff}. Please remove {current_staff - new_plan.max_staff} staff member(s) first."},
+                    {
+                        "detail": f"Cannot downgrade. You have {current_staff} staff members, but this plan allows only {new_plan.max_staff}. Please remove {current_staff - new_plan.max_staff} staff member(s) first."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -262,6 +267,7 @@ class CenterChangePlanView(APIView):
             from django.utils import timezone as tz
 
             from apps.diagnostics.models import Report
+
             now = tz.now()
             current_reports = Report.objects.filter(
                 test_order__center=tenant,
@@ -271,7 +277,9 @@ class CenterChangePlanView(APIView):
             ).count()
             if current_reports > new_plan.max_reports:
                 return Response(
-                    {"detail": f"Cannot downgrade. You have created {current_reports} reports this month, which exceeds this plan's limit of {new_plan.max_reports}."},
+                    {
+                        "detail": f"Cannot downgrade. You have created {current_reports} reports this month, which exceeds this plan's limit of {new_plan.max_reports}."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -285,7 +293,7 @@ class CenterChangePlanView(APIView):
             pending_invoices = Invoice.objects.filter(
                 subscription=subscription,
                 status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
-            ).order_by('due_date')
+            ).order_by("due_date")
 
             if pending_invoices.exists():
                 for inv in pending_invoices:
@@ -296,13 +304,14 @@ class CenterChangePlanView(APIView):
                 invoice_id = pending_invoices.first().id
             else:
                 from django.utils import timezone as tz
+
                 diff = new_plan.price - old_plan.price
                 new_inv = Invoice.objects.create(
                     subscription=subscription,
                     amount=diff,
                     due_date=tz.now().date(),
                     status=Invoice.Status.PENDING,
-                    target_plan=new_plan
+                    target_plan=new_plan,
                 )
                 require_payment = True
                 invoice_id = new_inv.id
@@ -317,7 +326,7 @@ class CenterChangePlanView(APIView):
             pending_invoices = Invoice.objects.filter(
                 subscription=subscription,
                 status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
-            ).order_by('due_date')
+            ).order_by("due_date")
             for inv in pending_invoices:
                 inv.amount = new_plan.price
                 inv.target_plan = None
@@ -325,14 +334,16 @@ class CenterChangePlanView(APIView):
 
         # Invalidate cache
         from django.core.cache import cache
+
         cache.delete(f"sub_status:{tenant.id}")
 
-        return Response({
-            "detail": f"Successfully changed plan to {new_plan.name}.",
-            "require_payment": require_payment,
-            "invoice_id": invoice_id
-        })
-
+        return Response(
+            {
+                "detail": f"Successfully changed plan to {new_plan.name}.",
+                "require_payment": require_payment,
+                "invoice_id": invoice_id,
+            }
+        )
 
 
 class SubscriptionStatusView(APIView):

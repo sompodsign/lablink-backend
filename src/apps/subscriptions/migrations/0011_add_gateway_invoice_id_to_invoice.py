@@ -4,15 +4,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subscriptions', '0010_invoice_target_plan'),
+        ("subscriptions", "0010_invoice_target_plan"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='invoice',
-            name='gateway_invoice_id',
-            field=models.CharField(blank=True, db_index=True, default='', help_text='Invoice ID returned by UddoktaPay', max_length=100),
+            model_name="invoice",
+            name="gateway_invoice_id",
+            field=models.CharField(
+                blank=True,
+                db_index=True,
+                default="",
+                help_text="Invoice ID returned by UddoktaPay",
+                max_length=100,
+            ),
         ),
     ]

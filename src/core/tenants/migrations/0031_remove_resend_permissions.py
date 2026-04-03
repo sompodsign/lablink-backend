@@ -8,26 +8,26 @@ in the resend_email / resend_sms view actions.
 
 from django.db import migrations
 
-RESEND_CODENAMES = ['resend_sms', 'resend_email']
+RESEND_CODENAMES = ["resend_sms", "resend_email"]
 
 
 def remove_resend_permissions(apps, _schema_editor):
-    Permission = apps.get_model('tenants', 'Permission')
+    Permission = apps.get_model("tenants", "Permission")
     Permission.objects.filter(codename__in=RESEND_CODENAMES).delete()
 
 
 def restore_resend_permissions(apps, _schema_editor):
-    Permission = apps.get_model('tenants', 'Permission')
-    DiagnosticCenter = apps.get_model('tenants', 'DiagnosticCenter')
+    Permission = apps.get_model("tenants", "Permission")
+    DiagnosticCenter = apps.get_model("tenants", "DiagnosticCenter")
 
     PERMS = [
-        ('resend_sms', 'Resend Report SMS', 'Notifications'),
-        ('resend_email', 'Resend Report Email', 'Notifications'),
+        ("resend_sms", "Resend Report SMS", "Notifications"),
+        ("resend_email", "Resend Report Email", "Notifications"),
     ]
     perm_objs = []
     for codename, name, category in PERMS:
         perm, _ = Permission.objects.get_or_create(
-            codename=codename, defaults={'name': name, 'category': category}
+            codename=codename, defaults={"name": name, "category": category}
         )
         perm_objs.append(perm)
 
@@ -37,7 +37,7 @@ def restore_resend_permissions(apps, _schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('tenants', '0030_remove_feature_entitlement_permissions'),
+        ("tenants", "0030_remove_feature_entitlement_permissions"),
     ]
 
     operations = [

@@ -454,9 +454,9 @@ class ReportViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated(), perm]
         if self.action == "mark_delivered":
             return [permissions.IsAuthenticated(), IsCenterStaff()]
-        if self.action == 'resend_email':
+        if self.action == "resend_email":
             return [permissions.IsAuthenticated(), IsCenterStaff()]
-        if self.action == 'resend_sms':
+        if self.action == "resend_sms":
             return [permissions.IsAuthenticated(), IsCenterStaff()]
         # print_data, batch_print_data: any authenticated user
         return [permissions.IsAuthenticated()]

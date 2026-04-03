@@ -13,7 +13,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 # Default model — Haiku is fast and cheap for structured extraction
-DEFAULT_MODEL = 'claude-3-5-haiku-latest'
+DEFAULT_MODEL = "claude-3-5-haiku-latest"
 MAX_TOKENS = 2048
 
 
@@ -45,7 +45,7 @@ expected result fields. Extract the value for each field from the image.
 class ExtractionResult:
     """Container for AI extraction response."""
 
-    __slots__ = ('result_data', 'input_tokens', 'output_tokens', 'model')
+    __slots__ = ("result_data", "input_tokens", "output_tokens", "model")
 
     def __init__(
         self,
@@ -90,8 +90,8 @@ def extract_report_data(
     api_key = settings.ANTHROPIC_API_KEY
     if not api_key:
         raise ValueError(
-            'ANTHROPIC_API_KEY is not configured. '
-            'Add it to your .env file to enable AI features.'
+            "ANTHROPIC_API_KEY is not configured. "
+            "Add it to your .env file to enable AI features."
         )
 
     client = anthropic.Anthropic(api_key=api_key)
@@ -100,9 +100,9 @@ def extract_report_data(
     fields_json = json.dumps(
         [
             {
-                'name': f.get('name', ''),
-                'unit': f.get('unit', ''),
-                'ref_range': f.get('ref_range', f.get('ref_range_male', '')),
+                "name": f.get("name", ""),
+                "unit": f.get("unit", ""),
+                "ref_range": f.get("ref_range", f.get("ref_range_male", "")),
             }
             for f in template_fields
         ],
@@ -115,26 +115,26 @@ def extract_report_data(
     )
 
     # Encode image as base64
-    image_b64 = base64.standard_b64encode(image_bytes).decode('utf-8')
+    image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
 
     message = client.messages.create(
         model=model,
         max_tokens=MAX_TOKENS,
         messages=[
             {
-                'role': 'user',
-                'content': [
+                "role": "user",
+                "content": [
                     {
-                        'type': 'image',
-                        'source': {
-                            'type': 'base64',
-                            'media_type': mime_type,
-                            'data': image_b64,
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime_type,
+                            "data": image_b64,
                         },
                     },
                     {
-                        'type': 'text',
-                        'text': prompt_text,
+                        "type": "text",
+                        "text": prompt_text,
                     },
                 ],
             }
@@ -145,21 +145,21 @@ def extract_report_data(
     raw_text = message.content[0].text.strip()
 
     # Strip markdown code fences if present
-    if raw_text.startswith('```'):
-        lines = raw_text.split('\n')
+    if raw_text.startswith("```"):
+        lines = raw_text.split("\n")
         # Remove first and last lines (fences)
-        lines = [l for l in lines if not l.strip().startswith('```')]
-        raw_text = '\n'.join(lines).strip()
+        lines = [line for line in lines if not line.strip().startswith("```")]
+        raw_text = "\n".join(lines).strip()
 
     try:
         result_data = json.loads(raw_text)
     except json.JSONDecodeError as err:
         logger.error(
-            'Failed to parse AI response as JSON: %s',
+            "Failed to parse AI response as JSON: %s",
             raw_text[:200],
         )
         raise ValueError(
-            'AI returned an unparseable response. Please try again.'
+            "AI returned an unparseable response. Please try again."
         ) from err
 
     return ExtractionResult(
