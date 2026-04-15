@@ -261,12 +261,13 @@ class AppointmentBookedEmailTests(APITestCase):
     @patch("apps.appointments.views.send_email_async")
     def test_booking_sends_email(self, mock_send_email_async):
         self._auth(self.patient)
+        booking_date = timezone.localdate() + timedelta(days=1)
 
         response = self.client.post(
             "/api/appointments/appointments/book/",
             {
                 "doctor": self.doctor.id,
-                "date": "2026-04-01",
+                "date": booking_date.isoformat(),
                 "time": "10:00",
                 "symptoms": "Test symptoms",
             },

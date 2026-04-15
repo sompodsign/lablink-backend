@@ -114,6 +114,13 @@ def generate_monthly_invoices():
             sub.status = Subscription.Status.CANCELLED
             sub.cancelled_at = timezone.now()
             sub.save(update_fields=["status", "cancelled_at"])
+
+            # Cancel any pending invoices for this subscription
+            Invoice.objects.filter(
+                subscription=sub,
+                status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
+            ).update(status=Invoice.Status.CANCELLED)
+
             cancelled += 1
             logger.info(
                 "Cancelled subscription for %s (%s) at billing period end.",

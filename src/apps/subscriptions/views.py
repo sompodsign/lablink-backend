@@ -251,7 +251,8 @@ class CenterChangePlanView(APIView):
         old_plan = subscription.plan
 
         # Validations against constraints
-        if new_plan.max_staff != -1:
+        # Only check staff limits on upgrades, not downgrades
+        if new_plan.price > old_plan.price and new_plan.max_staff != -1:
             from core.tenants.models import Staff
 
             current_staff = Staff.objects.filter(center=tenant).count()
@@ -290,25 +291,39 @@ class CenterChangePlanView(APIView):
         invoice_id = None
 
         if is_upgrade_requiring_payment:
+            from decimal import ROUND_UP, Decimal
+
+            from django.utils import timezone as tz
+
             pending_invoices = Invoice.objects.filter(
                 subscription=subscription,
                 status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
             ).order_by("due_date")
 
+            # Calculate prorated amount based on remaining billing days
+            days_remaining = (subscription.billing_date - tz.now().date()).days
+            if days_remaining < 0:
+                days_remaining = 0
+            daily_diff = (new_plan.price - old_plan.price) / Decimal("30")
+            prorated_amount = (
+                (daily_diff * Decimal(days_remaining)).quantize(
+                    Decimal("0.01"), rounding=ROUND_UP
+                )
+                if days_remaining > 0
+                else Decimal("0.01")
+            )
+
             if pending_invoices.exists():
                 for inv in pending_invoices:
-                    inv.amount = new_plan.price
+                    inv.amount = prorated_amount
                     inv.target_plan = new_plan
                     inv.save(update_fields=["amount", "target_plan"])
                 require_payment = True
                 invoice_id = pending_invoices.first().id
             else:
-                from django.utils import timezone as tz
-
-                diff = new_plan.price - old_plan.price
                 new_inv = Invoice.objects.create(
                     subscription=subscription,
-                    amount=diff,
+                    amount=prorated_amount,
                     due_date=tz.now().date(),
                     status=Invoice.Status.PENDING,
                     target_plan=new_plan,

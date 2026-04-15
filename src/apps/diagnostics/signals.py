@@ -6,7 +6,8 @@ from django.dispatch import receiver
 from apps.notifications.sms import send_sms_async
 from core.tenants.models import DiagnosticCenter
 
-from .models import ReportTemplate, TestOrder, TestType
+from .models import TestOrder
+from .services.seeding import load_test_types_by_name, seed_center_defaults
 
 logger = logging.getLogger(__name__)
 
@@ -46,29 +47,17 @@ def test_order_created_notification(
 def create_report_templates_for_new_center(
     sender, instance: DiagnosticCenter, created: bool, **kwargs
 ) -> None:
-    """Auto-create report templates for every TestType when a new center is created."""
+    """Seed pricing and report templates for a newly created center."""
     if not created:
         return
 
-    # Import seed data lazily to avoid circular imports
-    from apps.diagnostics.template_fields import TEMPLATE_FIELDS
-
-    test_types = TestType.objects.all()
-    templates_to_create = []
-    for test_type in test_types:
-        fields = TEMPLATE_FIELDS.get(test_type.name)
-        if fields:
-            templates_to_create.append(
-                ReportTemplate(
-                    center=instance,
-                    test_type=test_type,
-                    fields=fields,
-                )
-            )
-    if templates_to_create:
-        ReportTemplate.objects.bulk_create(templates_to_create, ignore_conflicts=True)
-        logger.info(
-            "Created %d report templates for center %s",
-            len(templates_to_create),
-            instance.name,
-        )
+    summary = seed_center_defaults(
+        instance,
+        test_types=load_test_types_by_name(),
+        default_is_available=False,
+    )
+    logger.info(
+        "Seeded diagnostics defaults for center %s: %s",
+        instance.name,
+        summary,
+    )

@@ -78,29 +78,107 @@ class TestTypeViewSet(viewsets.ModelViewSet):
         tags=["Diagnostics"],
         summary="List center test pricing",
         description=(
-            "Returns test types with center-specific pricing. "
-            "Only shows tests available at the current center."
+            "Returns center-scoped diagnostic tests with pricing and availability "
+            "status. Staff and doctors can see enabled and disabled tests for the "
+            "current center."
         ),
     ),
     retrieve=extend_schema(
-        tags=["Diagnostics"], summary="Get center test pricing detail"
+        tags=["Diagnostics"],
+        summary="Get center test pricing detail",
+        description="Returns the current center's pricing and availability for one test.",
     ),
-    create=extend_schema(tags=["Diagnostics"], summary="Set center test pricing"),
-    update=extend_schema(tags=["Diagnostics"], summary="Update center test pricing"),
+    create=extend_schema(
+        tags=["Diagnostics"],
+        summary="Create center test pricing",
+        description=(
+            "Center admins create a pricing row for a test at the current center. "
+            "Seeded tests start disabled until an admin enables them."
+        ),
+        request=CenterTestPricingSerializer,
+        responses={201: CenterTestPricingSerializer},
+        examples=[
+            OpenApiExample(
+                "Create disabled test pricing",
+                value={
+                    "test_type": 3,
+                    "price": "650.00",
+                    "is_available": False,
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    update=extend_schema(
+        tags=["Diagnostics"],
+        summary="Update center test pricing",
+        description=(
+            "Center admins update price or availability for an existing "
+            "center-specific test."
+        ),
+        request=CenterTestPricingSerializer,
+        responses={200: CenterTestPricingSerializer},
+        examples=[
+            OpenApiExample(
+                "Enable a seeded test",
+                value={
+                    "test_type": 3,
+                    "price": "650.00",
+                    "is_available": True,
+                },
+                request_only=True,
+            ),
+        ],
+    ),
     partial_update=extend_schema(
-        tags=["Diagnostics"], summary="Partial update pricing"
+        tags=["Diagnostics"],
+        summary="Partial update pricing",
+        description=(
+            "Center admins can enable or disable a test without replacing the "
+            "entire pricing payload."
+        ),
+        request=CenterTestPricingSerializer,
+        responses={200: CenterTestPricingSerializer},
+        examples=[
+            OpenApiExample(
+                "Disable a test",
+                value={"is_available": False},
+                request_only=True,
+            ),
+        ],
     ),
-    destroy=extend_schema(tags=["Diagnostics"], summary="Remove test from center"),
+    destroy=extend_schema(
+        tags=["Diagnostics"],
+        summary="Remove test from center",
+        description=(
+            "Center admins remove a center-specific pricing row. This hides the "
+            "test from center workflows until pricing is recreated."
+        ),
+    ),
 )
 class CenterTestPricingViewSet(viewsets.ModelViewSet):
     serializer_class = CenterTestPricingSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         tenant = self.request.tenant
-        return CenterTestPricing.objects.filter(center=tenant).select_related(
-            "test_type"
+        return (
+            CenterTestPricing.objects.filter(center=tenant)
+            .select_related("test_type")
+            .order_by("test_type__name", "id")
         )
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            permission_classes = [
+                permissions.IsAuthenticated,
+                IsCenterStaffOrDoctor,
+            ]
+        else:
+            permission_classes = [
+                permissions.IsAuthenticated,
+                IsCenterAdmin,
+            ]
+        return [permission() for permission in permission_classes]
 
     def perform_create(self, serializer):
         serializer.save(center=self.request.tenant)

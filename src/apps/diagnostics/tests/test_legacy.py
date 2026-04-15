@@ -339,6 +339,7 @@ class DiagnosticSignalTests(TestCase):
         )
         self.appointment = make_appointment(self.patient, self.center)
         self.center.can_use_sms = True
+        self.center.use_sms = True
         self.center.sms_enabled = True
         self.center.save()
 

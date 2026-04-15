@@ -1,7 +1,7 @@
-"""Seed report templates and pricing for one, many, or all diagnostic centers.
+"""Seed diagnostics catalog data for one, many, or all diagnostic centers.
 
 Usage:
-    # All centers (skip those already seeded):
+    # All centers (create missing global tests, pricing, and templates):
     python manage.py seed_report_templates
 
     # Specific center by domain:
@@ -14,64 +14,82 @@ Usage:
     python manage.py seed_report_templates --force
 """
 
-import logging
-
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.diagnostics.models import CenterTestPricing, ReportTemplate, TestType
-from apps.diagnostics.template_fields import TEMPLATE_FIELDS
+from apps.diagnostics.services.seeding import seed_center_defaults, seed_test_types
 from core.tenants.models import DiagnosticCenter
-
-logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Seed default report templates and pricing for diagnostic centers."
+    help = (
+        "Seed global diagnostic test types plus center pricing and report "
+        "templates. Newly seeded pricing rows start disabled."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--domain",
             type=str,
-            help="Seed templates for a single center identified by its domain.",
+            help="Seed diagnostics defaults for a single center by domain.",
         )
         parser.add_argument(
             "--center-id",
             type=int,
-            help="Seed templates for a single center identified by its PK.",
+            help="Seed diagnostics defaults for a single center by primary key.",
         )
         parser.add_argument(
             "--force",
             action="store_true",
             default=False,
-            help="Overwrite existing templates (default: skip centers that already have templates).",
+            help=(
+                "Overwrite existing templates. Pricing rows remain create-missing only."
+            ),
         )
 
     def handle(self, *args, **options):
         centers = self._resolve_centers(options)
         force = options["force"]
+        test_type_summary = seed_test_types()
+        test_types = test_type_summary["test_types"]
 
         total_tmpl_created = 0
+        total_tmpl_updated = 0
         total_tmpl_skipped = 0
         total_price_created = 0
         total_price_skipped = 0
 
-        test_types = {tt.name: tt for tt in TestType.objects.all()}
-
         for center in centers:
-            t_created, t_skipped = self._seed_templates(
+            center_summary = seed_center_defaults(
                 center,
-                test_types,
-                force,
+                test_types=test_types,
+                force_templates=force,
+                default_is_available=False,
             )
-            p_created, p_skipped = self._seed_pricing(center, test_types)
-            total_tmpl_created += t_created
-            total_tmpl_skipped += t_skipped
-            total_price_created += p_created
-            total_price_skipped += p_skipped
+            template_summary = center_summary["templates"]
+            pricing_summary = center_summary["pricing"]
+            total_tmpl_created += template_summary["created"]
+            total_tmpl_updated += template_summary["updated"]
+            total_tmpl_skipped += template_summary["skipped"]
+            total_price_created += pricing_summary["created"]
+            total_price_skipped += pricing_summary["skipped"]
+            self.stdout.write(
+                f"  {center.name}: templates — "
+                f"{template_summary['created']} created, "
+                f"{template_summary['updated']} updated, "
+                f"{template_summary['skipped']} skipped"
+            )
+            self.stdout.write(
+                f"  {center.name}: pricing  — "
+                f"{pricing_summary['created']} created, "
+                f"{pricing_summary['skipped']} skipped"
+            )
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Done — templates: {total_tmpl_created} created, "
+                f"Done — test types: {test_type_summary['created']} created, "
+                f"{test_type_summary['skipped']} skipped | "
+                f"templates: {total_tmpl_created} created, "
+                f"{total_tmpl_updated} updated, "
                 f"{total_tmpl_skipped} skipped | "
                 f"pricing: {total_price_created} created, "
                 f"{total_price_skipped} skipped."
@@ -99,89 +117,3 @@ class Command(BaseCommand):
                 raise CommandError(f"No center found with ID {center_id}.") from None
 
         return DiagnosticCenter.objects.all()
-
-    # ── Templates ──────────────────────────────────────────────
-    def _seed_templates(self, center, test_types, force):
-        created = 0
-        skipped = 0
-
-        existing = set(
-            ReportTemplate.objects.filter(center=center).values_list(
-                "test_type_id",
-                flat=True,
-            )
-        )
-
-        templates_to_create = []
-        templates_to_update = []
-
-        for test_name, fields in TEMPLATE_FIELDS.items():
-            tt = test_types.get(test_name)
-            if tt is None:
-                continue
-
-            if tt.id in existing:
-                if force:
-                    templates_to_update.append((tt, fields))
-                else:
-                    skipped += 1
-                continue
-
-            templates_to_create.append(
-                ReportTemplate(center=center, test_type=tt, fields=fields)
-            )
-
-        if templates_to_create:
-            ReportTemplate.objects.bulk_create(
-                templates_to_create,
-                ignore_conflicts=True,
-            )
-            created = len(templates_to_create)
-
-        if templates_to_update:
-            for tt, fields in templates_to_update:
-                ReportTemplate.objects.filter(
-                    center=center,
-                    test_type=tt,
-                ).update(fields=fields)
-                created += 1
-
-        self.stdout.write(
-            f"  {center.name}: templates — {created} created, {skipped} skipped"
-        )
-        return created, skipped
-
-    # ── Pricing ────────────────────────────────────────────────
-    def _seed_pricing(self, center, test_types):
-        existing = set(
-            CenterTestPricing.objects.filter(center=center).values_list(
-                "test_type_id",
-                flat=True,
-            )
-        )
-
-        to_create = []
-        for tt in test_types.values():
-            if tt.id in existing:
-                continue
-            to_create.append(
-                CenterTestPricing(
-                    center=center,
-                    test_type=tt,
-                    price=tt.base_price,
-                    is_available=True,
-                )
-            )
-
-        if to_create:
-            CenterTestPricing.objects.bulk_create(
-                to_create,
-                ignore_conflicts=True,
-            )
-
-        created = len(to_create)
-        skipped = len(existing)
-        self.stdout.write(
-            f"  {center.name}: pricing  — {created} created, {skipped} skipped"
-        )
-        return created, skipped

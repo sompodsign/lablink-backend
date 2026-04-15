@@ -9,6 +9,7 @@ from apps.diagnostics.models import CenterTestPricing
 from helpers.test_factories import (
     jwt_auth_header,
     make_center,
+    make_doctor,
     make_pricing,
     make_staff,
     make_test_type,
@@ -25,6 +26,12 @@ class CenterTestPricingViewSetTest(TestCase):
         self.admin = make_user("admin1")
         make_staff(self.admin, self.center, role="Admin")
         self.auth = jwt_auth_header(self.admin)
+        self.receptionist = make_user("reception1")
+        make_staff(self.receptionist, self.center, role="Receptionist")
+        self.reception_auth = jwt_auth_header(self.receptionist)
+        self.doctor = make_user("doctor1")
+        make_doctor(self.doctor, self.center)
+        self.doctor_auth = jwt_auth_header(self.doctor)
         self.tt = make_test_type("CBC", "500.00")
 
     def test_create_auto_sets_center_from_tenant(self):
@@ -66,6 +73,14 @@ class CenterTestPricingViewSetTest(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["test_type"], self.tt.id)
 
+    def test_doctor_can_list_center_pricing(self):
+        """Doctors retain read access to center pricing for ordering workflows."""
+        make_pricing(self.center, self.tt, "500.00")
+
+        resp = self.client.get("/api/diagnostics/pricing/", **self.doctor_auth)
+
+        self.assertEqual(resp.status_code, 200)
+
     def test_update_price(self):
         """PATCH should update price."""
         pricing = make_pricing(self.center, self.tt, "500.00")
@@ -88,6 +103,32 @@ class CenterTestPricingViewSetTest(TestCase):
         )
         self.assertEqual(resp.status_code, 204)
         self.assertFalse(CenterTestPricing.objects.filter(id=pricing.id).exists())
+
+    def test_non_admin_cannot_create_pricing(self):
+        """Receptionists can view pricing but cannot create it."""
+        resp = self.client.post(
+            "/api/diagnostics/pricing/",
+            {"test_type": self.tt.id, "price": "300.00"},
+            format="json",
+            **self.reception_auth,
+        )
+
+        self.assertEqual(resp.status_code, 403)
+
+    def test_non_admin_cannot_toggle_availability(self):
+        """Only center admins can enable or disable a test."""
+        pricing = make_pricing(self.center, self.tt, "500.00", is_available=False)
+
+        resp = self.client.patch(
+            f"/api/diagnostics/pricing/{pricing.id}/",
+            {"is_available": True},
+            format="json",
+            **self.reception_auth,
+        )
+
+        self.assertEqual(resp.status_code, 403)
+        pricing.refresh_from_db()
+        self.assertFalse(pricing.is_available)
 
     def test_unauthenticated_cannot_create(self):
         """Anonymous users cannot create pricing."""

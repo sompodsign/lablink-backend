@@ -1,22 +1,17 @@
-import logging
-
 from django.core.management import CommandError, call_command
 from django.test import TestCase
 
-from apps.diagnostics.models import ReportTemplate, TestType
+from apps.diagnostics.models import CenterTestPricing, ReportTemplate, TestType
 from apps.diagnostics.template_fields import TEMPLATE_FIELDS
 from helpers.test_factories import make_center, make_test_type
-
-logger = logging.getLogger(__name__)
 
 
 class SeedReportTemplatesCommandTests(TestCase):
     """Tests for the seed_report_templates management command."""
 
     def setUp(self):
-        # Create a center without triggering the signal
-        # (signal only fires on `created=True` which it will, but we
-        # delete the auto-created templates to start clean)
+        # `make_center()` clears seeded pricing for test isolation.
+        # We remove templates here so the command starts from a clean state.
         self.center = make_center()
         ReportTemplate.objects.filter(center=self.center).delete()
 
@@ -25,6 +20,45 @@ class SeedReportTemplatesCommandTests(TestCase):
         call_command("seed_report_templates")
         count = ReportTemplate.objects.filter(center=self.center).count()
         self.assertGreater(count, 0)
+
+    def test_seeds_pricing_disabled_by_default(self):
+        """Seeded pricing rows start disabled until the center enables them."""
+        call_command("seed_report_templates")
+        pricing = CenterTestPricing.objects.filter(center=self.center)
+        self.assertTrue(pricing.exists())
+        self.assertFalse(pricing.filter(is_available=True).exists())
+
+    def test_seeds_extracted_imaging_test_types(self):
+        """Command seeds imaging tests extracted from the latest tariff list."""
+        call_command("seed_report_templates")
+
+        expected_names = [
+            "CT Urogram",
+            "USG of TVS",
+            "USG of Parathyroid",
+            "Endoscopy Upper GIT",
+            "ECG (12CH)",
+            "X-Ray KUB",
+        ]
+        for name in expected_names:
+            with self.subTest(test_type=name):
+                self.assertTrue(TestType.objects.filter(name=name).exists())
+
+    def test_seeds_extracted_lab_test_types_from_second_board(self):
+        """Command seeds additional lab tests extracted from the second tariff list."""
+        call_command("seed_report_templates")
+
+        expected_names = [
+            "Hb Electrophoresis",
+            "PCV (Packed Cell Volume)",
+            "ADA (Adenosine Deaminase)",
+            "TPHA (Treponema pallidum Hemagglutination Assay)",
+            "H. pylori (ICT)",
+            "Crossmatching",
+        ]
+        for name in expected_names:
+            with self.subTest(test_type=name):
+                self.assertTrue(TestType.objects.filter(name=name).exists())
 
     def test_skips_already_seeded_centers(self):
         """Without --force, existing templates are not overwritten."""
@@ -102,8 +136,8 @@ class SeedReportTemplatesCommandTests(TestCase):
 class CreateReportTemplatesSignalTests(TestCase):
     """Test that the post_save signal auto-creates templates for new centers."""
 
-    def test_new_center_gets_templates(self):
-        """Creating a new center auto-creates report templates via signal."""
+    def test_new_center_gets_templates_and_disabled_pricing(self):
+        """Creating a new center auto-creates templates and disabled pricing."""
         # Create test types whose names match entries in TEMPLATE_FIELDS
         sample_names = list(TEMPLATE_FIELDS.keys())[:3]
         for name in sample_names:
@@ -128,3 +162,6 @@ class CreateReportTemplatesSignalTests(TestCase):
 
         templates = ReportTemplate.objects.filter(center=center).count()
         self.assertEqual(templates, matching)
+        pricing = CenterTestPricing.objects.filter(center=center)
+        self.assertEqual(pricing.count(), matching)
+        self.assertFalse(pricing.filter(is_available=True).exists())

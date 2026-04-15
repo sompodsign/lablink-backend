@@ -62,13 +62,15 @@ def make_subscription(center, status="ACTIVE", plan=None):
     )
 
 
-def make_center(name="Center A", domain="center-a", **kwargs):
+def make_center(name="Center A", domain="center-a", seed_pricing=False, **kwargs):
     defaults = {
         "address": "123 Test St",
         "contact_number": "01700000001",
     }
     defaults.update(kwargs)
     center = DiagnosticCenter.objects.create(name=name, domain=domain, **defaults)
+    if not seed_pricing:
+        CenterTestPricing.objects.filter(center=center).delete()
     make_subscription(center)
     return center
 
