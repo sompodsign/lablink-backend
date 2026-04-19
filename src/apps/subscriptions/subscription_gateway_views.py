@@ -6,7 +6,7 @@ UddoktaPay gateway views for subscription invoices.
 """
 
 import logging
-from decimal import Decimal
+from decimal import ROUND_UP, Decimal
 from urllib.parse import urlparse, urlunparse
 
 from django.conf import settings
@@ -117,7 +117,7 @@ class SubscriptionInitiateChargeView(APIView):
             # Preserve original amount before deducting credit
             if invoice.original_amount is None:
                 invoice.original_amount = invoice_amount
-            invoice.amount = (invoice_amount - credit_to_apply).quantize(Decimal("0.01"))
+            invoice.amount = (invoice_amount - credit_to_apply).quantize(Decimal("1"), rounding=ROUND_UP)
             invoice.credit_applied = credit_to_apply
             invoice.save(update_fields=["original_amount", "amount", "credit_applied"])
             center.credit_balance = credit_balance - credit_to_apply

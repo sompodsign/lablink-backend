@@ -114,6 +114,7 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
             "trial_days",
             "max_staff",
             "max_reports",
+            "monthly_ai_credits",
             "features",
             "display_order",
         ]
@@ -153,7 +154,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     current_report_count = serializers.SerializerMethodField()
     has_used_trial = serializers.BooleanField(read_only=True)
     credit_balance = serializers.DecimalField(
-        source="center.credit_balance", max_digits=10, decimal_places=2, read_only=True
+        source="center.credit_balance", max_digits=10, decimal_places=0, read_only=True
     )
 
     class Meta:
@@ -208,7 +209,7 @@ class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
     center_domain = serializers.CharField(source="center.domain", read_only=True)
     plan_name = serializers.CharField(source="plan.name", read_only=True)
     credit_balance = serializers.DecimalField(
-        source="center.credit_balance", max_digits=10, decimal_places=2, read_only=True
+        source="center.credit_balance", max_digits=10, decimal_places=0, read_only=True
     )
 
     class Meta:
@@ -455,38 +456,45 @@ class CenterRegistrationSerializer(serializers.Serializer):
 
             # 8. Create subscription
             now = timezone.now()
-            is_trial = validated_data["plan_slug"] == "trial"
+            is_free_trial_plan = validated_data["plan_slug"] == "trial"
+            is_paid_plan = plan.price > 0
 
-            subscription = Subscription.objects.create(
-                center=center,
-                plan=plan,
-                status=Subscription.Status.TRIAL
-                if is_trial
-                else Subscription.Status.INACTIVE,
-                trial_start=now if is_trial else None,
-                trial_end=(
-                    now + timezone.timedelta(days=plan.trial_days) if is_trial else None
-                ),
-                billing_date=(
-                    (now + timezone.timedelta(days=plan.trial_days)).date()
-                    if is_trial
-                    else date.today()
-                ),
-            )
-
-            # Mark center as having used trial (once a center has an account,
-            # they no longer qualify for free trial even if they chose a paid plan)
-            center.has_used_trial = True
-            center.save(update_fields=["has_used_trial"])
-
-            # 9. Create first invoice for paid plans
-            if not is_trial:
+            if is_free_trial_plan:
+                subscription = Subscription.objects.create(
+                    center=center,
+                    plan=plan,
+                    status=Subscription.Status.TRIAL,
+                    trial_start=now,
+                    trial_end=now + timezone.timedelta(days=plan.trial_days),
+                    billing_date=(now + timezone.timedelta(days=plan.trial_days)).date(),
+                )
+            elif is_paid_plan and not center.has_used_trial:
+                subscription = Subscription.objects.create(
+                    center=center,
+                    plan=plan,
+                    status=Subscription.Status.TRIAL,
+                    trial_start=now,
+                    trial_end=now + timezone.timedelta(days=plan.trial_days),
+                    billing_date=(now + timezone.timedelta(days=plan.trial_days)).date(),
+                )
+            else:
+                subscription = Subscription.objects.create(
+                    center=center,
+                    plan=plan,
+                    status=Subscription.Status.INACTIVE,
+                    trial_start=None,
+                    trial_end=None,
+                    billing_date=date.today(),
+                )
                 Invoice.objects.create(
                     subscription=subscription,
                     amount=plan.price,
                     status=Invoice.Status.PENDING,
                     due_date=date.today(),
                 )
+
+            center.has_used_trial = True
+            center.save(update_fields=["has_used_trial"])
 
         logger.info(
             "Center registered: %s (domain=%s, plan=%s)",

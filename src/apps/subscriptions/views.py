@@ -1,6 +1,8 @@
 import contextlib
 import logging
 
+from decimal import Decimal, ROUND_UP
+
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -43,7 +45,14 @@ class PublicPlanListView(APIView):
     def get(self, request):
         plans = SubscriptionPlan.objects.filter(is_active=True)
         serializer = SubscriptionPlanSerializer(plans, many=True)
-        return Response(serializer.data)
+        has_used_trial = False
+        center = getattr(request, 'tenant', None)
+        if center:
+            has_used_trial = getattr(center, 'has_used_trial', False)
+        return Response({
+            'plans': serializer.data,
+            'trial_available': not has_used_trial,
+        })
 
 
 class PaymentInfoListView(APIView):
@@ -155,8 +164,6 @@ class CenterSubscriptionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from django.utils import timezone
-
         subscription = Subscription.objects.create(
             center=tenant,
             plan=plan,
@@ -173,6 +180,71 @@ class CenterSubscriptionView(APIView):
 
         return Response(
             SubscriptionSerializer(subscription).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CenterActivateTrialView(APIView):
+    """Center admin: pay during trial to activate subscription early."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    def post(self, request):
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            sub = Subscription.objects.select_related("plan", "center").get(
+                center=tenant,
+            )
+        except Subscription.DoesNotExist:
+            return Response(
+                {"detail": "No subscription found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if sub.status != Subscription.Status.TRIAL:
+            return Response(
+                {"detail": "Subscription is not in trial."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if sub.plan.price <= 0:
+            return Response(
+                {"detail": "Trial is on a free plan — no payment needed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing_paid = Invoice.objects.filter(
+            subscription=sub,
+            status=Invoice.Status.PAID,
+        ).exists()
+        if existing_paid:
+            return Response(
+                {"detail": "Already paid during trial."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        invoice = Invoice.objects.create(
+            subscription=sub,
+            amount=sub.plan.price,
+            status=Invoice.Status.PENDING,
+            due_date=sub.trial_end.date() if sub.trial_end else timezone.localdate(),
+            notes="Pre-payment during trial period",
+        )
+
+        invalidate_subscription_status(tenant.id)
+
+        from .serializers import InvoiceSerializer
+        return Response(
+            {
+                "detail": "Invoice created. Complete payment to activate after trial.",
+                "invoice": InvoiceSerializer(invoice).data,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -272,7 +344,10 @@ class CenterAvailablePlansView(APIView):
         if ever_had_subscription:
             plans = plans.exclude(slug="trial")
         serializer = SubscriptionPlanSerializer(plans, many=True)
-        return Response(serializer.data)
+        return Response({
+            'plans': serializer.data,
+            'trial_available': not request.tenant.has_used_trial,
+        })
 
 
 class CenterChangePlanView(APIView):
@@ -308,30 +383,65 @@ class CenterChangePlanView(APIView):
                 center=tenant
             )
         except Subscription.DoesNotExist:
-            from django.utils import timezone
+
+            now = timezone.now()
 
             if new_plan.price == 0:
                 subscription = Subscription.objects.create(
                     center=tenant,
                     plan=new_plan,
                     status=Subscription.Status.TRIAL,
-                    trial_start=timezone.now().date(),
-                    trial_end=timezone.now().date() + __import__("datetime").timedelta(days=14),
+                    trial_start=now,
+                    trial_end=now + timezone.timedelta(days=new_plan.trial_days),
+                    billing_date=(now + timezone.timedelta(days=new_plan.trial_days)).date(),
+                )
+                tenant.has_used_trial = True
+                tenant.save(update_fields=["has_used_trial"])
+                invalidate_subscription_status(tenant.id)
+                return Response(
+                    {
+                        "detail": f"Successfully subscribed to {new_plan.name}.",
+                        "require_payment": False,
+                        "invoice_id": None,
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
+            elif not tenant.has_used_trial:
+                subscription = Subscription.objects.create(
+                    center=tenant,
+                    plan=new_plan,
+                    status=Subscription.Status.TRIAL,
+                    trial_start=now,
+                    trial_end=now + timezone.timedelta(days=new_plan.trial_days),
+                    billing_date=(now + timezone.timedelta(days=new_plan.trial_days)).date(),
+                )
+                tenant.has_used_trial = True
+                tenant.save(update_fields=["has_used_trial"])
+                invalidate_subscription_status(tenant.id)
+                logger.info(
+                    "Trial-first subscription created for center %s: plan=%s",
+                    tenant.name,
+                    new_plan.name,
+                )
+                return Response(
+                    {
+                        "detail": f"Trial started for {new_plan.name}. No payment required until trial ends.",
+                        "require_payment": False,
+                        "invoice_id": None,
+                    },
+                    status=status.HTTP_201_CREATED,
                 )
             else:
-                from decimal import ROUND_UP, Decimal
-                from django.utils import timezone as tz
-
                 subscription = Subscription.objects.create(
                     center=tenant,
                     plan=new_plan,
                     status=Subscription.Status.INACTIVE,
-                    billing_date=tz.now().date() + __import__("datetime").timedelta(days=30),
+                    billing_date=now.date() + timezone.timedelta(days=30),
                 )
                 new_inv = Invoice.objects.create(
                     subscription=subscription,
                     amount=new_plan.price,
-                    due_date=tz.now().date(),
+                    due_date=now.date(),
                     status=Invoice.Status.PENDING,
                 )
                 require_payment = True
@@ -368,11 +478,9 @@ class CenterChangePlanView(APIView):
                 )
 
         if new_plan.max_reports != -1:
-            from django.utils import timezone as tz
-
             from apps.diagnostics.models import Report
 
-            now = tz.now()
+            now = timezone.now()
             current_reports = Report.objects.filter(
                 test_order__center=tenant,
                 created_at__year=now.year,
@@ -393,35 +501,108 @@ class CenterChangePlanView(APIView):
         require_payment = False
         invoice_id = None
 
-        if is_upgrade_requiring_payment:
-            from decimal import ROUND_UP, Decimal
+        is_upgrade_requiring_payment = new_plan.price > old_plan.price
+        is_trial = subscription.status == Subscription.Status.TRIAL
 
-            from django.utils import timezone as tz
+        require_payment = False
+        invoice_id = None
 
+        if is_upgrade_requiring_payment and is_trial:
+            # During trial, upgrade doesn't require payment IF this is the first paid plan
+            # (i.e., no PENDING/PAID invoices exist). Otherwise, create prorated invoice.
+            has_existing_invoice = Invoice.objects.filter(
+                subscription=subscription,
+                status__in=[Invoice.Status.PENDING, Invoice.Status.PAID],
+            ).exists()
+
+            subscription.plan = new_plan
+            subscription.trial_end = timezone.now() + timezone.timedelta(days=new_plan.trial_days)
+            subscription.billing_date = subscription.trial_end.date()
+
+            if has_existing_invoice:
+                # User already has a pending invoice — cancel it and create new prorated invoice for upgrade
+                pending_invoices = Invoice.objects.filter(
+                    subscription=subscription,
+                    status=Invoice.Status.PENDING,
+                )
+                for old_inv in pending_invoices:
+                    old_inv.status = Invoice.Status.CANCELLED
+                    old_inv.save(update_fields=["status"])
+
+                days_remaining = (subscription.billing_date - timezone.now().date()).days
+                if days_remaining < 0:
+                    days_remaining = 0
+                price_diff = (new_plan.price - old_plan.price).quantize(Decimal("1"), rounding=ROUND_UP)
+                if days_remaining > 0:
+                    daily_diff = price_diff / Decimal("30")
+                    prorated_amount = (daily_diff * Decimal(str(days_remaining))).quantize(Decimal("1"), rounding=ROUND_UP)
+                    prorated_amount = max(prorated_amount, Decimal("1"))
+                else:
+                    prorated_amount = max(price_diff, Decimal("1"))
+
+                new_inv = Invoice.objects.create(
+                    subscription=subscription,
+                    amount=prorated_amount,
+                    due_date=timezone.now().date(),
+                    status=Invoice.Status.PENDING,
+                    target_plan=new_plan,
+                )
+                subscription.save(update_fields=["plan", "trial_end", "billing_date"])
+                logger.info(
+                    "Trial plan upgraded for center %s: plan=%s -> %s (existing invoice cancelled, new invoice #%s)",
+                    tenant.name,
+                    old_plan.name,
+                    new_plan.name,
+                    new_inv.id,
+                )
+                return Response(
+                    {
+                        "detail": f"Plan upgraded to {new_plan.name}. Invoice #{new_inv.id} created for ৳{prorated_amount}.",
+                        "require_payment": True,
+                        "invoice_id": new_inv.id,
+                    }
+                )
+            else:
+                # First paid plan during trial — no invoice needed yet
+                subscription.save(update_fields=["plan", "trial_end", "billing_date"])
+                logger.info(
+                    "Trial plan upgraded for center %s: plan=%s -> %s (trial extended, no invoice)",
+                    tenant.name,
+                    old_plan.name,
+                    new_plan.name,
+                )
+                return Response(
+                    {
+                        "detail": f"Plan upgraded to {new_plan.name}. Trial extended.",
+                        "require_payment": False,
+                        "invoice_id": None,
+                    }
+                )
+        elif is_upgrade_requiring_payment:
             pending_invoices = Invoice.objects.filter(
                 subscription=subscription,
                 status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
             ).order_by("due_date")
 
             # Calculate prorated amount based on remaining billing days
-            days_remaining = (subscription.billing_date - tz.now().date()).days
+            days_remaining = (subscription.billing_date - timezone.now().date()).days
             if days_remaining < 0:
                 days_remaining = 0
-            price_diff = (new_plan.price - old_plan.price).quantize(Decimal("0.01"))
+            price_diff = (new_plan.price - old_plan.price).quantize(Decimal("1"), rounding=ROUND_UP)
             if days_remaining > 0:
                 daily_diff = price_diff / Decimal("30")
                 prorated_amount = (
                     (daily_diff * Decimal(days_remaining)).quantize(
-                        Decimal("0.01"), rounding=ROUND_UP
+                        Decimal("1"), rounding=ROUND_UP
                     )
                 )
-                prorated_amount = max(prorated_amount, Decimal("0.01"))
+                prorated_amount = max(prorated_amount, Decimal("1"))
             else:
-                prorated_amount = max(price_diff, Decimal("0.01"))
+                prorated_amount = max(price_diff, Decimal("1"))
 
             if pending_invoices.exists():
                 for inv in pending_invoices:
-                    inv.amount = prorated_amount.quantize(Decimal("0.01"))
+                    inv.amount = prorated_amount.quantize(Decimal("1"), rounding=ROUND_UP)
                     inv.target_plan = new_plan
                     inv.save(update_fields=["amount", "target_plan"])
                 require_payment = True
@@ -429,8 +610,8 @@ class CenterChangePlanView(APIView):
             else:
                 new_inv = Invoice.objects.create(
                     subscription=subscription,
-                    amount=prorated_amount.quantize(Decimal("0.01")),
-                    due_date=tz.now().date(),
+                    amount=prorated_amount.quantize(Decimal("1"), rounding=ROUND_UP),
+                    due_date=timezone.now().date(),
                     status=Invoice.Status.PENDING,
                     target_plan=new_plan,
                 )
@@ -445,20 +626,19 @@ class CenterChangePlanView(APIView):
                 }
             )
         else:
-            # Downgrades, same-price transitions, or free trials take immediate effect
-            from decimal import Decimal
-
-            credit_amount = (old_plan.price - new_plan.price).quantize(Decimal("0.01"))
-            if credit_amount > 0:
-                tenant.credit_balance = (tenant.credit_balance or Decimal("0.00")) + credit_amount
-                tenant.save(update_fields=["credit_balance"])
-                logger.info(
-                    "Downgrade credit: added %s to center %s (plan: %s -> %s)",
-                    credit_amount,
-                    tenant.name,
-                    old_plan.name,
-                    new_plan.name,
-                )
+            # Downgrade: only add credit if subscription is NOT in TRIAL status
+            if subscription.status != Subscription.Status.TRIAL:
+                credit_amount = (old_plan.price - new_plan.price).quantize(Decimal("1"), rounding=ROUND_UP)
+                if credit_amount > 0:
+                    tenant.credit_balance = (tenant.credit_balance or Decimal("0")) + credit_amount
+                    tenant.save(update_fields=["credit_balance"])
+                    logger.info(
+                        "Downgrade credit: added %s to center %s (plan: %s -> %s)",
+                        credit_amount,
+                        tenant.name,
+                        old_plan.name,
+                        new_plan.name,
+                    )
 
             subscription.plan = new_plan
             if subscription.cancel_at_period_end:
@@ -480,7 +660,7 @@ class CenterChangePlanView(APIView):
                 status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
             ).order_by("due_date")
             for inv in pending_invoices:
-                inv.amount = new_plan.price.quantize(Decimal("0.01"))
+                inv.amount = new_plan.price.quantize(Decimal("1"), rounding=ROUND_UP)
                 inv.target_plan = None
                 inv.save(update_fields=["amount", "target_plan"])
 
@@ -600,11 +780,9 @@ class SubscriptionStatusView(APIView):
         with contextlib.suppress(Exception):
             max_reports = sub.plan.max_reports
 
-        from django.utils import timezone as tz
-
         from apps.diagnostics.models import Report
 
-        now = tz.now()
+        now = timezone.now()
         current_report_count = Report.objects.filter(
             test_order__center=tenant,
             created_at__year=now.year,
@@ -612,6 +790,16 @@ class SubscriptionStatusView(APIView):
             is_deleted=False,
         ).count()
         report_limit_reached = max_reports != -1 and current_report_count >= max_reports
+
+        is_trial_on_paid_plan = False
+        trial_end_date = None
+        plan_price = None
+        with contextlib.suppress(Exception):
+            is_trial_on_paid_plan = (
+                sub.status == Subscription.Status.TRIAL and sub.plan.price > 0
+            )
+            trial_end_date = sub.trial_end.isoformat() if sub.trial_end else None
+            plan_price = str(sub.plan.price.quantize(Decimal("1")))
 
         return Response(
             {
@@ -627,6 +815,9 @@ class SubscriptionStatusView(APIView):
                 "max_reports": max_reports,
                 "current_report_count": current_report_count,
                 "report_limit_reached": report_limit_reached,
+                "is_trial_on_paid_plan": is_trial_on_paid_plan,
+                "trial_end_date": trial_end_date,
+                "plan_price": plan_price,
             }
         )
 
@@ -831,7 +1022,7 @@ class SuperadminSubscriptionListView(APIView):
                     "center_domain": sub.center.domain,
                     "plan_id": sub.plan.id,
                     "plan_name": sub.plan.name,
-                    "plan_price": str(sub.plan.price),
+                    "plan_price": str(sub.plan.price.quantize(Decimal("1"))),
                     "status": sub.status,
                     "trial_start": (
                         sub.trial_start.isoformat() if sub.trial_start else None
@@ -1251,11 +1442,9 @@ class SuperadminChangePlanView(APIView):
         from django.core.cache import cache
 
         old_plan_name = sub.plan.name
-        from decimal import Decimal
-
-        credit_amount = (sub.plan.price - new_plan.price).quantize(Decimal("0.01"))
+        credit_amount = (sub.plan.price - new_plan.price).quantize(Decimal("1"), rounding=ROUND_UP)
         if credit_amount > 0:
-            sub.center.credit_balance = (sub.center.credit_balance or Decimal("0.00")) + credit_amount
+            sub.center.credit_balance = (sub.center.credit_balance or Decimal("0")) + credit_amount
             sub.center.save(update_fields=["credit_balance"])
             logger.info(
                 "Downgrade credit: added %s to center %s (plan: %s -> %s) by superadmin %s",

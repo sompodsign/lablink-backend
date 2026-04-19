@@ -177,8 +177,12 @@ def apply_successful_invoice_payment(
         subscription.plan = invoice.target_plan
         update_fields.append("plan")
 
-    subscription.status = Subscription.Status.ACTIVE
-    subscription.billing_date = _get_next_billing_date(subscription, previous_status)
+    if previous_status == Subscription.Status.TRIAL:
+        subscription.status = Subscription.Status.TRIAL
+        subscription.billing_date = _get_next_billing_date(subscription, previous_status)
+    else:
+        subscription.status = Subscription.Status.ACTIVE
+        subscription.billing_date = _get_next_billing_date(subscription, previous_status)
 
     if subscription.cancelled_at is not None:
         subscription.cancelled_at = None

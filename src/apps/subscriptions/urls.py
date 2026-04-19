@@ -7,6 +7,7 @@ from .subscription_gateway_views import (
     SubscriptionVerifyPaymentView as GatewayVerifyView,
 )
 from .views import (
+    CenterActivateTrialView,
     CenterAvailablePlansView,
     CenterCancelSubscriptionView,
     CenterChangePlanView,
@@ -62,6 +63,11 @@ center_patterns = [
         "my-subscription/change-plan/",
         CenterChangePlanView.as_view(),
         name="center-change-plan",
+    ),
+    path(
+        "activate-trial/",
+        CenterActivateTrialView.as_view(),
+        name="center-activate-trial",
     ),
     path(
         "my-subscription/cancel/",

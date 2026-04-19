@@ -31,28 +31,60 @@ def _get_center_admin_email(center):
 @shared_task(name="subscriptions.check_trial_expirations")
 def check_trial_expirations():
     """Daily task: expire trial subscriptions past their trial_end date."""
-    from .models import Subscription
+    from .models import Invoice, Subscription
 
     now = timezone.now()
     expiring = Subscription.objects.filter(
         status=Subscription.Status.TRIAL,
         trial_end__lt=now,
-    ).select_related("center")
+    ).select_related("center", "plan")
 
     count = 0
     for sub in expiring:
-        sub.status = Subscription.Status.EXPIRED
-        sub.save(update_fields=["status"])
-        invalidate_subscription_status(sub.center_id)
-        count += 1
+        is_paid_plan = sub.plan.price > 0
 
-        admin_email = _get_center_admin_email(sub.center)
-        if admin_email:
-            send_email(
-                EmailType.TRIAL_EXPIRED,
-                recipient=admin_email,
-                context={"center_name": sub.center.name},
-            )
+        if is_paid_plan:
+            has_paid_invoice = Invoice.objects.filter(
+                subscription=sub,
+                status=Invoice.Status.PAID,
+            ).exists()
+            if has_paid_invoice:
+                sub.status = Subscription.Status.ACTIVE
+                sub.save(update_fields=["status"])
+                invalidate_subscription_status(sub.center_id)
+                logger.info(
+                    "Trial expired for paid plan — has paid invoice, activating %s",
+                    sub.center.name,
+                )
+            else:
+                sub.status = Subscription.Status.ACTIVE
+                sub.save(update_fields=["status"])
+
+                Invoice.objects.create(
+                    subscription=sub,
+                    amount=sub.plan.price,
+                    status=Invoice.Status.PENDING,
+                    due_date=now.date(),
+                )
+                invalidate_subscription_status(sub.center_id)
+                logger.info(
+                    "Trial expired for paid plan — activated and created invoice for %s",
+                    sub.center.name,
+                )
+        else:
+            sub.status = Subscription.Status.EXPIRED
+            sub.save(update_fields=["status"])
+            invalidate_subscription_status(sub.center_id)
+
+            admin_email = _get_center_admin_email(sub.center)
+            if admin_email:
+                send_email(
+                    EmailType.TRIAL_EXPIRED,
+                    recipient=admin_email,
+                    context={"center_name": sub.center.name},
+                )
+
+        count += 1
 
     logger.info("Expired %d trial subscriptions.", count)
     return count
