@@ -26,6 +26,7 @@ from .serializers import (
     SubscriptionSerializer,
     SuperadminSubscriptionSerializer,
 )
+from .services import invalidate_subscription_status
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class CenterRegistrationView(APIView):
 
 
 class CenterSubscriptionView(APIView):
-    """Center admin: view own subscription details."""
+    """Center admin: view own subscription details, or create first subscription."""
 
     permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
 
@@ -124,6 +125,56 @@ class CenterSubscriptionView(APIView):
 
         serializer = SubscriptionSerializer(subscription)
         return Response(serializer.data)
+
+    def post(self, request):
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center context."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if Subscription.objects.filter(center=tenant).exists():
+            return Response(
+                {"detail": "Subscription already exists. Use change-plan to modify."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        plan_id = request.data.get("plan_id")
+        if not plan_id:
+            return Response(
+                {"detail": "plan_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id, is_active=True)
+        except SubscriptionPlan.DoesNotExist:
+            return Response(
+                {"detail": "Invalid or inactive plan selected."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from django.utils import timezone
+
+        subscription = Subscription.objects.create(
+            center=tenant,
+            plan=plan,
+            status=Subscription.Status.TRIAL,
+            trial_start=timezone.now().date(),
+            trial_end=timezone.now().date() + __import__("datetime").timedelta(days=14),
+        )
+
+        logger.info(
+            "First subscription created for center %s: plan=%s",
+            tenant.name,
+            plan.name,
+        )
+
+        return Response(
+            SubscriptionSerializer(subscription).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CenterCancelSubscriptionView(APIView):
@@ -204,6 +255,26 @@ class CenterResumeSubscriptionView(APIView):
         return Response({"detail": "Subscription has been resumed."})
 
 
+class CenterAvailablePlansView(APIView):
+    """Center admin: list available plans, hiding free trial if center ever had a subscription."""
+
+    permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
+
+    def get(self, request):
+        tenant = request.tenant
+        if not tenant:
+            return Response(
+                {"detail": "No center context."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        plans = SubscriptionPlan.objects.filter(is_active=True)
+        ever_had_subscription = Subscription.objects.filter(center=tenant).exists()
+        if ever_had_subscription:
+            plans = plans.exclude(slug="trial")
+        serializer = SubscriptionPlanSerializer(plans, many=True)
+        return Response(serializer.data)
+
+
 class CenterChangePlanView(APIView):
     """Center admin: change subscription plan to an active plan."""
 
@@ -214,16 +285,6 @@ class CenterChangePlanView(APIView):
         if not tenant:
             return Response(
                 {"detail": "No center context."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        try:
-            subscription = Subscription.objects.select_related("plan").get(
-                center=tenant
-            )
-        except Subscription.DoesNotExist:
-            return Response(
-                {"detail": "No subscription found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -242,11 +303,53 @@ class CenterChangePlanView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if subscription.plan_id == new_plan.id:
-            return Response(
-                {"detail": "You are already on this plan."},
-                status=status.HTTP_400_BAD_REQUEST,
+        try:
+            subscription = Subscription.objects.select_related("plan").get(
+                center=tenant
             )
+        except Subscription.DoesNotExist:
+            from django.utils import timezone
+
+            if new_plan.price == 0:
+                subscription = Subscription.objects.create(
+                    center=tenant,
+                    plan=new_plan,
+                    status=Subscription.Status.TRIAL,
+                    trial_start=timezone.now().date(),
+                    trial_end=timezone.now().date() + __import__("datetime").timedelta(days=14),
+                )
+            else:
+                from decimal import ROUND_UP, Decimal
+                from django.utils import timezone as tz
+
+                subscription = Subscription.objects.create(
+                    center=tenant,
+                    plan=new_plan,
+                    status=Subscription.Status.INACTIVE,
+                    billing_date=tz.now().date() + __import__("datetime").timedelta(days=30),
+                )
+                new_inv = Invoice.objects.create(
+                    subscription=subscription,
+                    amount=new_plan.price,
+                    due_date=tz.now().date(),
+                    status=Invoice.Status.PENDING,
+                )
+                require_payment = True
+                invoice_id = new_inv.id
+                logger.info(
+                    "First paid subscription created for center %s: plan=%s, invoice=%s",
+                    tenant.name,
+                    new_plan.name,
+                    new_inv.id,
+                )
+                return Response(
+                    {
+                        "detail": f"Successfully subscribed to {new_plan.name}.",
+                        "require_payment": require_payment,
+                        "invoice_id": invoice_id,
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
 
         old_plan = subscription.plan
 
@@ -304,18 +407,21 @@ class CenterChangePlanView(APIView):
             days_remaining = (subscription.billing_date - tz.now().date()).days
             if days_remaining < 0:
                 days_remaining = 0
-            daily_diff = (new_plan.price - old_plan.price) / Decimal("30")
-            prorated_amount = (
-                (daily_diff * Decimal(days_remaining)).quantize(
-                    Decimal("0.01"), rounding=ROUND_UP
+            price_diff = (new_plan.price - old_plan.price).quantize(Decimal("0.01"))
+            if days_remaining > 0:
+                daily_diff = price_diff / Decimal("30")
+                prorated_amount = (
+                    (daily_diff * Decimal(days_remaining)).quantize(
+                        Decimal("0.01"), rounding=ROUND_UP
+                    )
                 )
-                if days_remaining > 0
-                else Decimal("0.01")
-            )
+                prorated_amount = max(prorated_amount, Decimal("0.01"))
+            else:
+                prorated_amount = max(price_diff, Decimal("0.01"))
 
             if pending_invoices.exists():
                 for inv in pending_invoices:
-                    inv.amount = prorated_amount
+                    inv.amount = prorated_amount.quantize(Decimal("0.01"))
                     inv.target_plan = new_plan
                     inv.save(update_fields=["amount", "target_plan"])
                 require_payment = True
@@ -323,19 +429,50 @@ class CenterChangePlanView(APIView):
             else:
                 new_inv = Invoice.objects.create(
                     subscription=subscription,
-                    amount=prorated_amount,
+                    amount=prorated_amount.quantize(Decimal("0.01")),
                     due_date=tz.now().date(),
                     status=Invoice.Status.PENDING,
                     target_plan=new_plan,
                 )
                 require_payment = True
                 invoice_id = new_inv.id
+            # Return after upgrade invoice creation — do NOT fall through to downgrade logic
+            return Response(
+                {
+                    "detail": f"Successfully changed plan to {new_plan.name}.",
+                    "require_payment": require_payment,
+                    "invoice_id": invoice_id,
+                }
+            )
         else:
             # Downgrades, same-price transitions, or free trials take immediate effect
+            from decimal import Decimal
+
+            credit_amount = (old_plan.price - new_plan.price).quantize(Decimal("0.01"))
+            if credit_amount > 0:
+                tenant.credit_balance = (tenant.credit_balance or Decimal("0.00")) + credit_amount
+                tenant.save(update_fields=["credit_balance"])
+                logger.info(
+                    "Downgrade credit: added %s to center %s (plan: %s -> %s)",
+                    credit_amount,
+                    tenant.name,
+                    old_plan.name,
+                    new_plan.name,
+                )
+
             subscription.plan = new_plan
             if subscription.cancel_at_period_end:
                 subscription.cancel_at_period_end = False
-            subscription.save(update_fields=["plan", "cancel_at_period_end"])
+            new_ai_credits = new_plan.monthly_ai_credits
+            if subscription.available_ai_credits > new_ai_credits:
+                subscription.available_ai_credits = max(new_ai_credits, 0)
+                logger.info(
+                    "Downgrade AI credits: reduced from %s to %s for center %s",
+                    subscription.available_ai_credits,
+                    new_ai_credits,
+                    tenant.name,
+                )
+            subscription.save(update_fields=["plan", "cancel_at_period_end", "available_ai_credits"])
 
             # Adjust pending invoice prices downwards
             pending_invoices = Invoice.objects.filter(
@@ -343,7 +480,7 @@ class CenterChangePlanView(APIView):
                 status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
             ).order_by("due_date")
             for inv in pending_invoices:
-                inv.amount = new_plan.price
+                inv.amount = new_plan.price.quantize(Decimal("0.01"))
                 inv.target_plan = None
                 inv.save(update_fields=["amount", "target_plan"])
 
@@ -917,6 +1054,8 @@ class SuperadminInvoiceMarkPaidView(APIView):
                 },
             )
 
+        invalidate_subscription_status(sub.center_id)
+
         return Response(
             {
                 "detail": f"Invoice #{invoice.id} marked as paid. Subscription activated.",
@@ -961,6 +1100,51 @@ class SuperadminInvoiceMarkUnpaidView(APIView):
         return Response(
             {
                 "detail": f"Invoice #{invoice.id} reverted to pending.",
+                "invoice": InvoiceSerializer(invoice).data,
+            }
+        )
+
+
+class SuperadminInvoiceCancelView(APIView):
+    """Superadmin: cancel a pending or overdue invoice."""
+
+    permission_classes = [permissions.IsAuthenticated, IsSuperAdmin]
+
+    def post(self, request, invoice_id):
+        try:
+            invoice = Invoice.objects.select_related(
+                "subscription",
+            ).get(pk=invoice_id)
+        except Invoice.DoesNotExist:
+            return Response(
+                {"detail": "Invoice not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if invoice.status == Invoice.Status.CANCELLED:
+            return Response(
+                {"detail": "Invoice is already cancelled."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if invoice.status == Invoice.Status.PAID:
+            return Response(
+                {"detail": "Cannot cancel a paid invoice."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        invoice.status = Invoice.Status.CANCELLED
+        invoice.save(update_fields=["status"])
+
+        logger.info(
+            "Invoice #%s cancelled by superadmin %s",
+            invoice.id,
+            request.user.username,
+        )
+
+        return Response(
+            {
+                "detail": f"Invoice #{invoice.id} cancelled.",
                 "invoice": InvoiceSerializer(invoice).data,
             }
         )
@@ -1067,6 +1251,21 @@ class SuperadminChangePlanView(APIView):
         from django.core.cache import cache
 
         old_plan_name = sub.plan.name
+        from decimal import Decimal
+
+        credit_amount = (sub.plan.price - new_plan.price).quantize(Decimal("0.01"))
+        if credit_amount > 0:
+            sub.center.credit_balance = (sub.center.credit_balance or Decimal("0.00")) + credit_amount
+            sub.center.save(update_fields=["credit_balance"])
+            logger.info(
+                "Downgrade credit: added %s to center %s (plan: %s -> %s) by superadmin %s",
+                credit_amount,
+                sub.center.name,
+                old_plan_name,
+                new_plan.name,
+                request.user.username,
+            )
+
         sub.plan = new_plan
         sub.status = Subscription.Status.ACTIVE
         sub.billing_date = (timezone.now() + timedelta(days=30)).date()

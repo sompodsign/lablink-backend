@@ -1,13 +1,22 @@
 from datetime import timedelta
 from decimal import Decimal
+from importlib import import_module
 
+from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.subscriptions.models import Invoice, Subscription, SubscriptionPlan
+from apps.subscriptions.models import (
+    Invoice,
+    PaymentInfo,
+    PaymentSubmission,
+    Subscription,
+    SubscriptionPlan,
+)
+from apps.subscriptions.services import calculate_downgrade_billing_date
 from apps.subscriptions.tasks import (
     check_trial_expirations,
     generate_monthly_invoices,
@@ -146,6 +155,89 @@ class SubscriptionModelTests(TestCase):
         self.assertFalse(center.email_notifications_enabled)
         self.assertFalse(center.send_sms_invoice)
         self.assertFalse(center.send_email_invoice)
+
+
+class SubscriptionBillingDateCalculationTests(TestCase):
+    def test_calculates_extra_days_for_paid_downgrade(self):
+        today = timezone.localdate()
+
+        new_billing_date = calculate_downgrade_billing_date(
+            billing_anchor=today + timedelta(days=15),
+            old_plan_price=Decimal('3000'),
+            new_plan_price=Decimal('1000'),
+            today=today,
+        )
+
+        self.assertEqual(new_billing_date, today + timedelta(days=45))
+
+    def test_returns_today_when_no_paid_time_remains(self):
+        today = timezone.localdate()
+
+        new_billing_date = calculate_downgrade_billing_date(
+            billing_anchor=today - timedelta(days=1),
+            old_plan_price=Decimal('3000'),
+            new_plan_price=Decimal('1000'),
+            today=today,
+        )
+
+        self.assertEqual(new_billing_date, today)
+
+
+class SubscriptionAIBackfillMigrationTests(TestCase):
+    def test_backfills_plan_and_subscription_ai_credit_data(self):
+        migration = import_module(
+            'apps.subscriptions.migrations.0013_backfill_missing_ai_plan_data'
+        )
+        center = DiagnosticCenter.objects.create(
+            name='Backfill Center',
+            domain='backfill-center',
+        )
+        trial_plan, _ = SubscriptionPlan.objects.update_or_create(
+            slug='trial',
+            defaults={
+                'name': 'Trial',
+                'price': Decimal('0'),
+                'monthly_ai_credits': 0,
+            },
+        )
+        professional_plan, _ = SubscriptionPlan.objects.update_or_create(
+            slug='professional',
+            defaults={
+                'name': 'Professional',
+                'price': Decimal('4999'),
+                'monthly_ai_credits': 0,
+            },
+        )
+        zero_credit_subscription = Subscription.objects.create(
+            center=center,
+            plan=professional_plan,
+            status=Subscription.Status.ACTIVE,
+            available_ai_credits=0,
+        )
+        preserved_credit_subscription = Subscription.objects.create(
+            center=DiagnosticCenter.objects.create(
+                name='Backfill Center 2',
+                domain='backfill-center-2',
+            ),
+            plan=trial_plan,
+            status=Subscription.Status.TRIAL,
+        )
+        preserved_credit_subscription.available_ai_credits = 12
+        preserved_credit_subscription.save(update_fields=['available_ai_credits'])
+
+        migration.backfill_missing_ai_plan_data(django_apps, None)
+
+        trial_plan.refresh_from_db()
+        professional_plan.refresh_from_db()
+        zero_credit_subscription.refresh_from_db()
+        preserved_credit_subscription.refresh_from_db()
+        enterprise_plan = SubscriptionPlan.objects.get(slug='enterprise')
+
+        self.assertEqual(trial_plan.monthly_ai_credits, 100)
+        self.assertEqual(professional_plan.monthly_ai_credits, 500)
+        self.assertEqual(enterprise_plan.monthly_ai_credits, 5000)
+        self.assertEqual(zero_credit_subscription.available_ai_credits, 500)
+        self.assertEqual(preserved_credit_subscription.available_ai_credits, 12)
 
 
 class InvoiceModelTests(TestCase):
@@ -694,6 +786,98 @@ class MarkOverdueInvoicesTaskTests(TestCase):
 
         count = mark_overdue_invoices()
         self.assertEqual(count, 0)
+
+
+class ExpireInactiveSubscriptionsTaskTests(TestCase):
+    """Tests for expire_inactive_subscriptions Celery task."""
+
+    def setUp(self):
+        self.plan = SubscriptionPlan.objects.create(
+            name="Pro", slug="pro-expire", price=Decimal("4999")
+        )
+        self.center = DiagnosticCenter.objects.create(
+            name="Inactive Center", domain="inactive-expire"
+        )
+
+    def test_expires_inactive_with_overdue_invoice_past_grace(self):
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.INACTIVE,
+        )
+        invoice = Invoice.objects.create(
+            subscription=sub,
+            amount=Decimal("4999"),
+            due_date=timezone.now().date() - timedelta(days=8),
+            status=Invoice.Status.OVERDUE,
+        )
+
+        from apps.subscriptions.tasks import expire_inactive_subscriptions
+        count = expire_inactive_subscriptions()
+        self.assertEqual(count, 1)
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "EXPIRED")
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, "CANCELLED")
+
+    def test_does_not_expire_within_grace_period(self):
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.INACTIVE,
+        )
+        invoice = Invoice.objects.create(
+            subscription=sub,
+            amount=Decimal("4999"),
+            due_date=timezone.now().date() - timedelta(days=3),
+            status=Invoice.Status.PENDING,
+        )
+
+        from apps.subscriptions.tasks import expire_inactive_subscriptions
+        count = expire_inactive_subscriptions()
+        self.assertEqual(count, 0)
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "INACTIVE")
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, "PENDING")
+
+    def test_does_not_expire_inactive_with_no_invoices(self):
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.INACTIVE,
+        )
+
+        from apps.subscriptions.tasks import expire_inactive_subscriptions
+        count = expire_inactive_subscriptions()
+        self.assertEqual(count, 0)
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "INACTIVE")
+
+    def test_does_not_expire_non_inactive_subscriptions(self):
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status=Subscription.Status.ACTIVE,
+        )
+        invoice = Invoice.objects.create(
+            subscription=sub,
+            amount=Decimal("4999"),
+            due_date=timezone.now().date() - timedelta(days=10),
+            status=Invoice.Status.OVERDUE,
+        )
+
+        from apps.subscriptions.tasks import expire_inactive_subscriptions
+        count = expire_inactive_subscriptions()
+        self.assertEqual(count, 0)
+
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, "ACTIVE")
 
 
 class MarkInvoiceUnpaidAPITests(TestCase):
@@ -1505,7 +1689,10 @@ class SuperadminSubscriptionCRUDTests(TestCase):
             center=self.center, plan=self.plan, status="ACTIVE"
         )
         new_plan = SubscriptionPlan.objects.create(
-            name="Pro CRUD", slug="pro-crud-test", price=4999
+            name="Pro CRUD",
+            slug="pro-crud-test",
+            price=4999,
+            monthly_ai_credits=500,
         )
         response = self.client.patch(
             f"/api/subscriptions/subscriptions/{sub.id}/",
@@ -1514,6 +1701,63 @@ class SuperadminSubscriptionCRUDTests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["plan_id"], new_plan.id)
+
+    def test_update_subscription_plan_resets_ai_credits(self):
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=self.plan,
+            status="ACTIVE",
+            available_ai_credits=0,
+        )
+        new_plan = SubscriptionPlan.objects.create(
+            name="AI Pro CRUD",
+            slug="ai-pro-crud-test",
+            price=4999,
+            monthly_ai_credits=500,
+        )
+
+        response = self.client.patch(
+            f"/api/subscriptions/subscriptions/{sub.id}/",
+            {"plan_id": new_plan.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sub.refresh_from_db()
+        self.assertEqual(sub.plan_id, new_plan.id)
+        self.assertEqual(sub.available_ai_credits, 500)
+
+    def test_update_subscription_plan_downgrade_extends_billing_date(self):
+        expensive_plan = SubscriptionPlan.objects.create(
+            name="Enterprise CRUD",
+            slug="enterprise-crud-test",
+            price=3000,
+        )
+        cheaper_plan = SubscriptionPlan.objects.create(
+            name="Starter CRUD",
+            slug="starter-crud-test",
+            price=1000,
+        )
+        sub = Subscription.objects.create(
+            center=self.center,
+            plan=expensive_plan,
+            status="ACTIVE",
+            billing_date=timezone.localdate() + timedelta(days=15),
+        )
+
+        response = self.client.patch(
+            f"/api/subscriptions/subscriptions/{sub.id}/",
+            {"plan_id": cheaper_plan.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sub.refresh_from_db()
+        self.assertEqual(sub.plan_id, cheaper_plan.id)
+        self.assertEqual(
+            sub.billing_date,
+            timezone.localdate() + timedelta(days=45),
+        )
 
     def test_update_subscription_not_found(self):
         response = self.client.patch(
@@ -1574,8 +1818,8 @@ class CenterChangePlanAPITests(TestCase):
         )
         Staff.objects.create(user=self.admin, center=self.center, role=admin_role)
 
-        self.starter_plan, _ = SubscriptionPlan.objects.get_or_create(
-            slug="starter-change-plan",
+        self.starter_plan, _ = SubscriptionPlan.objects.update_or_create(
+            slug="starter",
             defaults={
                 "name": "Starter",
                 "price": 1000,
@@ -1583,15 +1827,21 @@ class CenterChangePlanAPITests(TestCase):
                 "max_reports": 10,
             },
         )
-        self.pro_plan, _ = SubscriptionPlan.objects.get_or_create(
-            slug="pro-change-plan",
-            defaults={"name": "Pro", "price": 3000, "max_staff": 10, "max_reports": -1},
+        self.pro_plan, _ = SubscriptionPlan.objects.update_or_create(
+            slug="professional",
+            defaults={
+                "name": "Pro",
+                "price": 3000,
+                "max_staff": 10,
+                "max_reports": -1,
+            },
         )
 
         self.sub = Subscription.objects.create(
             center=self.center,
             plan=self.starter_plan,
             status=Subscription.Status.ACTIVE,
+            billing_date=timezone.localdate() + timedelta(days=30),
         )
         self.invoice = Invoice.objects.create(
             subscription=self.sub,
@@ -1619,12 +1869,16 @@ class CenterChangePlanAPITests(TestCase):
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.plan_id, self.starter_plan.id)
 
-        # Verify pending invoice updated with target_plan
+        # Existing renewal invoice is preserved; plan change uses a dedicated invoice.
         self.invoice.refresh_from_db()
-        self.assertEqual(self.invoice.amount, self.pro_plan.price)
-        self.assertEqual(self.invoice.target_plan_id, self.pro_plan.id)
+        self.assertEqual(self.invoice.amount, Decimal("1000"))
+        self.assertIsNone(self.invoice.target_plan_id)
         self.assertTrue(response.data["require_payment"])
-        self.assertEqual(response.data["invoice_id"], self.invoice.id)
+
+        new_inv = Invoice.objects.get(id=response.data["invoice_id"])
+        self.assertNotEqual(new_inv.id, self.invoice.id)
+        self.assertEqual(new_inv.amount, self.pro_plan.price - self.starter_plan.price)
+        self.assertEqual(new_inv.target_plan_id, self.pro_plan.id)
 
     def test_upgrade_plan_creates_invoice_if_previously_paid(self):
         # Mark current invoice as PAID
@@ -1705,6 +1959,30 @@ class CenterChangePlanAPITests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("reports this month", response.data["detail"])
 
+    def test_downgrade_extends_billing_date(self):
+        self.sub.plan = self.pro_plan
+        self.sub.billing_date = timezone.localdate() + timedelta(days=15)
+        self.sub.save(update_fields=["plan", "billing_date"])
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults["SERVER_NAME"] = self.center.domain + ".localhost"
+        response = self.client.post(
+            "/api/subscriptions/my-subscription/change-plan/",
+            {"plan_id": self.starter_plan.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["require_payment"])
+        self.assertIsNone(response.data["invoice_id"])
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.plan_id, self.starter_plan.id)
+        self.assertEqual(
+            self.sub.billing_date,
+            timezone.localdate() + timedelta(days=45),
+        )
+
     def test_trial_upgrade_creates_invoice(self):
         """Trial center upgrading to paid plan should create invoice, not change plan."""
         trial_plan, _ = SubscriptionPlan.objects.get_or_create(
@@ -1777,3 +2055,163 @@ class CenterChangePlanAPITests(TestCase):
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.plan_id, self.pro_plan.id)
         self.assertEqual(self.sub.status, Subscription.Status.ACTIVE)
+        self.assertIsNotNone(self.sub.billing_date)
+
+    def test_cancelled_subscription_can_reactivate_on_current_plan(self):
+        self.sub.status = Subscription.Status.CANCELLED
+        self.sub.cancelled_at = timezone.now()
+        self.sub.save(update_fields=['status', 'cancelled_at'])
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        response = self.client.post(
+            '/api/subscriptions/my-subscription/change-plan/',
+            {'plan_id': self.starter_plan.id},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['require_payment'])
+
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.CANCELLED)
+
+        new_invoice = Invoice.objects.get(id=response.data['invoice_id'])
+        self.assertEqual(new_invoice.amount, self.starter_plan.price)
+        self.assertEqual(new_invoice.target_plan_id, self.starter_plan.id)
+        self.assertEqual(new_invoice.status, Invoice.Status.PENDING)
+
+    def test_cancelled_reactivation_invoice_accepts_manual_payment(self):
+        payment_method = PaymentInfo.objects.create(
+            method='BKASH',
+            label='bKash',
+            details='017xxxxxxxx',
+            is_active=True,
+        )
+        self.sub.status = Subscription.Status.CANCELLED
+        self.sub.cancelled_at = timezone.now()
+        self.sub.save(update_fields=['status', 'cancelled_at'])
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        plan_response = self.client.post(
+            '/api/subscriptions/my-subscription/change-plan/',
+            {'plan_id': self.starter_plan.id},
+            format='json',
+        )
+
+        invoice_id = plan_response.data['invoice_id']
+        response = self.client.post(
+            f'/api/subscriptions/invoices/{invoice_id}/submit-payment/',
+            {
+                'payment_method_id': payment_method.id,
+                'transaction_id': 'reactivate-001',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            PaymentSubmission.objects.filter(invoice_id=invoice_id).count(),
+            1,
+        )
+
+    def test_paid_reactivation_invoice_restores_cancelled_subscription(self):
+        self.sub.status = Subscription.Status.CANCELLED
+        self.sub.cancelled_at = timezone.now()
+        self.sub.cancel_at_period_end = True
+        self.sub.save(
+            update_fields=['status', 'cancelled_at', 'cancel_at_period_end']
+        )
+
+        self.client.credentials(HTTP_AUTHORIZATION=self.auth_header)
+        self.client.defaults['SERVER_NAME'] = self.center.domain + '.localhost'
+        plan_response = self.client.post(
+            '/api/subscriptions/my-subscription/change-plan/',
+            {'plan_id': self.starter_plan.id},
+            format='json',
+        )
+        invoice_id = plan_response.data['invoice_id']
+
+        superadmin = User.objects.create_superuser(
+            username='su_reactivate',
+            email='su_reactivate@test.com',
+            password='admin123',
+        )
+        self.client.force_authenticate(superadmin)
+        response = self.client.post(
+            f'/api/subscriptions/invoices/{invoice_id}/mark-paid/',
+            {'payment_method': 'BKASH'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, Subscription.Status.ACTIVE)
+        self.assertIsNone(self.sub.cancelled_at)
+        self.assertFalse(self.sub.cancel_at_period_end)
+
+
+class SuperadminChangePlanAPITests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.superadmin = User.objects.create_superuser(
+            username="plan-admin",
+            email="plan-admin@test.com",
+            password="admin123",
+        )
+        self.center = DiagnosticCenter.objects.create(
+            name="Plan Change Center",
+            domain="plan-change-center",
+        )
+        self.starter_plan = SubscriptionPlan.objects.create(
+            name="Starter Change",
+            slug="starter-sa-change-test",
+            price=1000,
+            monthly_ai_credits=0,
+        )
+        self.pro_plan = SubscriptionPlan.objects.create(
+            name="Professional Change",
+            slug="professional-sa-change-test",
+            price=5000,
+            monthly_ai_credits=500,
+        )
+        self.subscription = Subscription.objects.create(
+            center=self.center,
+            plan=self.starter_plan,
+            status=Subscription.Status.ACTIVE,
+            available_ai_credits=0,
+        )
+        self.client.force_authenticate(self.superadmin)
+
+    def test_change_plan_resets_ai_credits(self):
+        response = self.client.post(
+            f"/api/subscriptions/subscriptions/{self.subscription.id}/change-plan/",
+            {"plan_id": self.pro_plan.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.plan_id, self.pro_plan.id)
+        self.assertEqual(self.subscription.available_ai_credits, 500)
+
+    def test_change_plan_downgrade_extends_billing_date(self):
+        self.subscription.plan = self.pro_plan
+        self.subscription.billing_date = timezone.localdate() + timedelta(days=15)
+        self.subscription.save(update_fields=["plan", "billing_date"])
+
+        response = self.client.post(
+            f"/api/subscriptions/subscriptions/{self.subscription.id}/change-plan/",
+            {"plan_id": self.starter_plan.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.plan_id, self.starter_plan.id)
+        self.assertEqual(
+            self.subscription.billing_date,
+            timezone.localdate() + timedelta(days=75),
+        )

@@ -244,6 +244,10 @@ SPECTACULAR_SETTINGS = {
         },
         {"name": "Payments", "description": "Payment recording and tracking"},
         {
+            "name": "Subscriptions",
+            "description": "Subscription plans, billing cycles, and invoices",
+        },
+        {
             "name": "Diagnostics",
             "description": "Test types and center-specific pricing",
         },

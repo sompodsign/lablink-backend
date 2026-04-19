@@ -49,6 +49,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "subscriptions.mark_overdue_invoices",
         "schedule": 86400,
     },
+    "expire-inactive-subscriptions": {
+        "task": "subscriptions.expire_inactive_subscriptions",
+        "schedule": 86400,
+    },
 }
 
 # CORS Configuration - Strict in production

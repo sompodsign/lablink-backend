@@ -7,6 +7,7 @@ from .subscription_gateway_views import (
     SubscriptionVerifyPaymentView as GatewayVerifyView,
 )
 from .views import (
+    CenterAvailablePlansView,
     CenterCancelSubscriptionView,
     CenterChangePlanView,
     CenterInvoiceListView,
@@ -23,6 +24,7 @@ from .views import (
     SuperadminInvoiceListView,
     SuperadminInvoiceMarkPaidView,
     SuperadminInvoiceMarkUnpaidView,
+    SuperadminInvoiceCancelView,
     SuperadminPaymentSubmissionListView,
     SuperadminSubscriptionDetailView,
     SuperadminSubscriptionListView,
@@ -46,6 +48,11 @@ public_patterns = [
 
 # Center admin (auth required)
 center_patterns = [
+    path(
+        "available-plans/",
+        CenterAvailablePlansView.as_view(),
+        name="center-available-plans",
+    ),
     path(
         "my-subscription/",
         CenterSubscriptionView.as_view(),
@@ -120,6 +127,11 @@ superadmin_patterns = [
         "invoices/<int:invoice_id>/mark-unpaid/",
         SuperadminInvoiceMarkUnpaidView.as_view(),
         name="sa-invoice-mark-unpaid",
+    ),
+    path(
+        "invoices/<int:invoice_id>/cancel/",
+        SuperadminInvoiceCancelView.as_view(),
+        name="sa-invoice-cancel",
     ),
     path(
         "subscriptions/<int:subscription_id>/extend-trial/",

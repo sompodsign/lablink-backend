@@ -14,13 +14,14 @@ PLANS = [
         "trial_days": 30,
         "max_staff": 30,
         "max_reports": 3000,
+        "monthly_ai_credits": 100,
         "features": [
             "Up to 30 staff accounts",
             "Up to 3,000 reports/month",
             "Online appointment booking",
             "Advanced analytics",
             "Custom branding & domain",
-            "Full feature access",
+            "100 AI credits/month",
             "30-day free trial",
         ],
         "display_order": 0,
@@ -32,6 +33,7 @@ PLANS = [
         "trial_days": 14,
         "max_staff": 5,
         "max_reports": 500,
+        "monthly_ai_credits": 0,
         "features": [
             "Up to 5 staff accounts",
             "Up to 500 reports/month",
@@ -48,6 +50,7 @@ PLANS = [
         "trial_days": 14,
         "max_staff": 15,
         "max_reports": 1500,
+        "monthly_ai_credits": 0,
         "features": [
             "Up to 15 staff accounts",
             "Up to 1,500 reports/month",
@@ -65,6 +68,7 @@ PLANS = [
         "trial_days": 14,
         "max_staff": 30,
         "max_reports": 3000,
+        "monthly_ai_credits": 500,
         "features": [
             "Up to 30 staff accounts",
             "Up to 3,000 reports/month",
@@ -72,8 +76,28 @@ PLANS = [
             "Advanced analytics & reports",
             "Custom branding & domain",
             "Priority support",
+            "500 AI credits/month",
         ],
         "display_order": 3,
+    },
+    {
+        "name": "Enterprise",
+        "slug": "enterprise",
+        "price": 9999,
+        "trial_days": 14,
+        "max_staff": -1,
+        "max_reports": -1,
+        "monthly_ai_credits": 5000,
+        "features": [
+            "Unlimited staff accounts",
+            "Unlimited reports/month",
+            "Everything in Professional",
+            "Custom branding & domain",
+            "Dedicated support",
+            "API access",
+            "5,000 AI credits/month",
+        ],
+        "display_order": 4,
     },
 ]
 

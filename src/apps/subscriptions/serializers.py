@@ -1,11 +1,14 @@
 import logging
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
+    PUBLIC_PLAN_SLUGS,
     Invoice,
     PaymentInfo,
     PaymentSubmission,
@@ -80,6 +83,26 @@ class SubmitPaymentSerializer(serializers.Serializer):
     transaction_id = serializers.CharField(max_length=100)
 
 
+class SubmitPaymentResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    submission = PaymentSubmissionSerializer()
+
+
+class UpdatePaymentSubmissionResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    submission = PaymentSubmissionSerializer()
+
+
+class ChangePlanRequestSerializer(serializers.Serializer):
+    plan_id = serializers.IntegerField()
+
+
+class ChangePlanResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    require_payment = serializers.BooleanField()
+    invoice_id = serializers.IntegerField(required=False, allow_null=True)
+
+
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionPlan
@@ -97,18 +120,28 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
 
 
 class InvoiceSerializer(serializers.ModelSerializer):
+    subscription_status = serializers.CharField(
+        source='subscription.status',
+        read_only=True,
+    )
+    target_plan_id = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Invoice
         fields = [
-            "id",
-            "amount",
-            "status",
-            "payment_method",
-            "due_date",
-            "paid_at",
-            "transaction_id",
-            "notes",
-            "created_at",
+            'id',
+            'amount',
+            'original_amount',
+            'credit_applied',
+            'status',
+            'payment_method',
+            'due_date',
+            'paid_at',
+            'transaction_id',
+            'notes',
+            'created_at',
+            'subscription_status',
+            'target_plan_id',
         ]
 
 
@@ -118,6 +151,10 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     is_trial_expired = serializers.BooleanField(read_only=True)
     invoices = InvoiceSerializer(many=True, read_only=True)
     current_report_count = serializers.SerializerMethodField()
+    has_used_trial = serializers.BooleanField(read_only=True)
+    credit_balance = serializers.DecimalField(
+        source="center.credit_balance", max_digits=10, decimal_places=2, read_only=True
+    )
 
     class Meta:
         model = Subscription
@@ -134,8 +171,10 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "days_remaining_trial",
             "is_trial_expired",
             "available_ai_credits",
+            "credit_balance",
             "invoices",
             "current_report_count",
+            "has_used_trial",
         ]
 
     def get_current_report_count(self, obj):
@@ -151,6 +190,14 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             is_deleted=False,
         ).count()
 
+    def get_has_used_trial(self, obj):
+        return getattr(obj.center, "has_used_trial", False)
+
+
+class SuperadminChangePlanResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    subscription = SubscriptionSerializer()
+
 
 class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
     """Superadmin: create / update subscriptions for any center."""
@@ -160,6 +207,9 @@ class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
     center_name = serializers.CharField(source="center.name", read_only=True)
     center_domain = serializers.CharField(source="center.domain", read_only=True)
     plan_name = serializers.CharField(source="plan.name", read_only=True)
+    credit_balance = serializers.DecimalField(
+        source="center.credit_balance", max_digits=10, decimal_places=2, read_only=True
+    )
 
     class Meta:
         model = Subscription
@@ -177,6 +227,7 @@ class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
             "started_at",
             "cancelled_at",
             "available_ai_credits",
+            "credit_balance",
         ]
         read_only_fields = ["id", "started_at", "cancelled_at", "available_ai_credits"]
 
@@ -195,11 +246,23 @@ class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Plan not found.")
         return value
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        status_value = attrs.get(
+            "status",
+            self.instance.status if self.instance else Subscription.Status.TRIAL,
+        )
+        billing_date = attrs.get(
+            "billing_date",
+            self.instance.billing_date if self.instance else None,
+        )
+
+        if status_value == Subscription.Status.ACTIVE and billing_date is None:
+            attrs["billing_date"] = timezone.localdate() + timedelta(days=30)
+
+        return attrs
+
     def create(self, validated_data):
-        from datetime import timedelta
-
-        from django.utils import timezone
-
         plan = SubscriptionPlan.objects.get(id=validated_data["plan_id"])
         status = validated_data.get("status", Subscription.Status.TRIAL)
 
@@ -210,6 +273,8 @@ class SuperadminSubscriptionSerializer(serializers.ModelSerializer):
             validated_data.setdefault(
                 "trial_end", now + timedelta(days=plan.trial_days)
             )
+        elif status == Subscription.Status.INACTIVE:
+            validated_data.setdefault("billing_date", timezone.localdate())
 
         return super().create(validated_data)
 
@@ -287,132 +352,141 @@ class CenterRegistrationSerializer(serializers.Serializer):
         return value
 
     def validate_plan_slug(self, value):
-        if not SubscriptionPlan.objects.filter(slug=value, is_active=True).exists():
+        if not SubscriptionPlan.objects.filter(
+            slug=value,
+            is_active=True,
+            slug__in=PUBLIC_PLAN_SLUGS,
+        ).exists():
             raise serializers.ValidationError("Invalid plan selected.")
         return value
 
     def create(self, validated_data):
         from django.contrib.auth import get_user_model
-        from django.utils import timezone
 
         from core.tenants.models import DiagnosticCenter, Permission, Role, Staff
 
         User = get_user_model()
 
-        plan = SubscriptionPlan.objects.get(slug=validated_data["plan_slug"])
+        with transaction.atomic():
+            plan = SubscriptionPlan.objects.get(slug=validated_data["plan_slug"])
 
-        # 1. Create center
-        center = DiagnosticCenter.objects.create(
-            name=validated_data["center_name"],
-            domain=validated_data["domain"],
-            address=validated_data.get("address", ""),
-            contact_number=validated_data.get("contact_number", ""),
-            is_active=True,
-            allow_online_appointments=True,
-        )
-
-        # 2. Grant all available permissions to center
-        all_permissions = Permission.objects.all()
-        center.available_permissions.set(all_permissions)
-
-        # 3. Create admin role with all permissions
-        admin_role, _created = Role.objects.get_or_create(
-            name="Admin",
-            center=center,
-            defaults={"is_system": True},
-        )
-        admin_role.permissions.set(all_permissions)
-
-        # 4. Create receptionist role (basic)
-        recep_role, _created = Role.objects.get_or_create(
-            name="Receptionist",
-            center=center,
-            defaults={"is_system": True},
-        )
-        view_perms = Permission.objects.filter(
-            codename__startswith="view_",
-        )
-        recep_role.permissions.set(view_perms)
-
-        # 5. Create medical technologist role
-        lab_role, _created = Role.objects.get_or_create(
-            name="Medical Technologist",
-            center=center,
-            defaults={"is_system": True},
-        )
-        lab_perms = Permission.objects.filter(
-            category__in=["Reports", "Test Orders", "Patients"],
-        )
-        lab_role.permissions.set(lab_perms)
-
-        # 5b. Create medical assistant role
-        assistant_role, _created = Role.objects.get_or_create(
-            name="Medical Assistant",
-            center=center,
-            defaults={"is_system": True},
-        )
-        assistant_role.permissions.set(
-            Permission.objects.filter(
-                codename__in=[
-                    "view_patients",
-                    "manage_patients",
-                    "view_appointments",
-                    "manage_appointments",
-                    "view_reports",
-                    "view_test_orders",
-                    "view_payments",
-                ],
-            ),
-        )
-
-        # 6. Create admin user
-        username = f"{validated_data['domain']}_admin"
-        admin_user = User.objects.create_user(
-            username=username,
-            email=validated_data["admin_email"],
-            password=validated_data["admin_password"],
-            first_name=validated_data["admin_first_name"],
-            last_name=validated_data["admin_last_name"],
-            phone_number=validated_data.get("admin_phone", ""),
-            center=center,
-        )
-
-        # 7. Create staff record for admin
-        Staff.objects.create(
-            user=admin_user,
-            center=center,
-            role=admin_role,
-        )
-
-        # 8. Create subscription
-        now = timezone.now()
-        is_trial = validated_data["plan_slug"] == "trial"
-
-        subscription = Subscription.objects.create(
-            center=center,
-            plan=plan,
-            status=Subscription.Status.TRIAL
-            if is_trial
-            else Subscription.Status.INACTIVE,
-            trial_start=now if is_trial else None,
-            trial_end=(
-                now + timezone.timedelta(days=plan.trial_days) if is_trial else None
-            ),
-            billing_date=(
-                (now + timezone.timedelta(days=plan.trial_days)).date()
-                if is_trial
-                else date.today()
-            ),
-        )
-
-        # 9. Create first invoice for paid plans
-        if not is_trial:
-            Invoice.objects.create(
-                subscription=subscription,
-                amount=plan.price,
-                status=Invoice.Status.PENDING,
-                due_date=date.today(),
+            # 1. Create center
+            center = DiagnosticCenter.objects.create(
+                name=validated_data["center_name"],
+                domain=validated_data["domain"],
+                address=validated_data.get("address", ""),
+                contact_number=validated_data.get("contact_number", ""),
+                is_active=True,
+                allow_online_appointments=True,
             )
+
+            # 2. Grant all available permissions to center
+            all_permissions = Permission.objects.all()
+            center.available_permissions.set(all_permissions)
+
+            # 3. Create admin role with all permissions
+            admin_role, _created = Role.objects.get_or_create(
+                name="Admin",
+                center=center,
+                defaults={"is_system": True},
+            )
+            admin_role.permissions.set(all_permissions)
+
+            # 4. Create receptionist role (basic)
+            recep_role, _created = Role.objects.get_or_create(
+                name="Receptionist",
+                center=center,
+                defaults={"is_system": True},
+            )
+            view_perms = Permission.objects.filter(
+                codename__startswith="view_",
+            )
+            recep_role.permissions.set(view_perms)
+
+            # 5. Create medical technologist role
+            lab_role, _created = Role.objects.get_or_create(
+                name="Medical Technologist",
+                center=center,
+                defaults={"is_system": True},
+            )
+            lab_perms = Permission.objects.filter(
+                category__in=["Reports", "Test Orders", "Patients"],
+            )
+            lab_role.permissions.set(lab_perms)
+
+            # 5b. Create medical assistant role
+            assistant_role, _created = Role.objects.get_or_create(
+                name="Medical Assistant",
+                center=center,
+                defaults={"is_system": True},
+            )
+            assistant_role.permissions.set(
+                Permission.objects.filter(
+                    codename__in=[
+                        "view_patients",
+                        "manage_patients",
+                        "view_appointments",
+                        "manage_appointments",
+                        "view_reports",
+                        "view_test_orders",
+                        "view_payments",
+                    ],
+                ),
+            )
+
+            # 6. Create admin user
+            username = f"{validated_data['domain']}_admin"
+            admin_user = User.objects.create_user(
+                username=username,
+                email=validated_data["admin_email"],
+                password=validated_data["admin_password"],
+                first_name=validated_data["admin_first_name"],
+                last_name=validated_data["admin_last_name"],
+                phone_number=validated_data.get("admin_phone", ""),
+                center=center,
+            )
+
+            # 7. Create staff record for admin
+            Staff.objects.create(
+                user=admin_user,
+                center=center,
+                role=admin_role,
+            )
+
+            # 8. Create subscription
+            now = timezone.now()
+            is_trial = validated_data["plan_slug"] == "trial"
+
+            subscription = Subscription.objects.create(
+                center=center,
+                plan=plan,
+                status=Subscription.Status.TRIAL
+                if is_trial
+                else Subscription.Status.INACTIVE,
+                trial_start=now if is_trial else None,
+                trial_end=(
+                    now + timezone.timedelta(days=plan.trial_days) if is_trial else None
+                ),
+                billing_date=(
+                    (now + timezone.timedelta(days=plan.trial_days)).date()
+                    if is_trial
+                    else date.today()
+                ),
+            )
+
+            # Mark center as having used trial (once a center has an account,
+            # they no longer qualify for free trial even if they chose a paid plan)
+            center.has_used_trial = True
+            center.save(update_fields=["has_used_trial"])
+
+            # 9. Create first invoice for paid plans
+            if not is_trial:
+                Invoice.objects.create(
+                    subscription=subscription,
+                    amount=plan.price,
+                    status=Invoice.Status.PENDING,
+                    due_date=date.today(),
+                )
 
         logger.info(
             "Center registered: %s (domain=%s, plan=%s)",

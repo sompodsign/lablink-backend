@@ -199,6 +199,18 @@ TRIAL_EXPIRED = (
     ),
 )
 
+INACTIVE_EXPIRED = (
+    "Subscription Expired — {center_name}",
+    (
+        "Dear Admin,\n\n"
+        "Your subscription for {center_name} has expired due to unpaid invoices.\n\n"
+        "Your center data is safe, but you now have limited access. "
+        "Please subscribe to a plan to restore full access.\n\n"
+        "Visit your subscription page to choose a plan and complete payment.\n\n"
+        "— LabLink Team"
+    ),
+)
+
 INVOICE_GENERATED = (
     "New Invoice — {center_name}",
     (
@@ -281,6 +293,7 @@ TEMPLATES: dict[str, tuple[str, str]] = {
     "doctor_credentials": DOCTOR_CREDENTIALS,
     "trial_expiry_warning": TRIAL_EXPIRY_WARNING,
     "trial_expired": TRIAL_EXPIRED,
+    "inactive_expired": INACTIVE_EXPIRED,
     "invoice_generated": INVOICE_GENERATED,
     "invoice_overdue": INVOICE_OVERDUE,
     "payment_received": PAYMENT_RECEIVED,

@@ -12,6 +12,7 @@ User = get_user_model()
 # Subdomains that are not tenant identifiers — skip domain validation for these
 _RESERVED_SUBDOMAINS = {"api", "www", "lablink", ""}
 _BASE_DOMAIN = "lablink.bd"
+_BASE_DOMAIN_LOCAL = "localhost"
 _SUBDOMAIN_CACHE_TTL = 1200  # 20 minutes
 
 # URLs exempt from soft-block (always allowed even when expired)
@@ -23,14 +24,24 @@ _SOFT_BLOCK_EXEMPT_PREFIXES = (
     "/admin/",
 )
 
+# Read endpoints allowed even when subscription is INACTIVE (so user can see subscription and pay)
+_INACTIVE_READ_EXEMPT_PREFIXES = (
+    "/api/subscriptions/my-subscription/",
+    "/api/subscriptions/my-invoices/",
+    "/api/subscriptions/payment-info/",
+    "/api/subscriptions/status/",
+    "/api/subscriptions/gateway/",
+    "/api/subscriptions/payment-submissions/",
+)
+
 # HTTP methods considered "write" operations
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 # Subscription statuses that trigger soft-block (writes only)
-_SOFT_BLOCKED_STATUSES = {"EXPIRED", "CANCELLED", "NONE"}
+_SOFT_BLOCKED_STATUSES = {"EXPIRED", "CANCELLED"}
 
 # Subscription statuses that trigger hard-block (ALL methods)
-_HARD_BLOCKED_STATUSES = {"INACTIVE"}
+_HARD_BLOCKED_STATUSES = {"INACTIVE", "NONE"}
 
 
 def _extract_subdomain(host: str) -> str | None:
@@ -45,9 +56,13 @@ def _extract_subdomain(host: str) -> str | None:
         'localhost'         -> None  (local dev)
     """
     host = host.split(":")[0].lower()  # strip port
-    if not host.endswith(_BASE_DOMAIN):
-        return None  # local dev or other domain — skip
-    subdomain = host[: -(len(_BASE_DOMAIN))].rstrip(".")
+    if host.endswith(_BASE_DOMAIN):
+        base = _BASE_DOMAIN
+    elif host.endswith(_BASE_DOMAIN_LOCAL):
+        base = _BASE_DOMAIN_LOCAL
+    else:
+        return None  # unknown domain — skip
+    subdomain = host[: -(len(base))].rstrip(".")
     if subdomain in _RESERVED_SUBDOMAINS:
         return None
     return subdomain or None
@@ -151,29 +166,37 @@ class TenantMiddleware:
             sub_status = _get_subscription_status(request.tenant)
             request.subscription_status = sub_status
 
+            # INACTIVE or NONE: block all writes, allow specific reads for subscription/payment flow
+            if sub_status in _HARD_BLOCKED_STATUSES:
+                is_hard_block_exempt = any(
+                    request.path.startswith(prefix)
+                    for prefix in _INACTIVE_READ_EXEMPT_PREFIXES
+                )
+                if not is_hard_block_exempt:
+                    from django.http import JsonResponse
+
+                    code = "subscription_inactive" if sub_status == "INACTIVE" else "no_subscription"
+                    detail = (
+                        "Your subscription is inactive. Please complete payment to activate."
+                        if sub_status == "INACTIVE"
+                        else "No active subscription. Please subscribe to continue."
+                    )
+                    return JsonResponse(
+                        {
+                            "detail": detail,
+                            "subscription_status": sub_status,
+                            "code": code,
+                        },
+                        status=402,
+                    )
+
             is_exempt = any(
                 request.path.startswith(prefix)
                 for prefix in _SOFT_BLOCK_EXEMPT_PREFIXES
             )
 
             if not is_exempt:
-                # Hard-block: INACTIVE blocks ALL methods (reads + writes)
-                if sub_status in _HARD_BLOCKED_STATUSES:
-                    from django.http import JsonResponse
-
-                    return JsonResponse(
-                        {
-                            "detail": (
-                                "Your subscription is inactive. "
-                                "Please complete payment to activate."
-                            ),
-                            "subscription_status": sub_status,
-                            "code": "subscription_inactive",
-                        },
-                        status=402,
-                    )
-
-                # Soft-block: EXPIRED/CANCELLED/NONE blocks writes only
+                # Soft-block: EXPIRED/CANCELLED blocks writes only
                 if (
                     sub_status in _SOFT_BLOCKED_STATUSES
                     and request.method in _WRITE_METHODS

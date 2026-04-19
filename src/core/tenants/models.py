@@ -155,6 +155,16 @@ class DiagnosticCenter(models.Model):
         default=False,
         help_text=_("Send email receipt to patient when invoice is created"),
     )
+    has_used_trial = models.BooleanField(
+        default=False,
+        help_text=_("Whether this center has previously used a free trial"),
+    )
+    credit_balance = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Credit balance from plan downgrades, refunds, etc. Applied to future invoices."),
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

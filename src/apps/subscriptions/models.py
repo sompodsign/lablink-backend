@@ -1,6 +1,11 @@
+from decimal import Decimal
+
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+
+
+PUBLIC_PLAN_SLUGS = ("trial", "basic", "starter", "professional")
 
 
 class SubscriptionPlan(models.Model):
@@ -142,6 +147,7 @@ class Invoice(models.Model):
         NAGAD = "NAGAD", _("Nagad")
         ONLINE = "ONLINE", _("Online Gateway")
         BANK_TRANSFER = "BANK_TRANSFER", _("Bank Transfer")
+        CREDIT = "CREDIT", _("Credit Balance")
 
     subscription = models.ForeignKey(
         Subscription,
@@ -156,7 +162,18 @@ class Invoice(models.Model):
         related_name="+",
         help_text=_("If set, subscription upgrades to this plan upon payment"),
     )
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text=_("Remaining amount after credit applied"),
+    )
+    original_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Invoice amount before any credit was applied"),
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -176,6 +193,17 @@ class Invoice(models.Model):
         default="",
         db_index=True,
         help_text=_("Invoice ID returned by UddoktaPay"),
+    )
+    payment_application_snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_("Subscription state before this invoice was applied"),
+    )
+    credit_applied = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text=_("Amount of credit from center's balance applied to this invoice"),
     )
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -6,18 +6,60 @@ UddoktaPay gateway views for subscription invoices.
 """
 
 import logging
+from decimal import Decimal
+from urllib.parse import urlparse, urlunparse
 
-from django.utils import timezone
+from django.conf import settings
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.utils import timezone
+
 from apps.payments import uddoktapay_client as gateway
 from core.tenants.permissions import IsCenterAdmin
 
-from .models import Invoice, Subscription
+from .models import Invoice
+from .services import apply_successful_invoice_payment
 
 logger = logging.getLogger(__name__)
+
+
+def _is_local_host(hostname: str) -> bool:
+    return hostname == "localhost" or hostname.endswith(".localhost")
+
+
+def _normalize_return_url(request, raw_url: str) -> str:
+    parsed = urlparse(raw_url)
+    if parsed.scheme and parsed.netloc and not _is_local_host(parsed.hostname or ""):
+        return raw_url
+
+    request_scheme = "https" if request.is_secure() else "http"
+    request_origin = urlparse(f"{request_scheme}://{request.get_host()}")
+    request_is_local = _is_local_host(request_origin.hostname or "")
+
+    origin = request.META.get("HTTP_ORIGIN", "") or getattr(
+        settings, "FRONTEND_URL", ""
+    )
+    origin_parsed = urlparse(origin)
+    origin_is_usable = bool(origin_parsed.scheme and origin_parsed.netloc)
+    origin_is_local = _is_local_host(origin_parsed.hostname or "")
+
+    if not origin_is_usable:
+        origin_parsed = request_origin
+    elif origin_is_local and not request_is_local:
+        origin_parsed = request_origin
+
+    return urlunparse(
+        (
+            origin_parsed.scheme,
+            origin_parsed.netloc,
+            parsed.path or "/dashboard/subscription",
+            "",
+            parsed.query,
+            parsed.fragment,
+        )
+    )
 
 
 class SubscriptionInitiateChargeView(APIView):
@@ -66,8 +108,49 @@ class SubscriptionInitiateChargeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Build charge payload
+        # Apply credit balance if available
         center = invoice.subscription.center
+        credit_balance = center.credit_balance or 0
+        invoice_amount = invoice.amount
+        credit_to_apply = min(credit_balance, invoice_amount)
+        if credit_to_apply > 0:
+            # Preserve original amount before deducting credit
+            if invoice.original_amount is None:
+                invoice.original_amount = invoice_amount
+            invoice.amount = (invoice_amount - credit_to_apply).quantize(Decimal("0.01"))
+            invoice.credit_applied = credit_to_apply
+            invoice.save(update_fields=["original_amount", "amount", "credit_applied"])
+            center.credit_balance = credit_balance - credit_to_apply
+            center.save(update_fields=["credit_balance"])
+            invoice_amount = invoice.amount
+            logger.info(
+                "Applied %s credit to invoice %s for center %s. Remaining: %s",
+                credit_to_apply,
+                invoice.pk,
+                center.name,
+                invoice.amount,
+            )
+
+        # If credit fully covers the invoice, mark it paid immediately
+        if invoice_amount <= 0:
+            invoice.status = Invoice.Status.PAID
+            invoice.paid_at = timezone.now()
+            invoice.payment_method = Invoice.PaymentMethod.CREDIT
+            invoice.save(update_fields=["status", "paid_at", "payment_method"])
+            invoice, sub = apply_successful_invoice_payment(
+                invoice,
+                payment_method=Invoice.PaymentMethod.CREDIT,
+            )
+            return Response(
+                {
+                    "status": "COMPLETED",
+                    "detail": "Paid using credit balance. Subscription activated.",
+                    "transaction_id": None,
+                    "credit_applied": str(credit_to_apply),
+                },
+            )
+
+        # Build charge payload
         full_name = center.name or "Customer"
         email = center.email or request.user.email or "noreply@lablink.bd"
 
@@ -82,8 +165,11 @@ class SubscriptionInitiateChargeView(APIView):
                 full_name=full_name,
                 email=email,
                 amount=str(invoice.amount),
-                redirect_url=redirect_url,
-                cancel_url=request.data.get("cancel_url", ""),
+                redirect_url=_normalize_return_url(request, redirect_url),
+                cancel_url=_normalize_return_url(
+                    request,
+                    request.data.get("cancel_url") or redirect_url,
+                ),
                 metadata=metadata,
             )
         except gateway.UddoktaPayError as exc:
@@ -108,6 +194,12 @@ class SubscriptionVerifyPaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsCenterAdmin]
 
     def get(self, request):
+        if not request.tenant:
+            return Response(
+                {"detail": "No center context."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         gw_invoice_id = request.query_params.get("invoice_id")
         if not gw_invoice_id:
             return Response(
@@ -125,17 +217,29 @@ class SubscriptionVerifyPaymentView(APIView):
             )
 
         # Find the local subscription invoice from metadata
-        sub_invoice_id = (result.metadata or {}).get("subscription_invoice_id")
+        metadata = result.metadata or {}
+        sub_invoice_id = metadata.get("subscription_invoice_id")
+        metadata_center_id = metadata.get("center_id")
         if not sub_invoice_id:
             return Response(
                 {"detail": "subscription_invoice_id missing from metadata."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not metadata_center_id:
+            return Response(
+                {"detail": "center_id missing from metadata."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if str(request.tenant.pk) != str(metadata_center_id):
+            return Response(
+                {"detail": "Payment does not belong to this center."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         try:
             invoice = Invoice.objects.select_related(
-                "subscription",
-            ).get(pk=sub_invoice_id)
+                "subscription__center",
+            ).get(pk=sub_invoice_id, subscription__center=request.tenant)
         except Invoice.DoesNotExist:
             return Response(
                 {"detail": "Subscription invoice not found."},
@@ -147,30 +251,12 @@ class SubscriptionVerifyPaymentView(APIView):
         invoice.transaction_id = result.transaction_id
 
         if result.status == "COMPLETED":
-            invoice.status = Invoice.Status.PAID
-            invoice.paid_at = timezone.now()
-            invoice.payment_method = Invoice.PaymentMethod.ONLINE
-            invoice.save(
-                update_fields=[
-                    "status",
-                    "paid_at",
-                    "payment_method",
-                    "transaction_id",
-                    "gateway_invoice_id",
-                ]
+            invoice, sub = apply_successful_invoice_payment(
+                invoice,
+                payment_method=Invoice.PaymentMethod.ONLINE,
+                transaction_id=result.transaction_id,
+                gateway_invoice_id=result.invoice_id,
             )
-
-            # Apply plan upgrade and activate subscription
-            sub = invoice.subscription
-            if invoice.target_plan:
-                sub.plan = invoice.target_plan
-            sub.status = Subscription.Status.ACTIVE
-            sub.save(update_fields=["status", "plan"])
-
-            # Invalidate cache
-            from django.core.cache import cache
-
-            cache.delete(f"sub_status:{sub.center_id}")
 
             logger.info(
                 "Subscription invoice #%s paid via gateway for %s",

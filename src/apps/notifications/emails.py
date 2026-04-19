@@ -41,6 +41,7 @@ class EmailType(StrEnum):
     # Subscriptions & Billing
     TRIAL_EXPIRY_WARNING = "trial_expiry_warning"
     TRIAL_EXPIRED = "trial_expired"
+    INACTIVE_EXPIRED = "inactive_expired"
     INVOICE_GENERATED = "invoice_generated"
     INVOICE_OVERDUE = "invoice_overdue"
     PAYMENT_RECEIVED = "payment_received"
