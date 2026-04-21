@@ -6,7 +6,9 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Invoice, Subscription
+from .models import Invoice, Subscription, SubscriptionPlan
+
+from core.tenants.models import DiagnosticCenter
 
 logger = logging.getLogger(__name__)
 
@@ -117,12 +119,10 @@ def _get_next_billing_date(subscription: Subscription, previous_status: str) -> 
     today = timezone.localdate()
 
     if previous_status == Subscription.Status.TRIAL:
-        anchor = subscription.billing_date or (
-            subscription.trial_end.date() if subscription.trial_end else None
-        )
-        if not anchor or anchor <= today:
-            return today + timedelta(days=30)
-        return anchor
+        anchor = subscription.trial_end.date() if subscription.trial_end else None
+        if anchor and anchor > today:
+            return anchor + timedelta(days=30)
+        return today + timedelta(days=30)
 
     if not subscription.billing_date or subscription.billing_date <= today:
         return today + timedelta(days=30)
@@ -177,12 +177,8 @@ def apply_successful_invoice_payment(
         subscription.plan = invoice.target_plan
         update_fields.append("plan")
 
-    if previous_status == Subscription.Status.TRIAL:
-        subscription.status = Subscription.Status.TRIAL
-        subscription.billing_date = _get_next_billing_date(subscription, previous_status)
-    else:
-        subscription.status = Subscription.Status.ACTIVE
-        subscription.billing_date = _get_next_billing_date(subscription, previous_status)
+    subscription.status = Subscription.Status.ACTIVE
+    subscription.billing_date = _get_next_billing_date(subscription, previous_status)
 
     if subscription.cancelled_at is not None:
         subscription.cancelled_at = None
@@ -239,3 +235,59 @@ def revert_paid_invoice(invoice: Invoice) -> tuple[Invoice, Subscription]:
 
 def reset_subscription_ai_credits(subscription: Subscription) -> None:
     sync_subscription_ai_state(subscription, reset_credits=True)
+
+
+@transaction.atomic
+def apply_credit_to_invoice(invoice: Invoice, center) -> tuple[Invoice, bool]:
+    """Apply center's credit_balance to an invoice.
+
+    Returns (invoice, fully_paid).
+    If fully_paid is True, the invoice has been marked PAID and the
+    subscription activated via ``apply_successful_invoice_payment``.
+    """
+    invoice = (
+        Invoice.objects.select_for_update()
+        .select_related("subscription__center", "subscription__plan")
+        .get(pk=invoice.pk)
+    )
+    center = DiagnosticCenter.objects.select_for_update().get(pk=center.pk)
+    credit_balance = center.credit_balance or Decimal("0")
+    invoice_amount = invoice.amount
+    credit_to_apply = min(credit_balance, invoice_amount)
+
+    if credit_to_apply <= 0:
+        return invoice, False
+
+    if invoice.original_amount is None:
+        invoice.original_amount = invoice_amount
+
+    invoice.credit_applied = credit_to_apply
+    remaining = (invoice_amount - credit_to_apply).quantize(Decimal("1"), rounding=ROUND_UP)
+    invoice.amount = remaining
+    center.credit_balance = credit_balance - credit_to_apply
+    center.save(update_fields=["credit_balance"])
+
+    if remaining <= 0:
+        invoice.status = Invoice.Status.PAID
+        invoice.paid_at = timezone.now()
+        invoice.payment_method = Invoice.PaymentMethod.CREDIT
+        invoice.save(
+            update_fields=[
+                "original_amount",
+                "amount",
+                "credit_applied",
+                "status",
+                "paid_at",
+                "payment_method",
+            ],
+        )
+        invoice, _sub = apply_successful_invoice_payment(
+            invoice,
+            payment_method=Invoice.PaymentMethod.CREDIT,
+        )
+        return invoice, True
+
+    invoice.save(
+        update_fields=["original_amount", "amount", "credit_applied"],
+    )
+    return invoice, False

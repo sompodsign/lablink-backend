@@ -1,3 +1,4 @@
+import math
 from decimal import Decimal
 
 from django.db import models
@@ -126,10 +127,15 @@ class Subscription(models.Model):
 
     @property
     def days_remaining_trial(self) -> int | None:
-        if self.status != self.Status.TRIAL or not self.trial_end:
+        if not self.trial_end:
+            return None
+        if self.status not in (self.Status.TRIAL, self.Status.ACTIVE):
             return None
         delta = self.trial_end - timezone.now()
-        return max(0, delta.days)
+        seconds = delta.total_seconds()
+        if seconds <= 0:
+            return 0
+        return math.ceil(seconds / 86400)
 
 
 class Invoice(models.Model):

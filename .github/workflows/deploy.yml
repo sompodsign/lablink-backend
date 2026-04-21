@@ -1,23 +1,24 @@
 name: Backend CI/CD
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'deployment/**'
-      - '.github/workflows/deploy.yml'
-      - 'Dockerfile'
-      - 'manage.py'
-      - 'pyproject.toml'
-      - 'poetry.lock'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'manage.py'
-      - 'pyproject.toml'
-      - 'poetry.lock'
+  # Temporarily disabled — re-enable by uncommenting the push/pull_request blocks below
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'src/**'
+  #     - 'deployment/**'
+  #     - '.github/workflows/deploy.yml'
+  #     - 'Dockerfile'
+  #     - 'manage.py'
+  #     - 'pyproject.toml'
+  #     - 'poetry.lock'
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - 'src/**'
+  #     - 'manage.py'
+  #     - 'pyproject.toml'
+  #     - 'poetry.lock'
   workflow_dispatch:
 
 env:

@@ -6,21 +6,17 @@ UddoktaPay gateway views for subscription invoices.
 """
 
 import logging
-from decimal import ROUND_UP, Decimal
 from urllib.parse import urlparse, urlunparse
 
-from django.conf import settings
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from django.utils import timezone
 
 from apps.payments import uddoktapay_client as gateway
 from core.tenants.permissions import IsCenterAdmin
 
 from .models import Invoice
-from .services import apply_successful_invoice_payment
+from .services import apply_successful_invoice_payment, apply_credit_to_invoice
 
 logger = logging.getLogger(__name__)
 
@@ -110,43 +106,13 @@ class SubscriptionInitiateChargeView(APIView):
 
         # Apply credit balance if available
         center = invoice.subscription.center
-        credit_balance = center.credit_balance or 0
-        invoice_amount = invoice.amount
-        credit_to_apply = min(credit_balance, invoice_amount)
-        if credit_to_apply > 0:
-            # Preserve original amount before deducting credit
-            if invoice.original_amount is None:
-                invoice.original_amount = invoice_amount
-            invoice.amount = (invoice_amount - credit_to_apply).quantize(Decimal("1"), rounding=ROUND_UP)
-            invoice.credit_applied = credit_to_apply
-            invoice.save(update_fields=["original_amount", "amount", "credit_applied"])
-            center.credit_balance = credit_balance - credit_to_apply
-            center.save(update_fields=["credit_balance"])
-            invoice_amount = invoice.amount
-            logger.info(
-                "Applied %s credit to invoice %s for center %s. Remaining: %s",
-                credit_to_apply,
-                invoice.pk,
-                center.name,
-                invoice.amount,
-            )
-
-        # If credit fully covers the invoice, mark it paid immediately
-        if invoice_amount <= 0:
-            invoice.status = Invoice.Status.PAID
-            invoice.paid_at = timezone.now()
-            invoice.payment_method = Invoice.PaymentMethod.CREDIT
-            invoice.save(update_fields=["status", "paid_at", "payment_method"])
-            invoice, sub = apply_successful_invoice_payment(
-                invoice,
-                payment_method=Invoice.PaymentMethod.CREDIT,
-            )
+        invoice, fully_paid = apply_credit_to_invoice(invoice, center)
+        if fully_paid:
             return Response(
                 {
                     "status": "COMPLETED",
                     "detail": "Paid using credit balance. Subscription activated.",
                     "transaction_id": None,
-                    "credit_applied": str(credit_to_apply),
                 },
             )
 

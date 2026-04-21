@@ -57,20 +57,33 @@ def check_trial_expirations():
                     sub.center.name,
                 )
             else:
-                sub.status = Subscription.Status.ACTIVE
-                sub.save(update_fields=["status"])
-
-                Invoice.objects.create(
+                has_pending_invoice = Invoice.objects.filter(
                     subscription=sub,
-                    amount=sub.plan.price,
-                    status=Invoice.Status.PENDING,
-                    due_date=now.date(),
-                )
-                invalidate_subscription_status(sub.center_id)
-                logger.info(
-                    "Trial expired for paid plan — activated and created invoice for %s",
-                    sub.center.name,
-                )
+                    status__in=[Invoice.Status.PENDING, Invoice.Status.OVERDUE],
+                ).exists()
+                if not has_pending_invoice:
+                    sub.status = Subscription.Status.ACTIVE
+                    sub.save(update_fields=["status"])
+
+                    Invoice.objects.create(
+                        subscription=sub,
+                        amount=sub.plan.price,
+                        status=Invoice.Status.PENDING,
+                        due_date=now.date(),
+                    )
+                    invalidate_subscription_status(sub.center_id)
+                    logger.info(
+                        "Trial expired for paid plan — activated and created invoice for %s",
+                        sub.center.name,
+                    )
+                else:
+                    sub.status = Subscription.Status.ACTIVE
+                    sub.save(update_fields=["status"])
+                    invalidate_subscription_status(sub.center_id)
+                    logger.info(
+                        "Trial expired for paid plan — activated, pending invoice already exists for %s",
+                        sub.center.name,
+                    )
         else:
             sub.status = Subscription.Status.EXPIRED
             sub.save(update_fields=["status"])

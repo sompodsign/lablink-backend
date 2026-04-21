@@ -28,7 +28,7 @@ from .serializers import (
     SubscriptionSerializer,
     SuperadminSubscriptionSerializer,
 )
-from .services import invalidate_subscription_status
+from .services import invalidate_subscription_status, apply_successful_invoice_payment, apply_credit_to_invoice, revert_paid_invoice
 
 logger = logging.getLogger(__name__)
 
@@ -444,8 +444,24 @@ class CenterChangePlanView(APIView):
                     due_date=now.date(),
                     status=Invoice.Status.PENDING,
                 )
-                require_payment = True
-                invoice_id = new_inv.id
+                invalidate_subscription_status(tenant.id)
+                tenant.refresh_from_db()
+                new_inv, fully_paid = apply_credit_to_invoice(new_inv, tenant)
+                if fully_paid:
+                    logger.info(
+                        "First paid subscription for center %s: plan=%s, credit covered invoice #%s",
+                        tenant.name,
+                        new_plan.name,
+                        new_inv.id,
+                    )
+                    return Response(
+                        {
+                            "detail": f"Successfully subscribed to {new_plan.name}. Credit balance covered the cost.",
+                            "require_payment": False,
+                            "invoice_id": None,
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
                 logger.info(
                     "First paid subscription created for center %s: plan=%s, invoice=%s",
                     tenant.name,
@@ -455,8 +471,8 @@ class CenterChangePlanView(APIView):
                 return Response(
                     {
                         "detail": f"Successfully subscribed to {new_plan.name}.",
-                        "require_payment": require_payment,
-                        "invoice_id": invoice_id,
+                        "require_payment": True,
+                        "invoice_id": new_inv.id,
                     },
                     status=status.HTTP_201_CREATED,
                 )
@@ -497,15 +513,7 @@ class CenterChangePlanView(APIView):
 
         # Determine upgrade vs downgrade flow
         is_upgrade_requiring_payment = new_plan.price > old_plan.price
-
-        require_payment = False
-        invoice_id = None
-
-        is_upgrade_requiring_payment = new_plan.price > old_plan.price
         is_trial = subscription.status == Subscription.Status.TRIAL
-
-        require_payment = False
-        invoice_id = None
 
         if is_upgrade_requiring_payment and is_trial:
             # During trial, upgrade doesn't require payment IF this is the first paid plan
@@ -520,34 +528,38 @@ class CenterChangePlanView(APIView):
             subscription.billing_date = subscription.trial_end.date()
 
             if has_existing_invoice:
-                # User already has a pending invoice — cancel it and create new prorated invoice for upgrade
                 pending_invoices = Invoice.objects.filter(
                     subscription=subscription,
                     status=Invoice.Status.PENDING,
                 )
-                for old_inv in pending_invoices:
-                    old_inv.status = Invoice.Status.CANCELLED
-                    old_inv.save(update_fields=["status"])
-
-                days_remaining = (subscription.billing_date - timezone.now().date()).days
-                if days_remaining < 0:
-                    days_remaining = 0
-                price_diff = (new_plan.price - old_plan.price).quantize(Decimal("1"), rounding=ROUND_UP)
-                if days_remaining > 0:
-                    daily_diff = price_diff / Decimal("30")
-                    prorated_amount = (daily_diff * Decimal(str(days_remaining))).quantize(Decimal("1"), rounding=ROUND_UP)
-                    prorated_amount = max(prorated_amount, Decimal("1"))
-                else:
-                    prorated_amount = max(price_diff, Decimal("1"))
-
+                pending_invoices.update(status=Invoice.Status.CANCELLED)
                 new_inv = Invoice.objects.create(
                     subscription=subscription,
-                    amount=prorated_amount,
+                    amount=new_plan.price.quantize(Decimal("1"), rounding=ROUND_UP),
                     due_date=timezone.now().date(),
                     status=Invoice.Status.PENDING,
-                    target_plan=new_plan,
+                    target_plan=None,
                 )
                 subscription.save(update_fields=["plan", "trial_end", "billing_date"])
+                invalidate_subscription_status(tenant.id)
+
+                tenant.refresh_from_db()
+                new_inv, fully_paid = apply_credit_to_invoice(new_inv, tenant)
+                if fully_paid:
+                    logger.info(
+                        "Trial plan upgraded for center %s: plan=%s -> %s (credit covered, invoice #%s paid)",
+                        tenant.name,
+                        old_plan.name,
+                        new_plan.name,
+                        new_inv.id,
+                    )
+                    return Response(
+                        {
+                            "detail": f"Plan upgraded to {new_plan.name}. Credit balance covered the cost.",
+                            "require_payment": False,
+                            "invoice_id": None,
+                        }
+                    )
                 logger.info(
                     "Trial plan upgraded for center %s: plan=%s -> %s (existing invoice cancelled, new invoice #%s)",
                     tenant.name,
@@ -557,7 +569,7 @@ class CenterChangePlanView(APIView):
                 )
                 return Response(
                     {
-                        "detail": f"Plan upgraded to {new_plan.name}. Invoice #{new_inv.id} created for ৳{prorated_amount}.",
+                        "detail": f"Plan upgraded to {new_plan.name}. Invoice #{new_inv.id} created for ৳{new_inv.amount}.",
                         "require_payment": True,
                         "invoice_id": new_inv.id,
                     }
@@ -596,17 +608,20 @@ class CenterChangePlanView(APIView):
                         Decimal("1"), rounding=ROUND_UP
                     )
                 )
+                prorated_amount = min(prorated_amount, price_diff)
                 prorated_amount = max(prorated_amount, Decimal("1"))
             else:
                 prorated_amount = max(price_diff, Decimal("1"))
 
             if pending_invoices.exists():
-                for inv in pending_invoices:
-                    inv.amount = prorated_amount.quantize(Decimal("1"), rounding=ROUND_UP)
-                    inv.target_plan = new_plan
-                    inv.save(update_fields=["amount", "target_plan"])
-                require_payment = True
-                invoice_id = pending_invoices.first().id
+                pending_invoices.update(status=Invoice.Status.CANCELLED)
+                new_inv = Invoice.objects.create(
+                    subscription=subscription,
+                    amount=new_plan.price.quantize(Decimal("1"), rounding=ROUND_UP),
+                    due_date=timezone.now().date(),
+                    status=Invoice.Status.PENDING,
+                    target_plan=None,
+                )
             else:
                 new_inv = Invoice.objects.create(
                     subscription=subscription,
@@ -615,14 +630,24 @@ class CenterChangePlanView(APIView):
                     status=Invoice.Status.PENDING,
                     target_plan=new_plan,
                 )
-                require_payment = True
-                invoice_id = new_inv.id
+
+            invalidate_subscription_status(tenant.id)
+            tenant.refresh_from_db()
+            new_inv, fully_paid = apply_credit_to_invoice(new_inv, tenant)
+            if fully_paid:
+                return Response(
+                    {
+                        "detail": f"Plan upgraded to {new_plan.name}. Credit balance covered the cost.",
+                        "require_payment": False,
+                        "invoice_id": None,
+                    }
+                )
             # Return after upgrade invoice creation — do NOT fall through to downgrade logic
             return Response(
                 {
                     "detail": f"Successfully changed plan to {new_plan.name}.",
-                    "require_payment": require_payment,
-                    "invoice_id": invoice_id,
+                    "require_payment": True,
+                    "invoice_id": new_inv.id,
                 }
             )
         else:
@@ -672,8 +697,8 @@ class CenterChangePlanView(APIView):
         return Response(
             {
                 "detail": f"Successfully changed plan to {new_plan.name}.",
-                "require_payment": require_payment,
-                "invoice_id": invoice_id,
+                "require_payment": False,
+                "invoice_id": None,
             }
         )
 
@@ -1190,7 +1215,7 @@ class SuperadminInvoiceMarkPaidView(APIView):
     def post(self, request, invoice_id):
         try:
             invoice = Invoice.objects.select_related(
-                "subscription",
+                "subscription__center", "subscription__plan",
             ).get(pk=invoice_id)
         except Invoice.DoesNotExist:
             return Response(
@@ -1204,27 +1229,16 @@ class SuperadminInvoiceMarkPaidView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Update invoice
-        invoice.status = Invoice.Status.PAID
-        invoice.paid_at = timezone.now()
-        invoice.payment_method = request.data.get(
-            "payment_method", invoice.payment_method
+        payment_method = request.data.get("payment_method", invoice.payment_method)
+        transaction_id = request.data.get("transaction_id", invoice.transaction_id)
+        notes = request.data.get("notes", invoice.notes)
+
+        invoice, sub = apply_successful_invoice_payment(
+            invoice,
+            payment_method=payment_method,
+            transaction_id=transaction_id,
+            notes=notes,
         )
-        invoice.transaction_id = request.data.get(
-            "transaction_id", invoice.transaction_id
-        )
-        invoice.notes = request.data.get("notes", invoice.notes)
-        invoice.save()
-
-        # Activate subscription
-        sub = invoice.subscription
-
-        # Apply asynchronous plan upgrade
-        if invoice.target_plan:
-            sub.plan = invoice.target_plan
-
-        sub.status = Subscription.Status.ACTIVE
-        sub.save(update_fields=["status", "plan"])
 
         logger.info(
             "Invoice #%s marked paid by superadmin %s",
@@ -1232,7 +1246,6 @@ class SuperadminInvoiceMarkPaidView(APIView):
             request.user.username,
         )
 
-        # Send payment received email
         center = sub.center
         if center.email:
             send_email_async(
@@ -1244,8 +1257,6 @@ class SuperadminInvoiceMarkPaidView(APIView):
                     "plan_name": sub.plan.name,
                 },
             )
-
-        invalidate_subscription_status(sub.center_id)
 
         return Response(
             {
@@ -1277,10 +1288,7 @@ class SuperadminInvoiceMarkUnpaidView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Revert invoice
-        invoice.status = Invoice.Status.PENDING
-        invoice.paid_at = None
-        invoice.save(update_fields=["status", "paid_at"])
+        invoice, subscription = revert_paid_invoice(invoice)
 
         logger.info(
             "Invoice #%s reverted to unpaid by superadmin %s",
@@ -1322,6 +1330,18 @@ class SuperadminInvoiceCancelView(APIView):
             return Response(
                 {"detail": "Cannot cancel a paid invoice."},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Restore credit balance if credit was applied to this invoice
+        if invoice.credit_applied and invoice.credit_applied > 0:
+            center = invoice.subscription.center
+            center.credit_balance = (center.credit_balance or Decimal("0")) + invoice.credit_applied
+            center.save(update_fields=["credit_balance"])
+            logger.info(
+                "Restored ৳%s credit to center %s upon cancelling invoice #%s",
+                invoice.credit_applied,
+                center.name,
+                invoice.id,
             )
 
         invoice.status = Invoice.Status.CANCELLED
@@ -1652,31 +1672,16 @@ class SuperadminVerifyPaymentView(APIView):
             submission.reviewed_at = timezone.now()
             submission.save()
 
-            # Mark invoice as paid
             invoice = submission.invoice
-            invoice.status = Invoice.Status.PAID
-            invoice.paid_at = timezone.now()
-            invoice.payment_method = (
+            payment_method = (
                 submission.payment_method.method if submission.payment_method else ""
             )
-            invoice.transaction_id = submission.transaction_id
-            invoice.save()
+            invoice, sub = apply_successful_invoice_payment(
+                invoice,
+                payment_method=payment_method,
+                transaction_id=submission.transaction_id,
+            )
 
-            # Activate subscription
-            sub = invoice.subscription
-
-            # Apply deferred target_plan upgrade
-            if invoice.target_plan:
-                sub.plan = invoice.target_plan
-
-            if sub.status in (
-                Subscription.Status.INACTIVE,
-                Subscription.Status.EXPIRED,
-            ):
-                sub.status = Subscription.Status.ACTIVE
-
-            sub.save(update_fields=["status", "plan"])
-            # Clear cached subscription status
             cache.delete(f"sub_status:{sub.center_id}")
 
             return Response(
