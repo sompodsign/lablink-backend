@@ -1,277 +1,277 @@
-name: Backend CI/CD
+# name: Backend CI/CD
 
-on:
-  # Temporarily disabled — re-enable by uncommenting the push/pull_request blocks below
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - 'src/**'
-  #     - 'deployment/**'
-  #     - '.github/workflows/deploy.yml'
-  #     - 'Dockerfile'
-  #     - 'manage.py'
-  #     - 'pyproject.toml'
-  #     - 'poetry.lock'
-  # pull_request:
-  #   branches: [main]
-  #   paths:
-  #     - 'src/**'
-  #     - 'manage.py'
-  #     - 'pyproject.toml'
-  #     - 'poetry.lock'
-  workflow_dispatch:
+# on:
+#   # Temporarily disabled — re-enable by uncommenting the push/pull_request blocks below
+#   # push:
+#   #   branches: [main]
+#   #   paths:
+#   #     - 'src/**'
+#   #     - 'deployment/**'
+#   #     - '.github/workflows/deploy.yml'
+#   #     - 'Dockerfile'
+#   #     - 'manage.py'
+#   #     - 'pyproject.toml'
+#   #     - 'poetry.lock'
+#   # pull_request:
+#   #   branches: [main]
+#   #   paths:
+#   #     - 'src/**'
+#   #     - 'manage.py'
+#   #     - 'pyproject.toml'
+#   #     - 'poetry.lock'
+#   workflow_dispatch:
 
-env:
-  PYTHON_VERSION: '3.12'
-  POETRY_VERSION: '2.1'
-  PYTHONPATH: src
+# env:
+#   PYTHON_VERSION: '3.12'
+#   POETRY_VERSION: '2.1'
+#   PYTHONPATH: src
 
-# ──────────────────────────────────────────────────────────
-jobs:
+# # ──────────────────────────────────────────────────────────
+# jobs:
 
-  # ── 1. Lint ─────────────────────────────────────────────
-  lint:
-    name: Lint & Format Check
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
+#   # ── 1. Lint ─────────────────────────────────────────────
+#   lint:
+#     name: Lint & Format Check
+#     runs-on: self-hosted
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install tools
-        run: pip install ruff
+#       - name: Install tools
+#         run: pip install ruff
 
-      - name: Ruff lint
-        run: ruff check src/
+#       - name: Ruff lint
+#         run: ruff check src/
 
-      - name: Ruff format check
-        run: ruff format --check src/
+#       - name: Ruff format check
+#         run: ruff format --check src/
 
-  # ── 2. Test & Coverage ──────────────────────────────────
-  test:
-    name: Test & Coverage
-    runs-on: self-hosted
-    needs: lint
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: lablink
-          POSTGRES_USER: lablink_user
-          POSTGRES_PASSWORD: ci_test_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U lablink_user -d lablink"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd="redis-cli ping"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=5
-    env:
-      DJANGO_SETTINGS_MODULE: core.config.local
-      POSTGRES_DB: lablink
-      POSTGRES_USER: lablink_user
-      POSTGRES_PASSWORD: ci_test_password
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: '5432'
-      SECRET_KEY: ci-test-secret-key-not-for-production
-      CELERY_BROKER_URL: redis://localhost:6379/0
-      CELERY_RESULT_BACKEND: redis://localhost:6379/0
-      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
-    steps:
-      - uses: actions/checkout@v4
+#   # ── 2. Test & Coverage ──────────────────────────────────
+#   test:
+#     name: Test & Coverage
+#     runs-on: self-hosted
+#     needs: lint
+#     services:
+#       postgres:
+#         image: postgres:16-alpine
+#         env:
+#           POSTGRES_DB: lablink
+#           POSTGRES_USER: lablink_user
+#           POSTGRES_PASSWORD: ci_test_password
+#         ports:
+#           - 5432:5432
+#         options: >-
+#           --health-cmd="pg_isready -U lablink_user -d lablink"
+#           --health-interval=5s
+#           --health-timeout=5s
+#           --health-retries=5
+#       redis:
+#         image: redis:7-alpine
+#         ports:
+#           - 6379:6379
+#         options: >-
+#           --health-cmd="redis-cli ping"
+#           --health-interval=5s
+#           --health-timeout=5s
+#           --health-retries=5
+#     env:
+#       DJANGO_SETTINGS_MODULE: core.config.local
+#       POSTGRES_DB: lablink
+#       POSTGRES_USER: lablink_user
+#       POSTGRES_PASSWORD: ci_test_password
+#       POSTGRES_HOST: localhost
+#       POSTGRES_PORT: '5432'
+#       SECRET_KEY: ci-test-secret-key-not-for-production
+#       CELERY_BROKER_URL: redis://localhost:6379/0
+#       CELERY_RESULT_BACKEND: redis://localhost:6379/0
+#       EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install Poetry
-        run: pip install poetry==${{ env.POETRY_VERSION }}
+#       - name: Install Poetry
+#         run: pip install poetry==${{ env.POETRY_VERSION }}
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry
-          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
-          restore-keys: poetry-${{ runner.os }}-
+#       - name: Cache dependencies
+#         uses: actions/cache@v4
+#         with:
+#           path: ~/.cache/pypoetry
+#           key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+#           restore-keys: poetry-${{ runner.os }}-
 
-      - name: Install dependencies
-        run: poetry install --no-interaction --no-ansi --no-root
+#       - name: Install dependencies
+#         run: poetry install --no-interaction --no-ansi --no-root
 
-      - name: Check migrations
-        run: poetry run python manage.py makemigrations --check --dry-run
+#       - name: Check migrations
+#         run: poetry run python manage.py makemigrations --check --dry-run
 
-      - name: Run migrations
-        run: poetry run python manage.py migrate --noinput
+#       - name: Run migrations
+#         run: poetry run python manage.py migrate --noinput
 
-      - name: Collect static (dry run)
-        run: poetry run python manage.py collectstatic --noinput --dry-run 2>/dev/null || poetry run python manage.py collectstatic --noinput
+#       - name: Collect static (dry run)
+#         run: poetry run python manage.py collectstatic --noinput --dry-run 2>/dev/null || poetry run python manage.py collectstatic --noinput
 
-      - name: Run tests with coverage
-        run: |
-          poetry run coverage run manage.py test \
-            core.tenants.tests \
-            core.users.tests \
-            apps.appointments.tests \
-            apps.diagnostics.tests \
-            apps.diagnostics.management.commands.tests \
-            apps.notifications.tests \
-            apps.payments.tests \
-            -v 2
+#       - name: Run tests with coverage
+#         run: |
+#           poetry run coverage run manage.py test \
+#             core.tenants.tests \
+#             core.users.tests \
+#             apps.appointments.tests \
+#             apps.diagnostics.tests \
+#             apps.diagnostics.management.commands.tests \
+#             apps.notifications.tests \
+#             apps.payments.tests \
+#             -v 2
 
-      - name: Coverage report
-        run: |
-          poetry run coverage report --fail-under=50
-          poetry run coverage xml -o coverage.xml
+#       - name: Coverage report
+#         run: |
+#           poetry run coverage report --fail-under=50
+#           poetry run coverage xml -o coverage.xml
 
-      - name: Upload coverage artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-          retention-days: 14
+#       - name: Upload coverage artifact
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: coverage-report
+#           path: coverage.xml
+#           retention-days: 14
 
-  # ── 3. Migrate & Collect Static (main branch only) ───────
-  migrate-and-static:
-    name: Migrate + Collect Static → GCS
-    runs-on: self-hosted
-    # needs: test  # TODO: re-enable after GCS setup is verified
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    env:
-      DJANGO_SETTINGS_MODULE: core.config.prod
-      GCS_CREDENTIALS_FILE: /tmp/gcs-secrets/credentials.json
-      GCS_BUCKET_NAME: lablink-static
-      SECRET_KEY: ${{ secrets.SECRET_KEY }}
-      ALLOWED_HOSTS: localhost
-      POSTGRES_DB: lablink
-      POSTGRES_USER: lablink_user
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: "55436"
-      CELERY_BROKER_URL: redis://localhost:6379/0
-      CELERY_RESULT_BACKEND: redis://localhost:6379/0
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+#   # ── 3. Migrate & Collect Static (main branch only) ───────
+#   migrate-and-static:
+#     name: Migrate + Collect Static → GCS
+#     runs-on: self-hosted
+#     # needs: test  # TODO: re-enable after GCS setup is verified
+#     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+#     env:
+#       DJANGO_SETTINGS_MODULE: core.config.prod
+#       GCS_CREDENTIALS_FILE: /tmp/gcs-secrets/credentials.json
+#       GCS_BUCKET_NAME: lablink-static
+#       SECRET_KEY: ${{ secrets.SECRET_KEY }}
+#       ALLOWED_HOSTS: localhost
+#       POSTGRES_DB: lablink
+#       POSTGRES_USER: lablink_user
+#       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+#       POSTGRES_HOST: localhost
+#       POSTGRES_PORT: "55436"
+#       CELERY_BROKER_URL: redis://localhost:6379/0
+#       CELERY_RESULT_BACKEND: redis://localhost:6379/0
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+#       - uses: actions/setup-python@v5
+#         with:
+#           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install Poetry
-        run: pip install poetry==${{ env.POETRY_VERSION }}
+#       - name: Install Poetry
+#         run: pip install poetry==${{ env.POETRY_VERSION }}
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry
-          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
-          restore-keys: poetry-${{ runner.os }}-
+#       - name: Cache dependencies
+#         uses: actions/cache@v4
+#         with:
+#           path: ~/.cache/pypoetry
+#           key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+#           restore-keys: poetry-${{ runner.os }}-
 
-      - name: Install dependencies
-        run: poetry install --no-interaction --no-ansi --no-root
+#       - name: Install dependencies
+#         run: poetry install --no-interaction --no-ansi --no-root
 
-      - name: Write GCS credentials
-        run: |
-          mkdir -p /tmp/gcs-secrets
-          printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
+#       - name: Write GCS credentials
+#         run: |
+#           mkdir -p /tmp/gcs-secrets
+#           printf '%s' '${{ secrets.GCS_CREDENTIALS_JSON }}' > /tmp/gcs-secrets/credentials.json
 
-      - name: Collect static → GCS
-        run: poetry run python manage.py collectstatic --noinput
+#       - name: Collect static → GCS
+#         run: poetry run python manage.py collectstatic --noinput
 
-      - name: Run migrate
-        run: poetry run python manage.py migrate --noinput
+#       - name: Run migrate
+#         run: poetry run python manage.py migrate --noinput
 
-      - name: Cleanup credentials
-        if: always()
-        run: rm -f /tmp/gcs-secrets/credentials.json
+#       - name: Cleanup credentials
+#         if: always()
+#         run: rm -f /tmp/gcs-secrets/credentials.json
 
-  # ── 4. Deploy (main branch only) ────────────────────────
-  deploy:
-    name: Deploy to Production
-    runs-on: self-hosted
-    needs: migrate-and-static
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+#   # ── 4. Deploy (main branch only) ────────────────────────
+#   deploy:
+#     name: Deploy to Production
+#     runs-on: self-hosted
+#     needs: migrate-and-static
+#     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      - name: Create production .env
-        run: |
-          cat > deployment/.env << 'ENVEOF'
-          SECRET_KEY=${{ secrets.SECRET_KEY }}
-          DEBUG=False
-          ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
-          POSTGRES_DB=lablink
-          POSTGRES_USER=lablink_user
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_HOST=db
-          POSTGRES_PORT=5432
-          CELERY_BROKER_URL=redis://redis:6379/0
-          CELERY_RESULT_BACKEND=redis://redis:6379/0
-          CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
-          CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
-          EMAIL_HOST=${{ secrets.EMAIL_HOST }}
-          EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
-          EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
-          DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
-          SMS_API_KEY=${{ secrets.SMS_API_KEY }}
-          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
-          GCS_BUCKET_NAME=lablink-static
-          UDDOKTAPAY_BASE_URL=${{ secrets.UDDOKTAPAY_BASE_URL }}
-          UDDOKTAPAY_API_KEY=${{ secrets.UDDOKTAPAY_API_KEY }}
-          ENVEOF
+#       - name: Create production .env
+#         run: |
+#           cat > deployment/.env << 'ENVEOF'
+#           SECRET_KEY=${{ secrets.SECRET_KEY }}
+#           DEBUG=False
+#           ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+#           POSTGRES_DB=lablink
+#           POSTGRES_USER=lablink_user
+#           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+#           POSTGRES_HOST=db
+#           POSTGRES_PORT=5432
+#           CELERY_BROKER_URL=redis://redis:6379/0
+#           CELERY_RESULT_BACKEND=redis://redis:6379/0
+#           CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+#           CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
+#           EMAIL_HOST=${{ secrets.EMAIL_HOST }}
+#           EMAIL_HOST_USER=${{ secrets.EMAIL_HOST_USER }}
+#           EMAIL_HOST_PASSWORD=${{ secrets.EMAIL_HOST_PASSWORD }}
+#           DEFAULT_FROM_EMAIL=${{ secrets.DEFAULT_FROM_EMAIL }}
+#           SMS_API_KEY=${{ secrets.SMS_API_KEY }}
+#           FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+#           GCS_BUCKET_NAME=lablink-static
+#           UDDOKTAPAY_BASE_URL=${{ secrets.UDDOKTAPAY_BASE_URL }}
+#           UDDOKTAPAY_API_KEY=${{ secrets.UDDOKTAPAY_API_KEY }}
+#           ENVEOF
 
-      - name: Copy to deploy path
-        run: |
-          DEPLOY_PATH="${{ secrets.PROD_DEPLOY_PATH }}/lablink-backend"
-          mkdir -p "$DEPLOY_PATH"
-          rsync -a --delete \
-            --exclude '.git' \
-            --exclude '__pycache__' \
-            --exclude '*.pyc' \
-            --exclude '.venv' \
-            --exclude 'env' \
-            --exclude 'backups' \
-            --exclude '.ruff_cache' \
-            --exclude '.mypy_cache' \
-            --exclude '.pytest_cache' \
-            --exclude 'deployment/frontend_dist' \
-            "$GITHUB_WORKSPACE/" "$DEPLOY_PATH/"
+#       - name: Copy to deploy path
+#         run: |
+#           DEPLOY_PATH="${{ secrets.PROD_DEPLOY_PATH }}/lablink-backend"
+#           mkdir -p "$DEPLOY_PATH"
+#           rsync -a --delete \
+#             --exclude '.git' \
+#             --exclude '__pycache__' \
+#             --exclude '*.pyc' \
+#             --exclude '.venv' \
+#             --exclude 'env' \
+#             --exclude 'backups' \
+#             --exclude '.ruff_cache' \
+#             --exclude '.mypy_cache' \
+#             --exclude '.pytest_cache' \
+#             --exclude 'deployment/frontend_dist' \
+#             "$GITHUB_WORKSPACE/" "$DEPLOY_PATH/"
 
-      - name: Build and restart
-        run: |
-          set -euo pipefail
-          DEPLOY_PATH="${{ secrets.PROD_DEPLOY_PATH }}"
+#       - name: Build and restart
+#         run: |
+#           set -euo pipefail
+#           DEPLOY_PATH="${{ secrets.PROD_DEPLOY_PATH }}"
 
-          echo "🔨 Building backend image..."
-          docker build --no-cache -t lablink-backend:latest "$DEPLOY_PATH/lablink-backend/"
+#           echo "🔨 Building backend image..."
+#           docker build --no-cache -t lablink-backend:latest "$DEPLOY_PATH/lablink-backend/"
 
-          echo "🚀 Starting services..."
-          cd "$DEPLOY_PATH/lablink-backend/deployment"
-          docker compose -f docker-compose.prod.yml up -d --force-recreate
+#           echo "🚀 Starting services..."
+#           cd "$DEPLOY_PATH/lablink-backend/deployment"
+#           docker compose -f docker-compose.prod.yml up -d --force-recreate
 
-          echo "⏳ Waiting for startup..."
-          for i in $(seq 1 12); do
-            sleep 5
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/api/auth/profile/ 2>/dev/null || echo "000")
-            if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Backend is healthy! (HTTP $HTTP_CODE, attempt $i)"
-              exit 0
-            fi
-            echo "  Attempt $i/12 — HTTP $HTTP_CODE, retrying..."
-          done
-          echo "⚠️ Health check failed after 60s (last HTTP $HTTP_CODE)"
-          docker logs lablink_backend --tail 20
-          exit 1
+#           echo "⏳ Waiting for startup..."
+#           for i in $(seq 1 12); do
+#             sleep 5
+#             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/api/auth/profile/ 2>/dev/null || echo "000")
+#             if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "200" ]; then
+#               echo "✅ Backend is healthy! (HTTP $HTTP_CODE, attempt $i)"
+#               exit 0
+#             fi
+#             echo "  Attempt $i/12 — HTTP $HTTP_CODE, retrying..."
+#           done
+#           echo "⚠️ Health check failed after 60s (last HTTP $HTTP_CODE)"
+#           docker logs lablink_backend --tail 20
+#           exit 1
