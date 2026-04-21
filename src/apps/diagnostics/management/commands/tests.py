@@ -2,6 +2,7 @@ from django.core.management import CommandError, call_command
 from django.test import TestCase
 
 from apps.diagnostics.models import CenterTestPricing, ReportTemplate, TestType
+from apps.diagnostics.services.seeding import SEEDED_TEST_TYPES
 from apps.diagnostics.template_fields import TEMPLATE_FIELDS
 from helpers.test_factories import make_center, make_test_type
 
@@ -27,6 +28,39 @@ class SeedReportTemplatesCommandTests(TestCase):
         pricing = CenterTestPricing.objects.filter(center=self.center)
         self.assertTrue(pricing.exists())
         self.assertFalse(pricing.filter(is_available=True).exists())
+
+    def test_seeds_full_catalog_pricing(self):
+        """Command creates pricing rows for every catalog test type."""
+        call_command("seed_report_templates")
+
+        expected_names = {name for name, _description, _price in SEEDED_TEST_TYPES}
+        pricing_names = set(
+            CenterTestPricing.objects.filter(center=self.center).values_list(
+                'test_type__name',
+                flat=True,
+            )
+        )
+
+        self.assertSetEqual(pricing_names, expected_names)
+
+    def test_template_fields_cover_seeded_catalog(self):
+        """Every seeded catalog test type has a template definition."""
+        expected_names = {name for name, _description, _price in SEEDED_TEST_TYPES}
+        self.assertTrue(expected_names.issubset(TEMPLATE_FIELDS.keys()))
+
+    def test_seeds_full_catalog_templates(self):
+        """Command creates templates for every seeded catalog test type."""
+        call_command("seed_report_templates")
+
+        expected_names = {name for name, _description, _price in SEEDED_TEST_TYPES}
+        template_names = set(
+            ReportTemplate.objects.filter(center=self.center).values_list(
+                'test_type__name',
+                flat=True,
+            )
+        )
+
+        self.assertSetEqual(template_names, expected_names)
 
     def test_seeds_extracted_imaging_test_types(self):
         """Command seeds imaging tests extracted from the latest tariff list."""
